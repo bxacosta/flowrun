@@ -8,6 +8,12 @@ export type ParallelMode = "fail-fast" | "all-settled";
 
 export type RetryPolicyMode = "constant" | "exponential";
 
+export type StepStatus = "completed" | "skipped" | "failed";
+
+export type FlowStatus = "running" | "paused" | "completed" | "failed" | "cancelled";
+
+export type RunCompletionStatus = Extract<FlowStatus, "completed" | "failed" | "cancelled">;
+
 
 export interface RetryPolicy {
     attempts: number;
@@ -136,3 +142,12 @@ export type FlowNode<
     | StepNode<TParams, TState>
     | SequenceNode<TParams, TState>
     | ParallelNode<TParams, TState>;
+
+export interface StepRunResult {
+    readonly stepId: string;
+    readonly stepName: string;
+    readonly status: StepStatus;
+    readonly attempts: number;
+    readonly durationMs: number;
+    readonly error?: Error;
+}
