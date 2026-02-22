@@ -11,3 +11,13 @@ export class StepTimeoutError extends FlowEngineError {
         this.name = "StepTimeoutError";
     }
 }
+
+export class FlowStopSignal extends Error {
+    readonly reason?: string;
+
+    constructor(reason?: string) {
+        super(reason ?? "Flow stopped");
+        this.name = "FlowStopSignal";
+        this.reason = reason;
+    }
+}
