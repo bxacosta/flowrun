@@ -1,5 +1,5 @@
-import type {Reporter} from "./reporter.ts";
 import type {Logger} from "./logger.ts";
+import type {Reporter} from "./reporter.ts";
 
 export type StateShape = object;
 
@@ -128,6 +128,10 @@ export interface StepNode<
     readonly run: StepHandler<TParams, TState>;
 }
 
+export interface SequenceOptions {
+    name?: string;
+}
+
 export interface SequenceNode<
     TParams = Record<string, unknown>,
     TState extends StateShape = StateShape,
@@ -136,6 +140,13 @@ export interface SequenceNode<
     readonly id: string;
     readonly name: string;
     readonly nodes: FlowNode<TParams, TState>[];
+}
+
+export interface ParallelOptions<TState extends StateShape = StateShape> {
+    name?: string;
+    concurrency?: number;
+    mode?: ParallelMode;
+    merge?: ParallelMergeConfig<TState>;
 }
 
 export interface ParallelNode<
@@ -196,6 +207,29 @@ export interface FlowHandle<TState extends StateShape = StateShape> {
     resume(): Promise<void>;
 }
 
+export interface FlowBuilder<
+    TParams = Record<string, unknown>,
+    TState extends StateShape = StateShape,
+> {
+    step(
+        id: string,
+        run: StepHandler<TParams, TState>,
+        options?: StepOptions<TParams, TState>,
+    ): StepNode<TParams, TState>;
+
+    sequence(
+        id: string,
+        nodes: FlowNode<TParams, TState>[],
+        options?: SequenceOptions,
+    ): SequenceNode<TParams, TState>;
+
+    parallel(
+        id: string,
+        nodes: FlowNode<TParams, TState>[],
+        options?: ParallelOptions<TState>,
+    ): ParallelNode<TParams, TState>;
+}
+
 export interface FlowDefinition<
     TParams = Record<string, unknown>,
     TState extends StateShape = StateShape,
@@ -205,6 +239,33 @@ export interface FlowDefinition<
     readonly initialState?: TState | (() => TState);
     readonly middleware?: Middleware<TParams, TState>[];
     readonly steps: FlowNode<TParams, TState>[];
+    readonly onStart?: (context: FlowContext<TParams, TState>) => MaybePromise<void>;
+    readonly onSuccess?: (
+        context: FlowContext<TParams, TState>,
+        result: RunResult<TState>,
+    ) => MaybePromise<void>;
+    readonly onFailure?: (
+        context: FlowContext<TParams, TState>,
+        error: Error,
+    ) => MaybePromise<void>;
+    readonly onComplete?: (
+        context: FlowContext<TParams, TState>,
+        result: RunResult<TState>,
+    ) => MaybePromise<void>;
+}
+
+export interface FlowDefinitionInput<
+    TParams = Record<string, unknown>,
+    TState extends StateShape = StateShape,
+> {
+    readonly id: string;
+    readonly name?: string;
+    readonly initialState?: TState | (() => TState);
+    readonly middleware?: Middleware<TParams, TState>[];
+    readonly steps?: FlowNode<TParams, TState>[];
+    readonly build?: (
+        builder: FlowBuilder<TParams, TState>,
+    ) => FlowNode<TParams, TState>[];
     readonly onStart?: (context: FlowContext<TParams, TState>) => MaybePromise<void>;
     readonly onSuccess?: (
         context: FlowContext<TParams, TState>,
