@@ -12,6 +12,16 @@ export class StepTimeoutError extends FlowEngineError {
     }
 }
 
+export class ParallelMergeError extends FlowEngineError {
+    readonly keys: string[];
+
+    constructor(keys: string[]) {
+        super(`Parallel branches wrote conflicting state keys: ${keys.join(", ")}`);
+        this.name = "ParallelMergeError";
+        this.keys = keys;
+    }
+}
+
 export class FlowStopSignal extends Error {
     readonly reason?: string;
 

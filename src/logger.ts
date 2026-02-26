@@ -3,8 +3,11 @@ import type {Reporter} from "./reporter.ts";
 
 export interface Logger {
     debug(message: string, data?: Record<string, unknown>): void;
+
     info(message: string, data?: Record<string, unknown>): void;
+
     warn(message: string, data?: Record<string, unknown>): void;
+
     error(message: string, data?: Record<string, unknown>): void;
 }
 
@@ -18,19 +21,19 @@ export interface LoggerScope {
 export function createLogger(reporter: Reporter, scope: LoggerScope): Logger {
     const emit =
         (level: LogLevel) =>
-        (message: string, data?: Record<string, unknown>): void => {
-            reporter.report({
-                kind: "log",
-                level,
-                flowId: scope.flowId,
-                runId: scope.runId,
-                stepId: scope.stepId,
-                stepName: scope.stepName,
-                timestamp: new Date(),
-                message,
-                data,
-            });
-        };
+            (message: string, data?: Record<string, unknown>): void => {
+                reporter.report({
+                    kind: "log",
+                    level,
+                    flowId: scope.flowId,
+                    runId: scope.runId,
+                    stepId: scope.stepId,
+                    stepName: scope.stepName,
+                    timestamp: new Date(),
+                    message,
+                    data,
+                });
+            };
 
     return {
         debug: emit("debug"),

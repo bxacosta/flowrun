@@ -2,6 +2,7 @@ import {createBranchFlowContext, createFlowContext, createStepContext,} from "./
 import {FlowEngineError, FlowStopSignal} from "./errors.ts";
 import {compose} from "./middleware.ts";
 import {NoopReporter, type Reporter} from "./reporter.ts";
+import {computeRetryDelay, createLinkedAbortController, runWithTimeout, wait} from "./retry.ts";
 import {MemoryStateStore, mergeBranchChanges} from "./state.ts";
 import type {
     ErrorMeta,
@@ -20,7 +21,6 @@ import type {
     StepNode,
     StepRunResult,
 } from "./types.ts";
-import {computeRetryDelay, createLinkedAbortController, runWithTimeout, wait} from "./retry.ts";
 
 interface PauseGate {
     promise: Promise<void>;
@@ -525,7 +525,7 @@ export class FlowEngine {
             .filter((entry): entry is PromiseFulfilledResult<BranchResult<TState>> => entry.status === "fulfilled")
             .map((entry) => entry.value.patch);
 
-        context.state.patch(mergeBranchChanges(patches));
+        context.state.patch(mergeBranchChanges(patches, node.merge));
     }
 
     private async runTaskPool<T>(

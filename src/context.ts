@@ -1,4 +1,5 @@
 import {FlowStopSignal} from "./errors.ts";
+import {createLogger} from "./logger.ts";
 import type {Reporter} from "./reporter.ts";
 import type {FlowContext, StateShape, StateStore, StepContext, StepInfo} from "./types.ts";
 
@@ -27,6 +28,10 @@ export function createFlowContext<TParams, TState extends StateShape>(
         params: config.params,
         state: config.state,
         signal: config.signal,
+        log: createLogger(config.reporter, {
+            flowId: config.flowId,
+            runId: config.runId,
+        }),
         stop(reason?: string): never {
             throw new FlowStopSignal(reason);
         },
@@ -45,6 +50,12 @@ export function createStepContext<TParams, TState extends StateShape>(
         signal,
         step,
         attempt,
+        log: createLogger(reporter, {
+            flowId: base.flow.id,
+            runId: base.runId,
+            stepId: step.id,
+            stepName: step.name,
+        }),
     };
 }
 
@@ -58,6 +69,10 @@ export function createBranchFlowContext<TParams, TState extends StateShape>(
         ...base,
         state,
         signal,
+        log: createLogger(reporter, {
+            flowId: base.flow.id,
+            runId: base.runId,
+        }),
         stop(reason?: string): never {
             throw new FlowStopSignal(reason);
         },
