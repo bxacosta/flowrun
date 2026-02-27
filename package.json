@@ -3,7 +3,10 @@
   "module": "index.ts",
   "type": "module",
   "scripts": {
-    "test": "bun test tests/"
+    "test": "bun test tests/",
+    "example:basic": "bun run examples/basic.ts",
+    "example:complete": "bun run examples/complete.ts",
+    "example:parallel": "bun run examples/parallel.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
