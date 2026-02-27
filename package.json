@@ -2,6 +2,9 @@
   "name": "flowrun",
   "module": "index.ts",
   "type": "module",
+  "scripts": {
+    "test": "bun test tests/"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
