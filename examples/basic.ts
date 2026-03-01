@@ -1,5 +1,5 @@
 import {FlowEngine, defineFlow} from "../src";
-import {ConsoleReporter} from "./reporter.ts";
+import {ConsoleReporter} from "./shared/reporter.ts";
 
 interface SyncUserParams {
     userId: string;

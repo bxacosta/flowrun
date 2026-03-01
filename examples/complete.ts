@@ -1,6 +1,6 @@
-import {defineFlow, FlowEngine, type Middleware} from "../src";
-import {ConsoleReporter} from "./reporter.ts";
-import {sleep} from "./runtime.ts";
+import {FlowEngine, defineFlow, type Middleware} from "../src";
+import {ConsoleReporter} from "./shared/reporter.ts";
+import {sleep} from "./shared/runtime.ts";
 
 interface FulfillmentParams {
     orderId: string;

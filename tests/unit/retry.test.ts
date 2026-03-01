@@ -1,6 +1,6 @@
 import {describe, expect, test} from "bun:test";
 import {StepTimeoutError} from "../../src";
-import {computeRetryDelay, createLinkedAbortController, runWithTimeout, wait,} from "../../src/retry.ts";
+import {computeRetryDelay, createLinkedAbortController, runWithTimeout, wait,} from "../../src/core/retry.ts";
 
 describe("retry helpers", () => {
     test("computes constant and exponential delays", () => {

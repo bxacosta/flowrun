@@ -1,4 +1,4 @@
-import type {EngineEvent, LogEvent, Reporter} from "../src";
+import type {EngineEvent, LogEvent, Reporter} from "../../src";
 
 const COLORS = {
     reset: "\x1b[0m",

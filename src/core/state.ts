@@ -30,7 +30,7 @@ export class MemoryStateStore<TState extends StateShape = StateShape>
 
     patch(values: Partial<TState>): void {
         for (const [key, value] of Object.entries(values) as Array<[
-                keyof TState & string,
+            keyof TState & string,
             TState[keyof TState & string],
         ]>) {
             const cloned = cloneState(value);

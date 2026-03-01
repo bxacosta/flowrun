@@ -1,12 +1,12 @@
-export {FlowEngine} from "./engine.ts";
+export {FlowEngine} from "./core/engine.ts";
 
-export {defineFlow, parallel, sequence, step} from "./composability.ts";
+export {defineFlow, parallel, sequence, step} from "./core/composability.ts";
 
-export {CompositeReporter, NoopReporter} from "./reporter.ts";
+export {CompositeReporter, NoopReporter} from "./core/reporter.ts";
 
-export type {Reporter, ReporterRoute} from "./reporter.ts";
+export type {Reporter, ReporterRoute} from "./core/reporter.ts";
 
-export {FlowEngineError, ParallelMergeError, StepTimeoutError} from "./errors.ts";
+export {FlowEngineError, ParallelMergeError, StepTimeoutError} from "./core/errors.ts";
 
 export type {
     ErrorMeta,
@@ -38,7 +38,7 @@ export type {
     StepOptions,
     StepRunResult,
     StepStatus,
-} from "./types.ts";
+} from "./core/types.ts";
 
 export type {
     EngineEvent,
@@ -49,4 +49,4 @@ export type {
     StepEndEvent,
     StepRetryEvent,
     StepStartEvent,
-} from "./events.ts";
+} from "./core/events.ts";

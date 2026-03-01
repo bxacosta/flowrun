@@ -17,7 +17,7 @@ export type ParallelMode = "fail-fast" | "all-settled";
 
 export type ParallelMergeMode = "strict" | "overwrite" | "arrays" | "custom";
 
-export type RetryPolicyMode = "constant" | "exponential";
+export type RetryPolicyMode =  "constant" | "exponential";
 
 export type ParallelMergeResolver<TState extends StateShape = StateShape> = (
     key: keyof TState & string,
@@ -43,13 +43,9 @@ export interface ErrorMeta {
 
 export interface StateStore<TState extends StateShape = StateShape> {
     get<K extends keyof TState & string>(key: K): TState[K] | undefined;
-
     set<K extends keyof TState & string>(key: K, value: TState[K]): void;
-
     has<K extends keyof TState & string>(key: K): boolean;
-
     patch(values: Partial<TState>): void;
-
     snapshot(): Readonly<TState>;
 }
 
@@ -197,13 +193,9 @@ export interface FlowHandle<TState extends StateShape = StateShape> {
     readonly flowId: string;
 
     status(): FlowStatus;
-
     join(): Promise<RunResult<TState>>;
-
     cancel(reason?: string): Promise<void>;
-
     pause(): Promise<void>;
-
     resume(): Promise<void>;
 }
 

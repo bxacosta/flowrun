@@ -1,6 +1,6 @@
 import {describe, expect, test} from "bun:test";
 import {ParallelMergeError} from "../../src";
-import {MemoryStateStore, mergeBranchChanges} from "../../src/state.ts";
+import {MemoryStateStore, mergeBranchChanges} from "../../src/core/state.ts";
 
 describe("MemoryStateStore", () => {
     test("stores values and returns immutable snapshots", () => {
