@@ -3,8 +3,13 @@
   "module": "index.ts",
   "type": "module",
   "scripts": {
+    "check": "bun x tsc --noEmit",
     "test": "bun test tests/",
+    "test:unit": "bun test tests/unit/",
+    "test:watch": "bun test tests/ --watch",
+    "test:integration": "bun test tests/integration/",
     "example:basic": "bun run examples/basic.ts",
+    "example:cli": "bun run examples/cli/index.ts",
     "example:complete": "bun run examples/complete.ts",
     "example:parallel": "bun run examples/parallel.ts"
   },
