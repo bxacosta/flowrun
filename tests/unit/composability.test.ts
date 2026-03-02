@@ -3,7 +3,9 @@ import { defineFlow, FlowEngineError, parallel, sequence, step } from "../../src
 
 describe("composability", () => {
     test("step creates a step node with sensible defaults", () => {
-        const node = step("fetch-user", async () => {});
+        const node = step("fetch-user", () => {
+            //  Empty step
+        });
 
         expect(node.kind).toBe("step");
         expect(node.id).toBe("fetch-user");
@@ -12,7 +14,9 @@ describe("composability", () => {
     });
 
     test("sequence and parallel preserve child nodes", () => {
-        const child = step("child", async () => {});
+        const child = step("child", () => {
+            //  Empty step
+        });
         const seq = sequence("seq", [child], { name: "My Sequence" });
         const par = parallel("par", [child], { name: "My Parallel", concurrency: 2, mode: "all-settled" });
 
@@ -38,7 +42,7 @@ describe("composability", () => {
         const flow = defineFlow<{ userId: string }, { saved?: boolean }>({
             id: "sync-user",
             build: ({ step }) => [
-                step("save", async (ctx) => {
+                step("save", (ctx) => {
                     expect(ctx.params.userId).toBeString();
                     ctx.state.set("saved", true);
                 }),

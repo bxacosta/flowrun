@@ -13,7 +13,7 @@ describe("FlowEngine", () => {
                     kind: "step",
                     id: "load-user",
                     name: "load-user",
-                    run: async (ctx) => {
+                    run: (ctx) => {
                         ctx.state.set("userId", ctx.params.userId);
                     },
                     use: [],
@@ -22,7 +22,7 @@ describe("FlowEngine", () => {
                     kind: "step",
                     id: "save-user",
                     name: "save-user",
-                    run: async (ctx) => {
+                    run: (ctx) => {
                         if (!ctx.state.get("userId")) {
                             throw new Error("missing user");
                         }
@@ -58,7 +58,7 @@ describe("FlowEngine", () => {
                     name: "flaky",
                     retry: { attempts: 3, delayMs: 1 },
                     use: [],
-                    run: async (ctx) => {
+                    run: (ctx) => {
                         attempts += 1;
                         ctx.state.set("attempts", attempts);
                         if (attempts < 3) {
@@ -87,7 +87,7 @@ describe("FlowEngine", () => {
                     name: "optional",
                     onError: "skip",
                     use: [],
-                    run: async () => {
+                    run: () => {
                         throw new Error("optional failed");
                     },
                 },
@@ -96,7 +96,7 @@ describe("FlowEngine", () => {
                     id: "finish",
                     name: "finish",
                     use: [],
-                    run: async (ctx) => {
+                    run: (ctx) => {
                         ctx.state.set("recovered", true);
                     },
                 },
@@ -120,7 +120,7 @@ describe("FlowEngine", () => {
                     id: "gate",
                     name: "gate",
                     use: [],
-                    run: async (ctx) => {
+                    run: (ctx) => {
                         ctx.stop("nothing to do");
                     },
                 },
@@ -129,7 +129,7 @@ describe("FlowEngine", () => {
                     id: "after",
                     name: "after",
                     use: [],
-                    run: async (ctx) => {
+                    run: (ctx) => {
                         ctx.state.set("after", true);
                     },
                 },
@@ -182,7 +182,7 @@ describe("FlowEngine", () => {
                     id: "first",
                     name: "first",
                     use: [],
-                    run: async (ctx) => {
+                    run: (ctx) => {
                         ctx.state.set("order", [...(ctx.state.get("order") ?? []), "first"]);
                     },
                 },
@@ -191,7 +191,7 @@ describe("FlowEngine", () => {
                     id: "second",
                     name: "second",
                     use: [],
-                    run: async (ctx) => {
+                    run: (ctx) => {
                         ctx.state.set("order", [...(ctx.state.get("order") ?? []), "second"]);
                     },
                 },
@@ -223,7 +223,7 @@ describe("FlowEngine", () => {
                             id: "a",
                             name: "a",
                             use: [],
-                            run: async (ctx) => {
+                            run: (ctx) => {
                                 ctx.state.set("value", 1);
                             },
                         },
@@ -232,7 +232,7 @@ describe("FlowEngine", () => {
                             id: "b",
                             name: "b",
                             use: [],
-                            run: async (ctx) => {
+                            run: (ctx) => {
                                 ctx.state.set("value", 2);
                             },
                         },
@@ -259,15 +259,15 @@ describe("FlowEngine", () => {
                     id: "main",
                     name: "main",
                     use: [],
-                    run: async (ctx) => {
+                    run: (ctx) => {
                         ctx.state.set("audit", [...ctx.state.snapshot().audit, "step"]);
                     },
                 },
             ],
-            onSuccess: async (ctx) => {
+            onSuccess: (ctx) => {
                 ctx.state.set("audit", [...ctx.state.snapshot().audit, "success"]);
             },
-            onComplete: async (ctx) => {
+            onComplete: (ctx) => {
                 ctx.state.set("audit", [...ctx.state.snapshot().audit, "complete"]);
             },
         });
@@ -290,7 +290,7 @@ describe("FlowEngine", () => {
                             id: "a",
                             name: "a",
                             use: [],
-                            run: async (ctx) => {
+                            run: (ctx) => {
                                 ctx.state.set("audit", ["a"]);
                             },
                         },
@@ -299,7 +299,7 @@ describe("FlowEngine", () => {
                             id: "b",
                             name: "b",
                             use: [],
-                            run: async (ctx) => {
+                            run: (ctx) => {
                                 ctx.state.set("audit", ["b"]);
                             },
                         },
@@ -332,7 +332,7 @@ describe("FlowEngine", () => {
                     name: "retrying",
                     retry: { attempts: 2, delayMs: 1 },
                     use: [],
-                    run: async () => {
+                    run: () => {
                         attempts += 1;
                         if (attempts === 1) {
                             throw new Error("fail once");

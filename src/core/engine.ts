@@ -529,8 +529,8 @@ export class FlowEngine {
         concurrency: number,
         mode: "fail-fast" | "all-settled",
         onFailure: (error: unknown) => void
-    ): Promise<Array<PromiseSettledResult<T>>> {
-        const results: Array<PromiseSettledResult<T>> = new Array(tasks.length);
+    ): Promise<PromiseSettledResult<T>[]> {
+        const results: PromiseSettledResult<T>[] = new Array(tasks.length);
         let nextIndex = 0;
 
         const worker = async (): Promise<void> => {

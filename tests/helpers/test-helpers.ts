@@ -7,7 +7,7 @@ export class SpyReporter implements Reporter {
         this.events.push(event);
     }
 
-    byKind<TKind extends EngineEvent["kind"]>(kind: TKind): Array<Extract<EngineEvent, { kind: TKind }>> {
+    byKind<TKind extends EngineEvent["kind"]>(kind: TKind): Extract<EngineEvent, { kind: TKind }>[] {
         return this.events.filter((event): event is Extract<EngineEvent, { kind: TKind }> => event.kind === kind);
     }
 }

@@ -28,9 +28,7 @@ export class MemoryStateStore<TState extends StateShape = StateShape> implements
     }
 
     patch(values: Partial<TState>): void {
-        for (const [key, value] of Object.entries(values) as Array<
-            [keyof TState & string, TState[keyof TState & string]]
-        >) {
+        for (const [key, value] of Object.entries(values) as [keyof TState & string, TState[keyof TState & string]][]) {
             const cloned = cloneState(value);
             this.values[key] = cloned;
             this.writes[key] = cloned;
@@ -51,7 +49,7 @@ export class MemoryStateStore<TState extends StateShape = StateShape> implements
 }
 
 export function mergeBranchChanges<TState extends StateShape>(
-    patches: Array<Partial<TState>>,
+    patches: Partial<TState>[],
     config: ParallelMergeConfig<TState> = { strategy: "strict" }
 ): Partial<TState> {
     const merged: Partial<TState> = {};
@@ -79,7 +77,7 @@ export function mergeBranchChanges<TState extends StateShape>(
         }
 
         if (strategy === "overwrite") {
-            (merged as Record<string, unknown>)[key] = cloneState(values[values.length - 1]);
+            (merged as Record<string, unknown>)[key] = cloneState(values.at(-1));
             continue;
         }
 
@@ -90,7 +88,7 @@ export function mergeBranchChanges<TState extends StateShape>(
 
         if (strategy === "custom" && config.resolver) {
             (merged as Record<string, unknown>)[key] = cloneState(
-                config.resolver(key as keyof TState & string, values as Array<TState[keyof TState & string]>)
+                config.resolver(key as keyof TState & string, values as TState[keyof TState & string][])
             );
             continue;
         }

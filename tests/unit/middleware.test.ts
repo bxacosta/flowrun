@@ -40,8 +40,9 @@ describe("middleware compose", () => {
             },
         ]);
 
-        await pipeline(makeStepContext(), async () => {
+        await pipeline(makeStepContext(), () => {
             order.push("core");
+            return Promise.resolve();
         });
 
         expect(order).toEqual(["a:before", "b:before", "core", "b:after", "a:after"]);
@@ -50,21 +51,22 @@ describe("middleware compose", () => {
     test("allows short circuit without running core", async () => {
         let coreCalled = false;
         const pipeline = compose<{ source: string }, MiddlewareState>([
-            async (ctx) => {
+            (ctx) => {
                 ctx.state.set("ran", true);
             },
         ]);
 
         const ctx = makeStepContext();
-        await pipeline(ctx, async () => {
+        await pipeline(ctx, () => {
             coreCalled = true;
+            return Promise.resolve();
         });
 
         expect(ctx.state.get("ran")).toBe(true);
         expect(coreCalled).toBe(false);
     });
 
-    test("throws when next is called multiple times", async () => {
+    test("throws when next is called multiple times", () => {
         const pipeline = compose<{ source: string }, MiddlewareState>([
             async (_ctx, next) => {
                 await next();
@@ -72,6 +74,6 @@ describe("middleware compose", () => {
             },
         ]);
 
-        expect(pipeline(makeStepContext(), async () => {})).rejects.toThrow("next() called multiple times");
+        expect(pipeline(makeStepContext(), () => Promise.resolve())).rejects.toThrow("next() called multiple times");
     });
 });

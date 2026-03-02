@@ -71,7 +71,7 @@ describe("integration flow", () => {
                     ],
                     { mode: "all-settled", concurrency: 2 }
                 ),
-                step("normalize", async (ctx) => {
+                step("normalize", (ctx) => {
                     expect(ctx.state.get("fetched")).toBe(true);
                     expect(ctx.state.get("profileLoaded")).toBe(true);
                     expect(ctx.state.get("statsLoaded")).toBe(true);
@@ -97,15 +97,15 @@ describe("integration flow", () => {
                     }
                 ),
             ],
-            onStart: async (ctx) => {
+            onStart: (ctx) => {
                 onStartCalled = true;
                 ctx.state.set("audit", [...ctx.state.snapshot().audit, "started"]);
             },
-            onSuccess: async (ctx) => {
+            onSuccess: (ctx) => {
                 onSuccessCalled = true;
                 ctx.state.set("audit", [...ctx.state.snapshot().audit, "succeeded"]);
             },
-            onComplete: async (ctx, result) => {
+            onComplete: (ctx, result) => {
                 onCompleteCalled = true;
                 ctx.log.info("complete", { status: result.status });
             },

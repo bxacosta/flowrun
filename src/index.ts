@@ -1,3 +1,4 @@
+// biome-ignore lint/performance/noBarrelFile: public API entry point for the library
 export { defineFlow, parallel, sequence, step } from "./core/composability.ts";
 export { FlowEngine } from "./core/engine.ts";
 export { FlowEngineError, ParallelMergeError, StepTimeoutError } from "./core/errors.ts";

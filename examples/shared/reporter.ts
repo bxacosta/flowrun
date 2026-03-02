@@ -11,7 +11,19 @@ const COLORS = {
     white: "\x1b[37m",
 } as const;
 
-function colorize(color: keyof typeof COLORS, text: string): string {
+type Color = keyof typeof COLORS;
+
+const FLOW_STATUS_COLOR: Record<string, Color> = {
+    completed: "green",
+    cancelled: "yellow",
+};
+
+const STEP_STATUS_COLOR: Record<string, Color> = {
+    completed: "green",
+    skipped: "yellow",
+};
+
+function colorize(color: Color, text: string): string {
     return `${COLORS[color]}${text}${COLORS.reset}`;
 }
 
@@ -34,7 +46,7 @@ export class ConsoleReporter implements Reporter {
                 console.log(`${prefix} ${colorize("cyan", "FLOW START")} ${event.flowName}`, formatData(event.params));
                 return;
             case "flow:end": {
-                const color = event.status === "completed" ? "green" : event.status === "cancelled" ? "yellow" : "red";
+                const color = FLOW_STATUS_COLOR[event.status] ?? "red";
                 console.log(
                     `${prefix} ${colorize(color, `FLOW ${event.status.toUpperCase()}`)}`,
                     colorize("dim", `(${event.durationMs}ms)`),
@@ -56,7 +68,7 @@ export class ConsoleReporter implements Reporter {
                 );
                 return;
             case "step:end": {
-                const color = event.status === "completed" ? "green" : event.status === "skipped" ? "yellow" : "red";
+                const color = STEP_STATUS_COLOR[event.status] ?? "red";
                 console.log(
                     `${prefix} ${colorize(color, `STEP ${event.status.toUpperCase()}`)} ${event.stepName}`,
                     colorize("dim", `${event.attempt}/${event.attempts}`),

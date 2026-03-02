@@ -21,7 +21,7 @@ export type RetryPolicyMode = "constant" | "exponential";
 
 export type ParallelMergeResolver<TState extends StateShape = StateShape> = (
     key: keyof TState & string,
-    values: Array<TState[keyof TState & string]>
+    values: TState[keyof TState & string][]
 ) => TState[keyof TState & string];
 
 export interface ParallelMergeConfig<TState extends StateShape = StateShape> {
