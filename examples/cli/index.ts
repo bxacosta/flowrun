@@ -1,4 +1,4 @@
-import * as readline from "node:readline";
+import { emitKeypressEvents } from "node:readline";
 import { FlowEngine } from "../../src";
 import { ConsoleReporter } from "../shared/reporter.ts";
 import { cliImportFlow } from "./flow.ts";
@@ -31,7 +31,7 @@ async function main(): Promise<void> {
 
     if (interactive) {
         printControls();
-        readline.emitKeypressEvents(process.stdin);
+        emitKeypressEvents(process.stdin);
         process.stdin.setRawMode(true);
 
         process.stdin.on("keypress", async (_character, key) => {

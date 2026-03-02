@@ -139,7 +139,7 @@ const fulfillmentFlow = defineFlow<FulfillmentParams, FulfillmentState>({
                 mode: "all-settled",
             }
         ),
-        step("approve-order", async (ctx) => {
+        step("approve-order", (ctx) => {
             const fraudScore = ctx.state.get("fraudScore") ?? 1;
             if (fraudScore > 0.7) {
                 ctx.stop("Order blocked by fraud controls");
@@ -174,14 +174,14 @@ const fulfillmentFlow = defineFlow<FulfillmentParams, FulfillmentState>({
             }
         ),
     ],
-    onStart: async (ctx) => {
+    onStart: (ctx) => {
         ctx.state.set("audit", [...ctx.state.snapshot().audit, "flow-started"]);
         ctx.log.info("Starting fulfillment", {
             orderId: ctx.params.orderId,
             customerTier: ctx.params.customerTier,
         });
     },
-    onSuccess: async (ctx, result) => {
+    onSuccess: (ctx, result) => {
         ctx.state.set("audit", [...ctx.state.snapshot().audit, "flow-succeeded"]);
         ctx.log.info("Fulfillment finished", {
             status: result.status,
@@ -190,7 +190,7 @@ const fulfillmentFlow = defineFlow<FulfillmentParams, FulfillmentState>({
             skippedSteps: result.steps.filter((step) => step.status === "skipped").length,
         });
     },
-    onComplete: async (ctx, result) => {
+    onComplete: (ctx, result) => {
         ctx.state.set("audit", [...ctx.state.snapshot().audit, `flow-complete:${result.status}`]);
         ctx.log.info("Final snapshot", {
             status: result.status,

@@ -19,7 +19,7 @@ const syncUserFlow = defineFlow<SyncUserParams, SyncUserState>({
         auditTrail: [],
     },
     build: ({ step }) => [
-        step("fetch-user", async (ctx) => {
+        step("fetch-user", (ctx) => {
             ctx.log.info("Fetching user", { userId: ctx.params.userId });
             ctx.state.set("user", {
                 id: ctx.params.userId,
@@ -27,7 +27,7 @@ const syncUserFlow = defineFlow<SyncUserParams, SyncUserState>({
                 active: true,
             });
         }),
-        step("validate-user", async (ctx) => {
+        step("validate-user", (ctx) => {
             const user = ctx.state.get("user");
             if (!user) {
                 throw new Error("User was not loaded");
@@ -43,13 +43,13 @@ const syncUserFlow = defineFlow<SyncUserParams, SyncUserState>({
                 ctx.state.set("auditTrail", audit);
             }
         }),
-        step("save-user", async (ctx) => {
+        step("save-user", (ctx) => {
             const user = ctx.state.get("user");
             ctx.log.info("Saving user", { userId: user?.id });
             ctx.state.set("saved", true);
         }),
     ],
-    onSuccess: async (ctx, result) => {
+    onSuccess: (ctx, result) => {
         ctx.log.info("Flow completed", {
             status: result.status,
             steps: result.steps.length,

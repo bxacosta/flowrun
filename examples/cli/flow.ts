@@ -41,21 +41,21 @@ export const cliImportFlow = defineFlow<CliImportParams, CliImportState>({
         }),
         buildManifestStep,
     ],
-    onStart: async (ctx) => {
+    onStart: (ctx) => {
         appendAudit(ctx.state, "flow-started");
         ctx.log.info("CLI demo started", {
             source: ctx.params.source,
             interactive: ctx.params.interactive,
         });
     },
-    onSuccess: async (ctx, result) => {
+    onSuccess: (ctx, result) => {
         appendAudit(ctx.state, "flow-succeeded");
         ctx.log.info("CLI demo finished", {
             status: result.status,
             uploadedBatches: countUploadedBatches(result.state),
         });
     },
-    onComplete: async (ctx, result) => {
+    onComplete: (ctx, result) => {
         appendAudit(ctx.state, `flow-complete:${result.status}`);
     },
 });

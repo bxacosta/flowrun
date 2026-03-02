@@ -20,7 +20,7 @@ const importFlow = defineFlow<ImportParams, ImportState>({
             "load-customer-data",
             [
                 sequence("profile-pipeline", [
-                    step("fetch-profile", async (ctx) => {
+                    step("fetch-profile", (ctx) => {
                         ctx.log.info("Loading profile", { source: ctx.params.source });
                         ctx.state.set("profile", {
                             name: "Grace Hopper",
@@ -29,10 +29,10 @@ const importFlow = defineFlow<ImportParams, ImportState>({
                     }),
                 ]),
                 sequence("analytics-pipeline", [
-                    step("fetch-stats", async (ctx) => {
+                    step("fetch-stats", (ctx) => {
                         ctx.state.set("stats", { visits: 128 });
                     }),
-                    step("fetch-tags", async (ctx) => {
+                    step("fetch-tags", (ctx) => {
                         ctx.state.set("tags", ["vip", "newsletter"]);
                     }),
                 ]),
@@ -44,7 +44,7 @@ const importFlow = defineFlow<ImportParams, ImportState>({
         ),
         step(
             "persist-import",
-            async (ctx) => {
+            (ctx) => {
                 ctx.log.info("Persisting import", ctx.state.snapshot());
                 ctx.state.set("imported", true);
             },

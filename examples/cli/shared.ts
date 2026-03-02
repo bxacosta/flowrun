@@ -1,5 +1,4 @@
 import type { Middleware } from "../../src";
-import { sleep } from "../shared/runtime.ts";
 
 export interface CliImportParams {
     interactive: boolean;
@@ -80,5 +79,3 @@ export const timingMiddleware: Middleware<CliImportParams, CliImportState> = asy
         durationMs: Date.now() - startedAt,
     });
 };
-
-export { sleep };
