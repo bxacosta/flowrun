@@ -1,14 +1,14 @@
-import {describe, expect, test} from "bun:test";
-import {CompositeReporter} from "../../src";
-import {SpyReporter} from "../helpers/test-helpers.ts";
+import { describe, expect, test } from "bun:test";
+import { CompositeReporter } from "../../src";
+import { SpyReporter } from "../helpers/test-helpers.ts";
 
 describe("CompositeReporter", () => {
     test("routes events to every reporter that matches", () => {
         const a = new SpyReporter();
         const b = new SpyReporter();
         const composite = new CompositeReporter([
-            {reporter: a},
-            {reporter: b, filter: (event) => event.kind !== "log"},
+            { reporter: a },
+            { reporter: b, filter: (event) => event.kind !== "log" },
         ]);
 
         composite.report({
@@ -34,7 +34,7 @@ describe("CompositeReporter", () => {
                     },
                 },
             },
-            {reporter: good},
+            { reporter: good },
         ]);
 
         composite.report({

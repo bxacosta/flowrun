@@ -1,17 +1,16 @@
-import type {EngineEvent} from "./events.ts";
+import type { EngineEvent } from "./events.ts";
 
 export interface Reporter {
     report(event: EngineEvent): void;
 }
 
 export interface ReporterRoute {
-    reporter: Reporter;
     filter?: (event: EngineEvent) => boolean;
+    reporter: Reporter;
 }
 
 export class NoopReporter implements Reporter {
-    report(_event: EngineEvent): void {
-    }
+    report(_event: EngineEvent): void {}
 }
 
 export class CompositeReporter implements Reporter {

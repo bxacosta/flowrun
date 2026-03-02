@@ -18,7 +18,7 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
                 clearTimeout(timer);
                 reject(new Error("Operation aborted"));
             },
-            {once: true},
+            { once: true }
         );
     });
 }

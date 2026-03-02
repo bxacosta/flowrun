@@ -1,33 +1,33 @@
-import {FlowEngine, defineFlow, type Middleware} from "../src";
-import {ConsoleReporter} from "./shared/reporter.ts";
-import {sleep} from "./shared/runtime.ts";
+import { defineFlow, FlowEngine, type Middleware } from "../src";
+import { ConsoleReporter } from "./shared/reporter.ts";
+import { sleep } from "./shared/runtime.ts";
 
 interface FulfillmentParams {
-    orderId: string;
     customerTier: "standard" | "vip";
+    orderId: string;
 }
 
 interface FulfillmentState {
     audit: string[];
+    finalized?: boolean;
+    fraudScore?: number;
+    inventory?: Array<{ sku: string; reserved: boolean }>;
     order?: {
         id: string;
         customerId: string;
         items: Array<{ sku: string; quantity: number; unitPrice: number }>;
     };
-    inventory?: Array<{ sku: string; reserved: boolean }>;
     pricing?: {
         subtotal: number;
         discount: number;
         total: number;
     };
-    fraudScore?: number;
+    recommendations?: string[];
     shipmentQuote?: {
         carrier: string;
         etaDays: number;
         amount: number;
     };
-    recommendations?: string[];
-    finalized?: boolean;
 }
 
 const timingMiddleware: Middleware<FulfillmentParams, FulfillmentState> = async (ctx, next) => {
@@ -48,15 +48,15 @@ const fulfillmentFlow = defineFlow<FulfillmentParams, FulfillmentState>({
         audit: [],
     },
     middleware: [timingMiddleware],
-    build: ({parallel, sequence, step}) => [
+    build: ({ parallel, sequence, step }) => [
         step("load-order", async (ctx) => {
             await sleep(80, ctx.signal);
             ctx.state.set("order", {
                 id: ctx.params.orderId,
                 customerId: "customer-77",
                 items: [
-                    {sku: "keyboard", quantity: 1, unitPrice: 120},
-                    {sku: "mouse", quantity: 2, unitPrice: 35},
+                    { sku: "keyboard", quantity: 1, unitPrice: 120 },
+                    { sku: "mouse", quantity: 2, unitPrice: 35 },
                 ],
             });
         }),
@@ -73,7 +73,7 @@ const fulfillmentFlow = defineFlow<FulfillmentParams, FulfillmentState>({
 
                         ctx.state.set(
                             "inventory",
-                            order.items.map((item) => ({sku: item.sku, reserved: true})),
+                            order.items.map((item) => ({ sku: item.sku, reserved: true }))
                         );
                     }),
                 ]),
@@ -85,10 +85,7 @@ const fulfillmentFlow = defineFlow<FulfillmentParams, FulfillmentState>({
                             throw new Error("Order is missing");
                         }
 
-                        const subtotal = order.items.reduce(
-                            (sum, item) => sum + item.quantity * item.unitPrice,
-                            0,
-                        );
+                        const subtotal = order.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
                         const discount = ctx.params.customerTier === "vip" ? 40 : 0;
 
                         ctx.state.set("pricing", {
@@ -116,7 +113,7 @@ const fulfillmentFlow = defineFlow<FulfillmentParams, FulfillmentState>({
                                     await next();
                                 },
                             ],
-                        },
+                        }
                     ),
                 ]),
                 sequence("risk-pipeline", [
@@ -133,14 +130,14 @@ const fulfillmentFlow = defineFlow<FulfillmentParams, FulfillmentState>({
                         {
                             timeoutMs: 100,
                             onError: "skip",
-                        },
+                        }
                     ),
                 ]),
             ],
             {
                 concurrency: 2,
                 mode: "all-settled",
-            },
+            }
         ),
         step("approve-order", async (ctx) => {
             const fraudScore = ctx.state.get("fraudScore") ?? 1;
@@ -174,7 +171,7 @@ const fulfillmentFlow = defineFlow<FulfillmentParams, FulfillmentState>({
                     delayMs: 150,
                     strategy: "exponential",
                 },
-            },
+            }
         ),
     ],
     onStart: async (ctx) => {
@@ -212,9 +209,15 @@ const result = await engine.run(fulfillmentFlow, {
 });
 
 console.log("\nFinal result:");
-console.log(JSON.stringify({
-    status: result.status,
-    durationMs: result.durationMs,
-    steps: result.steps,
-    state: result.state,
-}, null, 2));
+console.log(
+    JSON.stringify(
+        {
+            status: result.status,
+            durationMs: result.durationMs,
+            steps: result.steps,
+            state: result.state,
+        },
+        null,
+        2
+    )
+);

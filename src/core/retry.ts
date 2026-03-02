@@ -1,12 +1,10 @@
-import {StepTimeoutError} from "./errors.ts";
-import type {RetryPolicy} from "./types.ts";
+import { StepTimeoutError } from "./errors.ts";
+import type { RetryPolicy } from "./types.ts";
 
 export function computeRetryDelay(policy: RetryPolicy, attemptIndex: number): number {
     const baseDelay = policy.delayMs ?? 0;
     const strategy = policy.strategy ?? "constant";
-    const rawDelay = strategy === "exponential"
-        ? baseDelay * 2 ** attemptIndex
-        : baseDelay;
+    const rawDelay = strategy === "exponential" ? baseDelay * 2 ** attemptIndex : baseDelay;
 
     if (policy.maxDelayMs === undefined) {
         return rawDelay;
@@ -39,7 +37,7 @@ export async function wait(delayMs: number, signal?: AbortSignal): Promise<void>
                 clearTimeout(timer);
                 reject(signal.reason);
             },
-            {once: true},
+            { once: true }
         );
     });
 }
@@ -56,11 +54,7 @@ export function createLinkedAbortController(parentSignal?: AbortSignal): AbortCo
         return controller;
     }
 
-    parentSignal.addEventListener(
-        "abort",
-        () => controller.abort(parentSignal.reason),
-        {once: true},
-    );
+    parentSignal.addEventListener("abort", () => controller.abort(parentSignal.reason), { once: true });
 
     return controller;
 }
@@ -69,7 +63,7 @@ export async function runWithTimeout<T>(
     operation: Promise<T>,
     timeoutMs: number,
     stepName: string,
-    onTimeout: () => void,
+    onTimeout: () => void
 ): Promise<T> {
     return await new Promise<T>((resolve, reject) => {
         const timer = setTimeout(() => {
@@ -85,7 +79,7 @@ export async function runWithTimeout<T>(
             (error) => {
                 clearTimeout(timer);
                 reject(error);
-            },
+            }
         );
     });
 }

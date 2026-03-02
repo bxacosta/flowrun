@@ -1,4 +1,4 @@
-import {FlowEngineError} from "./errors.ts";
+import { FlowEngineError } from "./errors.ts";
 import type {
     FlowBuilder,
     FlowDefinition,
@@ -17,7 +17,7 @@ import type {
 export function step<TParams, TState extends StateShape>(
     id: string,
     run: StepHandler<TParams, TState>,
-    options: StepOptions<TParams, TState> = {},
+    options: StepOptions<TParams, TState> = {}
 ): StepNode<TParams, TState> {
     return {
         kind: "step",
@@ -34,7 +34,7 @@ export function step<TParams, TState extends StateShape>(
 export function sequence<TParams, TState extends StateShape>(
     id: string,
     nodes: FlowNode<TParams, TState>[],
-    options: SequenceOptions = {},
+    options: SequenceOptions = {}
 ): SequenceNode<TParams, TState> {
     return {
         kind: "sequence",
@@ -47,12 +47,10 @@ export function sequence<TParams, TState extends StateShape>(
 export function parallel<TParams, TState extends StateShape>(
     id: string,
     nodes: FlowNode<TParams, TState>[],
-    options: ParallelOptions<TState> = {},
+    options: ParallelOptions<TState> = {}
 ): ParallelNode<TParams, TState> {
     if (options.concurrency !== undefined && options.concurrency <= 0) {
-        throw new FlowEngineError(
-            `parallel("${id}") requires concurrency > 0 when provided`,
-        );
+        throw new FlowEngineError(`parallel("${id}") requires concurrency > 0 when provided`);
     }
 
     return {
@@ -69,10 +67,7 @@ export function parallel<TParams, TState extends StateShape>(
     };
 }
 
-export function createFlowBuilder<TParams, TState extends StateShape>(): FlowBuilder<
-    TParams,
-    TState
-> {
+export function createFlowBuilder<TParams, TState extends StateShape>(): FlowBuilder<TParams, TState> {
     return {
         step: (id, run, options) => step<TParams, TState>(id, run, options),
         sequence: (id, nodes, options) => sequence<TParams, TState>(id, nodes, options),
@@ -81,7 +76,7 @@ export function createFlowBuilder<TParams, TState extends StateShape>(): FlowBui
 }
 
 export function defineFlow<TParams, TState extends StateShape>(
-    input: FlowDefinitionInput<TParams, TState>,
+    input: FlowDefinitionInput<TParams, TState>
 ): FlowDefinition<TParams, TState> {
     const builder = createFlowBuilder<TParams, TState>();
     const steps = input.steps ?? input.build?.(builder);

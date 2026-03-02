@@ -1,13 +1,18 @@
-export {FlowEngine} from "./core/engine.ts";
-
-export {defineFlow, parallel, sequence, step} from "./core/composability.ts";
-
-export {CompositeReporter, NoopReporter} from "./core/reporter.ts";
-
-export type {Reporter, ReporterRoute} from "./core/reporter.ts";
-
-export {FlowEngineError, ParallelMergeError, StepTimeoutError} from "./core/errors.ts";
-
+export { defineFlow, parallel, sequence, step } from "./core/composability.ts";
+export { FlowEngine } from "./core/engine.ts";
+export { FlowEngineError, ParallelMergeError, StepTimeoutError } from "./core/errors.ts";
+export type {
+    EngineEvent,
+    FlowEndEvent,
+    FlowStartEvent,
+    LogEvent,
+    LogLevel,
+    StepEndEvent,
+    StepRetryEvent,
+    StepStartEvent,
+} from "./core/events.ts";
+export type { Reporter, ReporterRoute } from "./core/reporter.ts";
+export { CompositeReporter, NoopReporter } from "./core/reporter.ts";
 export type {
     ErrorMeta,
     ErrorResolution,
@@ -39,14 +44,3 @@ export type {
     StepRunResult,
     StepStatus,
 } from "./core/types.ts";
-
-export type {
-    EngineEvent,
-    FlowEndEvent,
-    FlowStartEvent,
-    LogEvent,
-    LogLevel,
-    StepEndEvent,
-    StepRetryEvent,
-    StepStartEvent,
-} from "./core/events.ts";

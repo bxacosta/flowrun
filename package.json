@@ -3,7 +3,7 @@
   "module": "index.ts",
   "type": "module",
   "scripts": {
-    "check": "bun x tsc --noEmit",
+    "check": "ultracite check && bun x tsc --noEmit",
     "test": "bun test tests/",
     "test:unit": "bun test tests/unit/",
     "test:watch": "bun test tests/ --watch",
@@ -11,10 +11,13 @@
     "example:basic": "bun run examples/basic.ts",
     "example:cli": "bun run examples/cli/index.ts",
     "example:complete": "bun run examples/complete.ts",
-    "example:parallel": "bun run examples/parallel.ts"
+    "example:parallel": "bun run examples/parallel.ts",
+    "fix": "ultracite fix"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@biomejs/biome": "2.4.5",
+    "@types/bun": "latest",
+    "ultracite": "7.2.5"
   },
   "peerDependencies": {
     "typescript": "^5"

@@ -1,11 +1,9 @@
-import {describe, expect, test} from "bun:test";
-import {defineFlow, parallel, sequence, step} from "../../src";
-import {FlowEngineError} from "../../src";
+import { describe, expect, test } from "bun:test";
+import { defineFlow, FlowEngineError, parallel, sequence, step } from "../../src";
 
 describe("composability", () => {
     test("step creates a step node with sensible defaults", () => {
-        const node = step("fetch-user", async () => {
-        });
+        const node = step("fetch-user", async () => {});
 
         expect(node.kind).toBe("step");
         expect(node.id).toBe("fetch-user");
@@ -14,10 +12,9 @@ describe("composability", () => {
     });
 
     test("sequence and parallel preserve child nodes", () => {
-        const child = step("child", async () => {
-        });
-        const seq = sequence("seq", [child], {name: "My Sequence"});
-        const par = parallel("par", [child], {name: "My Parallel", concurrency: 2, mode: "all-settled"});
+        const child = step("child", async () => {});
+        const seq = sequence("seq", [child], { name: "My Sequence" });
+        const par = parallel("par", [child], { name: "My Parallel", concurrency: 2, mode: "all-settled" });
 
         expect(seq).toEqual({
             kind: "sequence",
@@ -34,13 +31,13 @@ describe("composability", () => {
     });
 
     test("parallel rejects invalid concurrency", () => {
-        expect(() => parallel("bad", [], {concurrency: 0})).toThrow(FlowEngineError);
+        expect(() => parallel("bad", [], { concurrency: 0 })).toThrow(FlowEngineError);
     });
 
     test("defineFlow supports builder-based declaration", () => {
         const flow = defineFlow<{ userId: string }, { saved?: boolean }>({
             id: "sync-user",
-            build: ({step}) => [
+            build: ({ step }) => [
                 step("save", async (ctx) => {
                     expect(ctx.params.userId).toBeString();
                     ctx.state.set("saved", true);
@@ -55,6 +52,6 @@ describe("composability", () => {
     });
 
     test("defineFlow rejects flows without nodes", () => {
-        expect(() => defineFlow({id: "empty", steps: []})).toThrow(FlowEngineError);
+        expect(() => defineFlow({ id: "empty", steps: [] })).toThrow(FlowEngineError);
     });
 });

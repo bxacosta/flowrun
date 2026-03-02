@@ -1,11 +1,11 @@
-import {describe, expect, test} from "bun:test";
-import {FlowEngine, defineFlow, parallel} from "../../src";
-import {SpyReporter, sleep} from "../helpers/test-helpers.ts";
+import { describe, expect, test } from "bun:test";
+import { defineFlow, FlowEngine, parallel } from "../../src";
+import { SpyReporter, sleep } from "../helpers/test-helpers.ts";
 
 describe("FlowEngine", () => {
     test("runs a simple registered flow and emits lifecycle events", async () => {
         const reporter = new SpyReporter();
-        const engine = new FlowEngine({reporter});
+        const engine = new FlowEngine({ reporter });
         const flow = defineFlow<{ userId: string }, { userId?: string; saved?: boolean }>({
             id: "sync-user",
             steps: [
@@ -35,10 +35,10 @@ describe("FlowEngine", () => {
 
         engine.register(flow);
 
-        const result = await engine.run("sync-user", {userId: "u1"});
+        const result = await engine.run("sync-user", { userId: "u1" });
 
         expect(result.status).toBe("completed");
-        expect(result.state).toEqual({userId: "u1", saved: true});
+        expect(result.state).toEqual({ userId: "u1", saved: true });
         expect(result.steps.map((step) => step.status)).toEqual(["completed", "completed"]);
         expect(reporter.byKind("flow:start")).toHaveLength(1);
         expect(reporter.byKind("flow:end")).toHaveLength(1);
@@ -56,7 +56,7 @@ describe("FlowEngine", () => {
                     kind: "step",
                     id: "flaky",
                     name: "flaky",
-                    retry: {attempts: 3, delayMs: 1},
+                    retry: { attempts: 3, delayMs: 1 },
                     use: [],
                     run: async (ctx) => {
                         attempts += 1;
@@ -175,7 +175,7 @@ describe("FlowEngine", () => {
         const engine = new FlowEngine();
         const flow = defineFlow<undefined, { order?: string[] }>({
             id: "pause-flow",
-            initialState: {order: []},
+            initialState: { order: [] },
             steps: [
                 {
                     kind: "step",
@@ -215,26 +215,30 @@ describe("FlowEngine", () => {
         const flow = defineFlow<undefined, { value?: number }>({
             id: "parallel-collision",
             steps: [
-                parallel("collision", [
-                    {
-                        kind: "step",
-                        id: "a",
-                        name: "a",
-                        use: [],
-                        run: async (ctx) => {
-                            ctx.state.set("value", 1);
+                parallel(
+                    "collision",
+                    [
+                        {
+                            kind: "step",
+                            id: "a",
+                            name: "a",
+                            use: [],
+                            run: async (ctx) => {
+                                ctx.state.set("value", 1);
+                            },
                         },
-                    },
-                    {
-                        kind: "step",
-                        id: "b",
-                        name: "b",
-                        use: [],
-                        run: async (ctx) => {
-                            ctx.state.set("value", 2);
+                        {
+                            kind: "step",
+                            id: "b",
+                            name: "b",
+                            use: [],
+                            run: async (ctx) => {
+                                ctx.state.set("value", 2);
+                            },
                         },
-                    },
-                ], {mode: "all-settled"}),
+                    ],
+                    { mode: "all-settled" }
+                ),
             ],
         });
 
@@ -248,7 +252,7 @@ describe("FlowEngine", () => {
         const engine = new FlowEngine();
         const flow = defineFlow<undefined, { audit: string[] }>({
             id: "hooks-final-state",
-            initialState: {audit: []},
+            initialState: { audit: [] },
             steps: [
                 {
                     kind: "step",
@@ -278,29 +282,33 @@ describe("FlowEngine", () => {
         const flow = defineFlow<undefined, { audit?: string[] }>({
             id: "parallel-append",
             steps: [
-                parallel("append", [
-                    {
-                        kind: "step",
-                        id: "a",
-                        name: "a",
-                        use: [],
-                        run: async (ctx) => {
-                            ctx.state.set("audit", ["a"]);
+                parallel(
+                    "append",
+                    [
+                        {
+                            kind: "step",
+                            id: "a",
+                            name: "a",
+                            use: [],
+                            run: async (ctx) => {
+                                ctx.state.set("audit", ["a"]);
+                            },
                         },
-                    },
-                    {
-                        kind: "step",
-                        id: "b",
-                        name: "b",
-                        use: [],
-                        run: async (ctx) => {
-                            ctx.state.set("audit", ["b"]);
+                        {
+                            kind: "step",
+                            id: "b",
+                            name: "b",
+                            use: [],
+                            run: async (ctx) => {
+                                ctx.state.set("audit", ["b"]);
+                            },
                         },
-                    },
-                ], {
-                    mode: "all-settled",
-                    merge: {strategy: "arrays"},
-                }),
+                    ],
+                    {
+                        mode: "all-settled",
+                        merge: { strategy: "arrays" },
+                    }
+                ),
             ],
         });
 
@@ -312,7 +320,7 @@ describe("FlowEngine", () => {
 
     test("emits attempt events for retries", async () => {
         const reporter = new SpyReporter();
-        const engine = new FlowEngine({reporter});
+        const engine = new FlowEngine({ reporter });
         let attempts = 0;
 
         const flow = defineFlow<undefined, {}>({
@@ -322,7 +330,7 @@ describe("FlowEngine", () => {
                     kind: "step",
                     id: "retrying",
                     name: "retrying",
-                    retry: {attempts: 2, delayMs: 1},
+                    retry: { attempts: 2, delayMs: 1 },
                     use: [],
                     run: async () => {
                         attempts += 1;

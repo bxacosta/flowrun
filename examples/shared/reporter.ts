@@ -1,4 +1,4 @@
-import type {EngineEvent, LogEvent, Reporter} from "../../src";
+import type { EngineEvent, LogEvent, Reporter } from "../../src";
 
 const COLORS = {
     reset: "\x1b[0m",
@@ -31,48 +31,37 @@ export class ConsoleReporter implements Reporter {
 
         switch (event.kind) {
             case "flow:start":
-                console.log(
-                    `${prefix} ${colorize("cyan", "FLOW START")} ${event.flowName}`,
-                    formatData(event.params),
-                );
+                console.log(`${prefix} ${colorize("cyan", "FLOW START")} ${event.flowName}`, formatData(event.params));
                 return;
             case "flow:end": {
-                const color = event.status === "completed"
-                    ? "green"
-                    : event.status === "cancelled"
-                        ? "yellow"
-                        : "red";
+                const color = event.status === "completed" ? "green" : event.status === "cancelled" ? "yellow" : "red";
                 console.log(
                     `${prefix} ${colorize(color, `FLOW ${event.status.toUpperCase()}`)}`,
                     colorize("dim", `(${event.durationMs}ms)`),
-                    event.stopReason ?? event.cancelReason ?? event.error?.message ?? "",
+                    event.stopReason ?? event.cancelReason ?? event.error?.message ?? ""
                 );
                 return;
             }
             case "step:start":
                 console.log(
                     `${prefix} ${colorize("blue", "STEP START")} ${event.stepName}`,
-                    colorize("dim", `${event.attempt}/${event.attempts}`),
+                    colorize("dim", `${event.attempt}/${event.attempts}`)
                 );
                 return;
             case "step:retry":
                 console.log(
                     `${prefix} ${colorize("yellow", "STEP RETRY")} ${event.stepName}`,
                     colorize("dim", `${event.attempt}/${event.attempts}`),
-                    colorize("red", event.error.message),
+                    colorize("red", event.error.message)
                 );
                 return;
             case "step:end": {
-                const color = event.status === "completed"
-                    ? "green"
-                    : event.status === "skipped"
-                        ? "yellow"
-                        : "red";
+                const color = event.status === "completed" ? "green" : event.status === "skipped" ? "yellow" : "red";
                 console.log(
                     `${prefix} ${colorize(color, `STEP ${event.status.toUpperCase()}`)} ${event.stepName}`,
                     colorize("dim", `${event.attempt}/${event.attempts}`),
                     colorize("dim", `(${event.durationMs}ms)`),
-                    event.error?.message ?? "",
+                    event.error?.message ?? ""
                 );
                 return;
             }

@@ -1,9 +1,9 @@
-import {createBranchFlowContext, createFlowContext, createStepContext,} from "./context.ts";
-import {FlowEngineError, FlowStopSignal} from "./errors.ts";
-import {compose} from "./middleware.ts";
-import {NoopReporter, type Reporter} from "./reporter.ts";
-import {computeRetryDelay, createLinkedAbortController, runWithTimeout, wait} from "./retry.ts";
-import {MemoryStateStore, mergeBranchChanges} from "./state.ts";
+import { createBranchFlowContext, createFlowContext, createStepContext } from "./context.ts";
+import { FlowEngineError, FlowStopSignal } from "./errors.ts";
+import { compose } from "./middleware.ts";
+import { NoopReporter, type Reporter } from "./reporter.ts";
+import { computeRetryDelay, createLinkedAbortController, runWithTimeout, wait } from "./retry.ts";
+import { MemoryStateStore, mergeBranchChanges } from "./state.ts";
 import type {
     ErrorMeta,
     ErrorResolution,
@@ -23,27 +23,27 @@ import type {
 } from "./types.ts";
 
 interface PauseGate {
+    pausedPromise: Promise<void>;
     promise: Promise<void>;
     resolve: () => void;
-    pausedPromise: Promise<void>;
     resolvePaused: () => void;
 }
 
 interface ActiveRun<TParams, TState extends StateShape> {
-    runId: string;
-    flow: FlowDefinition<TParams, TState>;
-    reporter: Reporter;
-    state: MemoryStateStore<TState>;
-    context: FlowContext<TParams, TState>;
     abortController: AbortController;
-    status: FlowStatus;
-    pauseGate: PauseGate | null;
-    stopReason?: string;
-    failure?: Error;
     completionPromise: Promise<RunResult<TState>>;
-    resolveCompletion: (result: RunResult<TState>) => void;
+    context: FlowContext<TParams, TState>;
+    failure?: Error;
+    flow: FlowDefinition<TParams, TState>;
+    pauseGate: PauseGate | null;
     rejectCompletion: (error: unknown) => void;
+    reporter: Reporter;
+    resolveCompletion: (result: RunResult<TState>) => void;
+    runId: string;
+    state: MemoryStateStore<TState>;
+    status: FlowStatus;
     stepResults: StepRunResult[];
+    stopReason?: string;
 }
 
 interface BranchResult<TState extends StateShape> {
@@ -60,7 +60,7 @@ export class FlowEngine {
     }
 
     register<TParams, TState extends StateShape>(
-        flow: FlowDefinition<TParams, TState>,
+        flow: FlowDefinition<TParams, TState>
     ): FlowDefinition<TParams, TState> {
         if (this.flows.has(flow.id)) {
             throw new FlowEngineError(`Flow "${flow.id}" is already registered`);
@@ -72,7 +72,7 @@ export class FlowEngine {
 
     start<TParams, TState extends StateShape>(
         flowOrId: string | FlowDefinition<TParams, TState>,
-        params: TParams,
+        params: TParams
     ): FlowHandle<TState> {
         const flow = this.resolveFlow(flowOrId);
         const runId = crypto.randomUUID();
@@ -121,13 +121,13 @@ export class FlowEngine {
 
     async run<TParams, TState extends StateShape>(
         flowOrId: string | FlowDefinition<TParams, TState>,
-        params: TParams,
+        params: TParams
     ): Promise<RunResult<TState>> {
         return await this.start(flowOrId, params).join();
     }
 
     private resolveFlow<TParams, TState extends StateShape>(
-        flowOrId: string | FlowDefinition<TParams, TState>,
+        flowOrId: string | FlowDefinition<TParams, TState>
     ): FlowDefinition<TParams, TState> {
         if (typeof flowOrId !== "string") {
             return flowOrId;
@@ -142,19 +142,17 @@ export class FlowEngine {
     }
 
     private resolveInitialState<TState extends StateShape>(
-        flow: FlowDefinition<any, TState>,
+        flow: FlowDefinition<any, TState>
     ): Partial<TState> | undefined {
         if (!flow.initialState) {
             return undefined;
         }
 
-        return typeof flow.initialState === "function"
-            ? flow.initialState()
-            : flow.initialState;
+        return typeof flow.initialState === "function" ? flow.initialState() : flow.initialState;
     }
 
     private async executeFlow<TParams, TState extends StateShape>(
-        activeRun: ActiveRun<TParams, TState>,
+        activeRun: ActiveRun<TParams, TState>
     ): Promise<void> {
         const startedAt = Date.now();
         let finalStatus: RunCompletionStatus = "completed";
@@ -180,7 +178,7 @@ export class FlowEngine {
             if (finalStatus === "completed") {
                 await activeRun.flow.onSuccess?.(
                     activeRun.context,
-                    this.buildRunResult(activeRun, finalStatus, startedAt),
+                    this.buildRunResult(activeRun, finalStatus, startedAt)
                 );
             }
         } catch (error) {
@@ -191,7 +189,7 @@ export class FlowEngine {
                 if (finalStatus === "completed") {
                     await activeRun.flow.onSuccess?.(
                         activeRun.context,
-                        this.buildRunResult(activeRun, finalStatus, startedAt),
+                        this.buildRunResult(activeRun, finalStatus, startedAt)
                     );
                 }
             } else {
@@ -252,7 +250,7 @@ export class FlowEngine {
     private async executeNodes<TParams, TState extends StateShape>(
         nodes: FlowNode<TParams, TState>[],
         context: FlowContext<TParams, TState>,
-        activeRun: ActiveRun<TParams, TState>,
+        activeRun: ActiveRun<TParams, TState>
     ): Promise<void> {
         for (const node of nodes) {
             if (activeRun.abortController.signal.aborted) {
@@ -267,7 +265,7 @@ export class FlowEngine {
     private async executeNode<TParams, TState extends StateShape>(
         node: FlowNode<TParams, TState>,
         context: FlowContext<TParams, TState>,
-        activeRun: ActiveRun<TParams, TState>,
+        activeRun: ActiveRun<TParams, TState>
     ): Promise<void> {
         switch (node.kind) {
             case "step":
@@ -285,7 +283,7 @@ export class FlowEngine {
     private async executeStep<TParams, TState extends StateShape>(
         step: StepNode<TParams, TState>,
         context: FlowContext<TParams, TState>,
-        activeRun: ActiveRun<TParams, TState>,
+        activeRun: ActiveRun<TParams, TState>
     ): Promise<void> {
         const startedAt = Date.now();
         const flowMiddleware = activeRun.flow.middleware ?? [];
@@ -300,9 +298,9 @@ export class FlowEngine {
             const stepContext = createStepContext(
                 context,
                 activeRun.reporter,
-                {id: step.id, name: step.name},
+                { id: step.id, name: step.name },
                 attempt,
-                attemptController.signal,
+                attemptController.signal
             );
 
             this.reporter.report({
@@ -394,7 +392,7 @@ export class FlowEngine {
                         error: lastError,
                     });
 
-                    const delayMs = computeRetryDelay(step.retry ?? {attempts}, attempt - 1);
+                    const delayMs = computeRetryDelay(step.retry ?? { attempts }, attempt - 1);
 
                     this.reporter.report({
                         kind: "step:retry",
@@ -477,7 +475,7 @@ export class FlowEngine {
     private async executeParallel<TParams, TState extends StateShape>(
         node: ParallelNode<TParams, TState>,
         context: FlowContext<TParams, TState>,
-        activeRun: ActiveRun<TParams, TState>,
+        activeRun: ActiveRun<TParams, TState>
     ): Promise<void> {
         const groupController = createLinkedAbortController(context.signal);
         const concurrency = Math.max(1, node.concurrency ?? node.nodes.length);
@@ -487,20 +485,18 @@ export class FlowEngine {
                 context,
                 activeRun.reporter,
                 branchState,
-                groupController.signal,
+                groupController.signal
             );
 
             await this.executeNode(child, branchContext, activeRun);
-            return {patch: branchState.changes()};
+            return { patch: branchState.changes() };
         });
 
         const settled = await this.runTaskPool(tasks, concurrency, node.mode, (error) => {
             groupController.abort(this.toError(error).message);
         });
 
-        const failures = settled.filter(
-            (entry): entry is PromiseRejectedResult => entry.status === "rejected",
-        );
+        const failures = settled.filter((entry): entry is PromiseRejectedResult => entry.status === "rejected");
 
         if (failures.length > 0) {
             if (failures[0]?.reason instanceof FlowStopSignal) {
@@ -514,7 +510,7 @@ export class FlowEngine {
             if (node.mode === "all-settled") {
                 throw new AggregateError(
                     failures.map((failure) => failure.reason),
-                    `${failures.length} parallel branch(es) failed`,
+                    `${failures.length} parallel branch(es) failed`
                 );
             }
 
@@ -532,7 +528,7 @@ export class FlowEngine {
         tasks: Array<() => Promise<T>>,
         concurrency: number,
         mode: "fail-fast" | "all-settled",
-        onFailure: (error: unknown) => void,
+        onFailure: (error: unknown) => void
     ): Promise<Array<PromiseSettledResult<T>>> {
         const results: Array<PromiseSettledResult<T>> = new Array(tasks.length);
         let nextIndex = 0;
@@ -548,9 +544,9 @@ export class FlowEngine {
 
                 try {
                     const value = await tasks[currentIndex]!();
-                    results[currentIndex] = {status: "fulfilled", value};
+                    results[currentIndex] = { status: "fulfilled", value };
                 } catch (error) {
-                    results[currentIndex] = {status: "rejected", reason: error};
+                    results[currentIndex] = { status: "rejected", reason: error };
                     onFailure(error);
 
                     if (mode === "fail-fast") {
@@ -560,10 +556,7 @@ export class FlowEngine {
             }
         };
 
-        const workers = Array.from(
-            {length: Math.min(concurrency, tasks.length)},
-            () => worker(),
-        );
+        const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, () => worker());
 
         await Promise.allSettled(workers);
         return results.filter(Boolean);
@@ -573,7 +566,7 @@ export class FlowEngine {
         step: StepNode<TParams, TState>,
         error: Error,
         context: StepContext<TParams, TState>,
-        meta: ErrorMeta,
+        meta: ErrorMeta
     ): Promise<ErrorResolution> {
         if (!step.onError) {
             return "fail";
@@ -596,7 +589,7 @@ export class FlowEngine {
     private buildRunResult<TParams, TState extends StateShape>(
         activeRun: ActiveRun<TParams, TState>,
         status: RunCompletionStatus,
-        startedAt: number,
+        startedAt: number
     ): RunResult<TState> {
         return {
             flowId: activeRun.flow.id,
@@ -608,14 +601,13 @@ export class FlowEngine {
             steps: [...activeRun.stepResults],
             error: status === "failed" ? activeRun.failure : undefined,
             stopReason: activeRun.stopReason,
-            cancelReason: status === "cancelled"
-                ? String(activeRun.abortController.signal.reason ?? "Cancelled")
-                : undefined,
+            cancelReason:
+                status === "cancelled" ? String(activeRun.abortController.signal.reason ?? "Cancelled") : undefined,
         };
     }
 
     private async awaitPauseIfNeeded<TParams, TState extends StateShape>(
-        activeRun: ActiveRun<TParams, TState>,
+        activeRun: ActiveRun<TParams, TState>
     ): Promise<void> {
         if (!activeRun.pauseGate) {
             return;
@@ -629,16 +621,13 @@ export class FlowEngine {
     }
 
     private createPauseGate(): PauseGate {
-        const {promise, resolve} = Promise.withResolvers<void>();
-        const {
-            promise: pausedPromise,
-            resolve: resolvePaused,
-        } = Promise.withResolvers<void>();
-        return {promise, resolve, pausedPromise, resolvePaused};
+        const { promise, resolve } = Promise.withResolvers<void>();
+        const { promise: pausedPromise, resolve: resolvePaused } = Promise.withResolvers<void>();
+        return { promise, resolve, pausedPromise, resolvePaused };
     }
 
     private createRunHandle<TParams, TState extends StateShape>(
-        activeRun: ActiveRun<TParams, TState>,
+        activeRun: ActiveRun<TParams, TState>
     ): FlowHandle<TState> {
         return {
             runId: activeRun.runId,
@@ -647,9 +636,9 @@ export class FlowEngine {
             join: () => activeRun.completionPromise,
             cancel: async (reason?: string) => {
                 if (
-                    activeRun.status === "completed"
-                    || activeRun.status === "failed"
-                    || activeRun.status === "cancelled"
+                    activeRun.status === "completed" ||
+                    activeRun.status === "failed" ||
+                    activeRun.status === "cancelled"
                 ) {
                     return;
                 }

@@ -1,12 +1,12 @@
-import {describe, expect, test} from "bun:test";
-import {compose} from "../../src/core/middleware.ts";
-import {createFlowContext, createStepContext} from "../../src/core/context.ts";
-import {MemoryStateStore} from "../../src/core/state.ts";
-import {NoopReporter} from "../../src";
+import { describe, expect, test } from "bun:test";
+import { NoopReporter } from "../../src";
+import { createFlowContext, createStepContext } from "../../src/core/context.ts";
+import { compose } from "../../src/core/middleware.ts";
+import { MemoryStateStore } from "../../src/core/state.ts";
 
 interface MiddlewareState {
-    ran?: boolean;
     order?: string[];
+    ran?: boolean;
 }
 
 function makeStepContext() {
@@ -15,13 +15,13 @@ function makeStepContext() {
         flowId: "flow",
         flowName: "Flow",
         runId: "run",
-        params: {source: "test"},
+        params: { source: "test" },
         state: new MemoryStateStore<MiddlewareState>(),
         reporter,
         signal: new AbortController().signal,
     });
 
-    return createStepContext(base, reporter, {id: "step", name: "Step"}, 1, base.signal);
+    return createStepContext(base, reporter, { id: "step", name: "Step" }, 1, base.signal);
 }
 
 describe("middleware compose", () => {
@@ -72,7 +72,6 @@ describe("middleware compose", () => {
             },
         ]);
 
-        expect(pipeline(makeStepContext(), async () => {
-        })).rejects.toThrow("next() called multiple times");
+        expect(pipeline(makeStepContext(), async () => {})).rejects.toThrow("next() called multiple times");
     });
 });

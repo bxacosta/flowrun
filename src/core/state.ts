@@ -1,12 +1,11 @@
-import {ParallelMergeError} from "./errors.ts";
-import type {ParallelMergeConfig, StateShape, StateStore} from "./types.ts";
+import { ParallelMergeError } from "./errors.ts";
+import type { ParallelMergeConfig, StateShape, StateStore } from "./types.ts";
 
 function cloneState<T>(value: T): T {
     return structuredClone(value);
 }
 
-export class MemoryStateStore<TState extends StateShape = StateShape>
-    implements StateStore<TState> {
+export class MemoryStateStore<TState extends StateShape = StateShape> implements StateStore<TState> {
     private readonly values: TState;
     private readonly writes: Partial<TState> = {};
 
@@ -29,10 +28,9 @@ export class MemoryStateStore<TState extends StateShape = StateShape>
     }
 
     patch(values: Partial<TState>): void {
-        for (const [key, value] of Object.entries(values) as Array<[
-            keyof TState & string,
-            TState[keyof TState & string],
-        ]>) {
+        for (const [key, value] of Object.entries(values) as Array<
+            [keyof TState & string, TState[keyof TState & string]]
+        >) {
             const cloned = cloneState(value);
             this.values[key] = cloned;
             this.writes[key] = cloned;
@@ -54,7 +52,7 @@ export class MemoryStateStore<TState extends StateShape = StateShape>
 
 export function mergeBranchChanges<TState extends StateShape>(
     patches: Array<Partial<TState>>,
-    config: ParallelMergeConfig<TState> = {strategy: "strict"},
+    config: ParallelMergeConfig<TState> = { strategy: "strict" }
 ): Partial<TState> {
     const merged: Partial<TState> = {};
     const seen = new Map<string, unknown[]>();
@@ -72,7 +70,7 @@ export function mergeBranchChanges<TState extends StateShape>(
 
     for (const [key, values] of seen.entries()) {
         const distinctValues = values.filter(
-            (value, index) => values.findIndex((candidate) => Object.is(candidate, value)) === index,
+            (value, index) => values.findIndex((candidate) => Object.is(candidate, value)) === index
         );
 
         if (distinctValues.length <= 1) {
@@ -92,10 +90,7 @@ export function mergeBranchChanges<TState extends StateShape>(
 
         if (strategy === "custom" && config.resolver) {
             (merged as Record<string, unknown>)[key] = cloneState(
-                config.resolver(
-                    key as keyof TState & string,
-                    values as Array<TState[keyof TState & string]>,
-                ),
+                config.resolver(key as keyof TState & string, values as Array<TState[keyof TState & string]>)
             );
             continue;
         }

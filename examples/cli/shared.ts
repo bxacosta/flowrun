@@ -1,27 +1,27 @@
-import {type Middleware} from "../../src";
-import {sleep} from "../shared/runtime.ts";
+import type { Middleware } from "../../src";
+import { sleep } from "../shared/runtime.ts";
 
 export interface CliImportParams {
-    source: string;
     interactive: boolean;
+    source: string;
 }
 
 export interface CliImportState {
     audit: string[];
     batches?: string[];
     downloadedCustomers?: boolean;
-    downloadedOrders?: boolean;
     downloadedInvoices?: boolean;
-    validatedCustomers?: boolean;
-    validatedOrders?: boolean;
-    validatedInvoices?: boolean;
-    transformedCustomers?: boolean;
-    transformedOrders?: boolean;
-    transformedInvoices?: boolean;
-    uploadedCustomers?: boolean;
-    uploadedOrders?: boolean;
-    uploadedInvoices?: boolean;
+    downloadedOrders?: boolean;
     manifestReady?: boolean;
+    transformedCustomers?: boolean;
+    transformedInvoices?: boolean;
+    transformedOrders?: boolean;
+    uploadedCustomers?: boolean;
+    uploadedInvoices?: boolean;
+    uploadedOrders?: boolean;
+    validatedCustomers?: boolean;
+    validatedInvoices?: boolean;
+    validatedOrders?: boolean;
 }
 
 type Batch = "customers" | "orders" | "invoices";
@@ -52,7 +52,7 @@ const STAGE_KEYS: Record<Stage, Record<Batch, keyof CliImportState>> = {
 
 export function appendAudit(
     state: { snapshot(): Readonly<CliImportState>; set(key: "audit", value: string[]): void },
-    entry: string,
+    entry: string
 ): void {
     state.set("audit", [...state.snapshot().audit, entry]);
 }
@@ -62,16 +62,14 @@ export function markBatchStage(
         set<K extends keyof CliImportState>(key: K, value: CliImportState[K]): void;
     },
     batch: Batch,
-    stage: Stage,
+    stage: Stage
 ): void {
     const key = STAGE_KEYS[stage][batch];
     state.set(key, true);
 }
 
 export function countUploadedBatches(state: Readonly<CliImportState>): number {
-    return [state.uploadedCustomers, state.uploadedOrders, state.uploadedInvoices]
-        .filter(Boolean)
-        .length;
+    return [state.uploadedCustomers, state.uploadedOrders, state.uploadedInvoices].filter(Boolean).length;
 }
 
 export const timingMiddleware: Middleware<CliImportParams, CliImportState> = async (ctx, next) => {
@@ -83,4 +81,4 @@ export const timingMiddleware: Middleware<CliImportParams, CliImportState> = asy
     });
 };
 
-export {sleep};
+export { sleep };

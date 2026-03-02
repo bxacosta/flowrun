@@ -1,23 +1,20 @@
-import {FlowStopSignal} from "./errors.ts";
-import {createLogger} from "./logger.ts";
-import type {Reporter} from "./reporter.ts";
-import type {FlowContext, StateShape, StateStore, StepContext, StepInfo} from "./types.ts";
+import { FlowStopSignal } from "./errors.ts";
+import { createLogger } from "./logger.ts";
+import type { Reporter } from "./reporter.ts";
+import type { FlowContext, StateShape, StateStore, StepContext, StepInfo } from "./types.ts";
 
-export interface RuntimeContextConfig<
-    TParams,
-    TState extends StateShape,
-> {
+export interface RuntimeContextConfig<TParams, TState extends StateShape> {
     flowId: string;
     flowName: string;
-    runId: string;
     params: TParams;
-    state: StateStore<TState>;
     reporter: Reporter;
+    runId: string;
     signal: AbortSignal;
+    state: StateStore<TState>;
 }
 
 export function createFlowContext<TParams, TState extends StateShape>(
-    config: RuntimeContextConfig<TParams, TState>,
+    config: RuntimeContextConfig<TParams, TState>
 ): FlowContext<TParams, TState> {
     return {
         flow: {
@@ -43,7 +40,7 @@ export function createStepContext<TParams, TState extends StateShape>(
     reporter: Reporter,
     step: StepInfo,
     attempt: number,
-    signal: AbortSignal,
+    signal: AbortSignal
 ): StepContext<TParams, TState> {
     return {
         ...base,
@@ -63,7 +60,7 @@ export function createBranchFlowContext<TParams, TState extends StateShape>(
     base: FlowContext<TParams, TState>,
     reporter: Reporter,
     state: StateStore<TState>,
-    signal: AbortSignal,
+    signal: AbortSignal
 ): FlowContext<TParams, TState> {
     return {
         ...base,

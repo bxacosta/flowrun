@@ -1,7 +1,7 @@
-import type {Middleware, StateShape, StepContext} from "./types.ts";
+import type { Middleware, StateShape, StepContext } from "./types.ts";
 
 export function compose<TParams, TState extends StateShape>(
-    middlewares: Middleware<TParams, TState>[],
+    middlewares: Middleware<TParams, TState>[]
 ): (context: StepContext<TParams, TState>, core: () => Promise<void>) => Promise<void> {
     return async (context, core) => {
         let index = -1;

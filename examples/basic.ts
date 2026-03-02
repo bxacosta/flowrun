@@ -1,15 +1,15 @@
-import {FlowEngine, defineFlow} from "../src";
-import {ConsoleReporter} from "./shared/reporter.ts";
+import { defineFlow, FlowEngine } from "../src";
+import { ConsoleReporter } from "./shared/reporter.ts";
 
 interface SyncUserParams {
-    userId: string;
     includeAudit: boolean;
+    userId: string;
 }
 
 interface SyncUserState {
-    user?: { id: string; name: string; active: boolean };
     auditTrail?: string[];
     saved?: boolean;
+    user?: { id: string; name: string; active: boolean };
 }
 
 const syncUserFlow = defineFlow<SyncUserParams, SyncUserState>({
@@ -18,9 +18,9 @@ const syncUserFlow = defineFlow<SyncUserParams, SyncUserState>({
     initialState: {
         auditTrail: [],
     },
-    build: ({step}) => [
+    build: ({ step }) => [
         step("fetch-user", async (ctx) => {
-            ctx.log.info("Fetching user", {userId: ctx.params.userId});
+            ctx.log.info("Fetching user", { userId: ctx.params.userId });
             ctx.state.set("user", {
                 id: ctx.params.userId,
                 name: "Ada Lovelace",
@@ -45,7 +45,7 @@ const syncUserFlow = defineFlow<SyncUserParams, SyncUserState>({
         }),
         step("save-user", async (ctx) => {
             const user = ctx.state.get("user");
-            ctx.log.info("Saving user", {userId: user?.id});
+            ctx.log.info("Saving user", { userId: user?.id });
             ctx.state.set("saved", true);
         }),
     ],

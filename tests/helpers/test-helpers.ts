@@ -1,4 +1,4 @@
-import type {EngineEvent, Reporter} from "../../src";
+import type { EngineEvent, Reporter } from "../../src";
 
 export class SpyReporter implements Reporter {
     readonly events: EngineEvent[] = [];
@@ -32,7 +32,7 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
                 clearTimeout(timer);
                 reject(new Error("aborted"));
             },
-            {once: true},
+            { once: true }
         );
     });
 }

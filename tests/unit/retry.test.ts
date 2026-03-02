@@ -1,14 +1,12 @@
-import {describe, expect, test} from "bun:test";
-import {StepTimeoutError} from "../../src";
-import {computeRetryDelay, createLinkedAbortController, runWithTimeout, wait,} from "../../src/core/retry.ts";
+import { describe, expect, test } from "bun:test";
+import { StepTimeoutError } from "../../src";
+import { computeRetryDelay, createLinkedAbortController, runWithTimeout, wait } from "../../src/core/retry.ts";
 
 describe("retry helpers", () => {
     test("computes constant and exponential delays", () => {
-        expect(computeRetryDelay({attempts: 3, delayMs: 25}, 2)).toBe(25);
-        expect(computeRetryDelay({attempts: 3, delayMs: 25, strategy: "exponential"}, 2)).toBe(100);
-        expect(
-            computeRetryDelay({attempts: 3, delayMs: 25, strategy: "exponential", maxDelayMs: 60}, 2),
-        ).toBe(60);
+        expect(computeRetryDelay({ attempts: 3, delayMs: 25 }, 2)).toBe(25);
+        expect(computeRetryDelay({ attempts: 3, delayMs: 25, strategy: "exponential" }, 2)).toBe(100);
+        expect(computeRetryDelay({ attempts: 3, delayMs: 25, strategy: "exponential", maxDelayMs: 60 }, 2)).toBe(60);
     });
 
     test("wait resolves immediately for zero delay", async () => {
@@ -35,20 +33,18 @@ describe("retry helpers", () => {
 
     test("runWithTimeout rejects with StepTimeoutError and calls timeout hook", async () => {
         let timedOut = false;
-        const pending = new Promise<never>(() => {
-        });
+        const pending = new Promise<never>(() => {});
 
         expect(
             runWithTimeout(pending, 10, "slow-step", () => {
                 timedOut = true;
-            }),
+            })
         ).rejects.toThrow(StepTimeoutError);
 
         expect(timedOut).toBe(true);
     });
 
     test("runWithTimeout returns the underlying value when it finishes on time", async () => {
-        expect(runWithTimeout(Promise.resolve("ok"), 50, "fast-step", () => {
-        })).resolves.toBe("ok");
+        expect(runWithTimeout(Promise.resolve("ok"), 50, "fast-step", () => {})).resolves.toBe("ok");
     });
 });

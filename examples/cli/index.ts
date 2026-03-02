@@ -1,7 +1,7 @@
 import * as readline from "node:readline";
-import {FlowEngine} from "../../src";
-import {ConsoleReporter} from "../shared/reporter.ts";
-import {cliImportFlow} from "./flow.ts";
+import { FlowEngine } from "../../src";
+import { ConsoleReporter } from "../shared/reporter.ts";
+import { cliImportFlow } from "./flow.ts";
 
 function printControls(): void {
     console.log("");

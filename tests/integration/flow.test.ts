@@ -1,26 +1,26 @@
-import {describe, expect, test} from "bun:test";
-import {FlowEngine, defineFlow, parallel, sequence, step, type Middleware} from "../../src";
-import {SpyReporter, sleep} from "../helpers/test-helpers.ts";
+import { describe, expect, test } from "bun:test";
+import { defineFlow, FlowEngine, type Middleware, parallel, sequence, step } from "../../src";
+import { SpyReporter, sleep } from "../helpers/test-helpers.ts";
 
 interface ImportParams {
-    source: string;
     customerTier: "standard" | "vip";
+    source: string;
 }
 
 interface ImportState {
     audit: string[];
     fetched?: boolean;
-    profileLoaded?: boolean;
-    statsLoaded?: boolean;
-    recommendationsLoaded?: boolean;
     normalized?: boolean;
     persisted?: boolean;
+    profileLoaded?: boolean;
+    recommendationsLoaded?: boolean;
+    statsLoaded?: boolean;
 }
 
 describe("integration flow", () => {
     test("runs a full flow with middleware, retry, skip, parallel and hooks", async () => {
         const reporter = new SpyReporter();
-        const engine = new FlowEngine({reporter});
+        const engine = new FlowEngine({ reporter });
         let persistAttempts = 0;
         let onStartCalled = false;
         let onSuccessCalled = false;
@@ -29,12 +29,12 @@ describe("integration flow", () => {
         const timingMiddleware: Middleware<ImportParams, ImportState> = async (ctx, next) => {
             const startedAt = Date.now();
             await next();
-            ctx.log.info("timed", {step: ctx.step.id, durationMs: Date.now() - startedAt});
+            ctx.log.info("timed", { step: ctx.step.id, durationMs: Date.now() - startedAt });
         };
 
         const flow = defineFlow<ImportParams, ImportState>({
             id: "customer-import",
-            initialState: {audit: []},
+            initialState: { audit: [] },
             middleware: [timingMiddleware],
             steps: [
                 step("fetch-source", async (ctx) => {
@@ -42,27 +42,35 @@ describe("integration flow", () => {
                     ctx.state.set("fetched", true);
                     ctx.state.set("audit", [...ctx.state.snapshot().audit, `source:${ctx.params.source}`]);
                 }),
-                parallel("load-data", [
-                    sequence("profile-pipeline", [
-                        step("load-profile", async (ctx) => {
-                            await sleep(5, ctx.signal);
-                            ctx.state.set("profileLoaded", true);
-                        }),
-                    ]),
-                    sequence("analytics-pipeline", [
-                        step("load-stats", async (ctx) => {
-                            await sleep(5, ctx.signal);
-                            ctx.state.set("statsLoaded", true);
-                        }),
-                        step("load-recommendations", async (ctx) => {
-                            await sleep(15, ctx.signal);
-                            ctx.state.set("recommendationsLoaded", true);
-                        }, {
-                            timeoutMs: 2,
-                            onError: "skip",
-                        }),
-                    ]),
-                ], {mode: "all-settled", concurrency: 2}),
+                parallel(
+                    "load-data",
+                    [
+                        sequence("profile-pipeline", [
+                            step("load-profile", async (ctx) => {
+                                await sleep(5, ctx.signal);
+                                ctx.state.set("profileLoaded", true);
+                            }),
+                        ]),
+                        sequence("analytics-pipeline", [
+                            step("load-stats", async (ctx) => {
+                                await sleep(5, ctx.signal);
+                                ctx.state.set("statsLoaded", true);
+                            }),
+                            step(
+                                "load-recommendations",
+                                async (ctx) => {
+                                    await sleep(15, ctx.signal);
+                                    ctx.state.set("recommendationsLoaded", true);
+                                },
+                                {
+                                    timeoutMs: 2,
+                                    onError: "skip",
+                                }
+                            ),
+                        ]),
+                    ],
+                    { mode: "all-settled", concurrency: 2 }
+                ),
                 step("normalize", async (ctx) => {
                     expect(ctx.state.get("fetched")).toBe(true);
                     expect(ctx.state.get("profileLoaded")).toBe(true);
@@ -70,20 +78,24 @@ describe("integration flow", () => {
                     expect(ctx.state.get("recommendationsLoaded")).toBeUndefined();
                     ctx.state.set("normalized", true);
                 }),
-                step("persist", async (ctx) => {
-                    persistAttempts += 1;
-                    await sleep(5, ctx.signal);
-                    if (persistAttempts === 1) {
-                        throw new Error("temporary lock");
-                    }
-                    ctx.state.set("persisted", true);
-                }, {
-                    retry: {
-                        attempts: 2,
-                        delayMs: 1,
-                        strategy: "exponential",
+                step(
+                    "persist",
+                    async (ctx) => {
+                        persistAttempts += 1;
+                        await sleep(5, ctx.signal);
+                        if (persistAttempts === 1) {
+                            throw new Error("temporary lock");
+                        }
+                        ctx.state.set("persisted", true);
                     },
-                }),
+                    {
+                        retry: {
+                            attempts: 2,
+                            delayMs: 1,
+                            strategy: "exponential",
+                        },
+                    }
+                ),
             ],
             onStart: async (ctx) => {
                 onStartCalled = true;
@@ -95,11 +107,11 @@ describe("integration flow", () => {
             },
             onComplete: async (ctx, result) => {
                 onCompleteCalled = true;
-                ctx.log.info("complete", {status: result.status});
+                ctx.log.info("complete", { status: result.status });
             },
         });
 
-        const result = await engine.run(flow, {source: "crm", customerTier: "vip"});
+        const result = await engine.run(flow, { source: "crm", customerTier: "vip" });
 
         expect(result.status).toBe("completed");
         expect(result.state).toEqual({

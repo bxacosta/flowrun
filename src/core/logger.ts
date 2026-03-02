@@ -1,11 +1,11 @@
-import type {LogLevel} from "./events.ts";
-import type {Reporter} from "./reporter.ts";
+import type { LogLevel } from "./events.ts";
+import type { Reporter } from "./reporter.ts";
 
 export interface Logger {
     debug(message: string, data?: Record<string, unknown>): void;
+    error(message: string, data?: Record<string, unknown>): void;
     info(message: string, data?: Record<string, unknown>): void;
     warn(message: string, data?: Record<string, unknown>): void;
-    error(message: string, data?: Record<string, unknown>): void;
 }
 
 export interface LoggerScope {

@@ -1,4 +1,11 @@
-import {defineFlow, parallel, sequence} from "../../src";
+import { defineFlow, parallel, sequence } from "../../src";
+import {
+    appendAudit,
+    type CliImportParams,
+    type CliImportState,
+    countUploadedBatches,
+    timingMiddleware,
+} from "./shared.ts";
 import {
     bootstrapStep,
     buildManifestStep,
@@ -7,23 +14,15 @@ import {
     makeUploadStep,
     makeValidateStep,
 } from "./steps.ts";
-import {
-    appendAudit,
-    countUploadedBatches,
-    timingMiddleware,
-    type CliImportParams,
-    type CliImportState,
-} from "./shared.ts";
 
 const batchPipelines = ["customers", "orders", "invoices"].map((batch) =>
-    sequence(`pipeline-${batch}`, [
-        makeDownloadStep(batch),
-        makeValidateStep(batch),
-        makeTransformStep(batch),
-        makeUploadStep(batch),
-    ], {
-        name: `Pipeline ${batch}`,
-    }),
+    sequence(
+        `pipeline-${batch}`,
+        [makeDownloadStep(batch), makeValidateStep(batch), makeTransformStep(batch), makeUploadStep(batch)],
+        {
+            name: `Pipeline ${batch}`,
+        }
+    )
 );
 
 export const cliImportFlow = defineFlow<CliImportParams, CliImportState>({

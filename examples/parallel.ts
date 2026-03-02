@@ -1,27 +1,27 @@
-import {FlowEngine, defineFlow} from "../src";
-import {ConsoleReporter} from "./shared/reporter.ts";
+import { defineFlow, FlowEngine } from "../src";
+import { ConsoleReporter } from "./shared/reporter.ts";
 
 interface ImportParams {
     source: string;
 }
 
 interface ImportState {
+    imported?: boolean;
     profile?: { name: string; source: string };
     stats?: { visits: number };
     tags?: string[];
-    imported?: boolean;
 }
 
 const importFlow = defineFlow<ImportParams, ImportState>({
     id: "import-customer",
     name: "Import Customer",
-    build: ({parallel, sequence, step}) => [
+    build: ({ parallel, sequence, step }) => [
         parallel(
             "load-customer-data",
             [
                 sequence("profile-pipeline", [
                     step("fetch-profile", async (ctx) => {
-                        ctx.log.info("Loading profile", {source: ctx.params.source});
+                        ctx.log.info("Loading profile", { source: ctx.params.source });
                         ctx.state.set("profile", {
                             name: "Grace Hopper",
                             source: ctx.params.source,
@@ -30,7 +30,7 @@ const importFlow = defineFlow<ImportParams, ImportState>({
                 ]),
                 sequence("analytics-pipeline", [
                     step("fetch-stats", async (ctx) => {
-                        ctx.state.set("stats", {visits: 128});
+                        ctx.state.set("stats", { visits: 128 });
                     }),
                     step("fetch-tags", async (ctx) => {
                         ctx.state.set("tags", ["vip", "newsletter"]);
@@ -40,7 +40,7 @@ const importFlow = defineFlow<ImportParams, ImportState>({
             {
                 concurrency: 2,
                 mode: "all-settled",
-            },
+            }
         ),
         step(
             "persist-import",
@@ -54,7 +54,7 @@ const importFlow = defineFlow<ImportParams, ImportState>({
                     delayMs: 100,
                     strategy: "exponential",
                 },
-            },
+            }
         ),
     ],
 });
@@ -63,7 +63,7 @@ const engine = new FlowEngine({
     reporter: new ConsoleReporter(),
 });
 
-const result = await engine.run(importFlow, {source: "crm"});
+const result = await engine.run(importFlow, { source: "crm" });
 
 console.log("\nImported:", result.status);
 console.log(result.state);
