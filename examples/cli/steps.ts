@@ -1,5 +1,6 @@
 import { type StepNode, step } from "../../src";
-import { appendAudit, type CliImportParams, type CliImportState, markBatchStage, sleep } from "./shared.ts";
+import { sleep } from "../shared/runtime.ts";
+import { appendAudit, type CliImportParams, type CliImportState, markBatchStage } from "./shared.ts";
 
 export const bootstrapStep: StepNode<CliImportParams, CliImportState> = step("bootstrap-run", async (ctx) => {
     ctx.log.info("Preparing import session", { source: ctx.params.source });

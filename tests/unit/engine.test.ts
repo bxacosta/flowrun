@@ -323,7 +323,7 @@ describe("FlowEngine", () => {
         const engine = new FlowEngine({ reporter });
         let attempts = 0;
 
-        const flow = defineFlow<undefined, {}>({
+        const flow = defineFlow<undefined, object>({
             id: "attempt-events",
             steps: [
                 {

@@ -33,7 +33,7 @@ describe("retry helpers", () => {
 
     test("runWithTimeout rejects with StepTimeoutError and calls timeout hook", () => {
         let timedOut = false;
-        const pending = new Promise<never>(() => {});
+        const { promise: pending } = Promise.withResolvers<never>();
 
         expect(
             runWithTimeout(pending, 10, "slow-step", () => {
@@ -45,6 +45,10 @@ describe("retry helpers", () => {
     });
 
     test("runWithTimeout returns the underlying value when it finishes on time", () => {
-        expect(runWithTimeout(Promise.resolve("ok"), 50, "fast-step", () => {})).resolves.toBe("ok");
+        expect(
+            runWithTimeout(Promise.resolve("ok"), 50, "fast-step", () => {
+                // empty step
+            })
+        ).resolves.toBe("ok");
     });
 });
