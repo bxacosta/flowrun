@@ -79,6 +79,9 @@ export class ConsoleReporter implements Reporter {
             }
             case "log":
                 this.reportLog(prefix, event);
+                return;
+            default:
+                this.assertNever(event);
         }
     }
 
@@ -92,5 +95,9 @@ export class ConsoleReporter implements Reporter {
         const label = colorize(colors[event.level], event.level.toUpperCase().padEnd(5));
         const step = event.stepName ? colorize("dim", `[${event.stepName}]`) : "";
         console.log(`${prefix} ${step} ${label} ${event.message}`, formatData(event.data));
+    }
+
+    private assertNever(event: never): never {
+        throw new Error(`Unhandled event kind: ${JSON.stringify(event)}`);
     }
 }

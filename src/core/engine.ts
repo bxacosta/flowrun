@@ -50,9 +50,13 @@ interface BranchResult<TState extends StateShape> {
     patch: Partial<TState>;
 }
 
+interface InitialStateSource<TState extends StateShape> {
+    initialState?: TState | (() => TState);
+}
+
 export class FlowEngine {
-    private readonly flows = new Map<string, FlowDefinition<any, any>>();
-    private readonly activeRuns = new Map<string, ActiveRun<any, any>>();
+    private readonly flows = new Map<string, unknown>();
+    private readonly activeRuns = new Set<string>();
     private readonly reporter: Reporter;
 
     constructor(config: FlowEngineConfig = {}) {
@@ -66,7 +70,7 @@ export class FlowEngine {
             throw new FlowEngineError(`Flow "${flow.id}" is already registered`);
         }
 
-        this.flows.set(flow.id, flow);
+        this.flows.set(flow.id, flow as unknown);
         return flow;
     }
 
@@ -109,7 +113,7 @@ export class FlowEngine {
             stepResults: [],
         };
 
-        this.activeRuns.set(runId, activeRun);
+        this.activeRuns.add(runId);
 
         this.executeFlow(activeRun).catch((error) => {
             activeRun.rejectCompletion(error);
@@ -142,7 +146,7 @@ export class FlowEngine {
     }
 
     private resolveInitialState<TState extends StateShape>(
-        flow: FlowDefinition<any, TState>
+        flow: InitialStateSource<TState>
     ): Partial<TState> | undefined {
         if (!flow.initialState) {
             return undefined;
@@ -156,95 +160,133 @@ export class FlowEngine {
     ): Promise<void> {
         const startedAt = Date.now();
         let finalStatus: RunCompletionStatus = "completed";
-        let completionResult: RunResult<TState> | undefined;
 
         try {
-            this.reporter.report({
-                kind: "flow:start",
-                flowId: activeRun.flow.id,
-                flowName: activeRun.flow.name,
-                runId: activeRun.runId,
-                timestamp: new Date(),
-                params: activeRun.context.params as Record<string, unknown>,
-            });
-
+            this.reportFlowStart(activeRun);
             await activeRun.flow.onStart?.(activeRun.context);
             await this.executeNodes(activeRun.flow.steps, activeRun.context, activeRun);
-
-            if (activeRun.abortController.signal.aborted) {
-                finalStatus = "cancelled";
-            }
-
-            if (finalStatus === "completed") {
-                await activeRun.flow.onSuccess?.(
-                    activeRun.context,
-                    this.buildRunResult(activeRun, finalStatus, startedAt)
-                );
-            }
+            finalStatus = this.resolveCompletionStatus(activeRun);
+            await this.reportSuccessfulCompletion(activeRun, finalStatus, startedAt);
         } catch (error) {
-            if (error instanceof FlowStopSignal) {
-                activeRun.stopReason = error.reason;
-                finalStatus = activeRun.abortController.signal.aborted ? "cancelled" : "completed";
-
-                if (finalStatus === "completed") {
-                    await activeRun.flow.onSuccess?.(
-                        activeRun.context,
-                        this.buildRunResult(activeRun, finalStatus, startedAt)
-                    );
-                }
-            } else {
-                const failure = this.toError(error);
-                activeRun.failure = failure;
-                finalStatus = activeRun.abortController.signal.aborted ? "cancelled" : "failed";
-
-                try {
-                    if (finalStatus === "failed") {
-                        await activeRun.flow.onFailure?.(activeRun.context, failure);
-                    }
-                } catch (hookError) {
-                    activeRun.context.log.error("onFailure hook threw", {
-                        error: this.toError(hookError).message,
-                    });
-                }
-            }
+            finalStatus = await this.handleFlowExecutionError(activeRun, error, startedAt);
         } finally {
-            const eventResult = this.buildRunResult(activeRun, finalStatus, startedAt);
-
-            activeRun.status = eventResult.status;
-
-            this.reporter.report({
-                kind: "flow:end",
-                flowId: activeRun.flow.id,
-                flowName: activeRun.flow.name,
-                runId: activeRun.runId,
-                timestamp: new Date(),
-                status: eventResult.status,
-                durationMs: eventResult.durationMs,
-                error: eventResult.error,
-                stopReason: eventResult.stopReason,
-                cancelReason: eventResult.cancelReason,
-            });
-
-            try {
-                await activeRun.flow.onComplete?.(activeRun.context, eventResult);
-            } catch (hookError) {
-                activeRun.context.log.error("onComplete hook threw", {
-                    error: this.toError(hookError).message,
-                });
-            }
-
-            completionResult = this.buildRunResult(activeRun, finalStatus, startedAt);
-            activeRun.status = completionResult.status;
-
-            if (activeRun.pauseGate) {
-                activeRun.pauseGate.resolvePaused();
-                activeRun.pauseGate.resolve();
-                activeRun.pauseGate = null;
-            }
-
-            this.activeRuns.delete(activeRun.runId);
-            activeRun.resolveCompletion(completionResult);
+            await this.finalizeRun(activeRun, finalStatus, startedAt);
         }
+    }
+
+    private reportFlowStart<TParams, TState extends StateShape>(activeRun: ActiveRun<TParams, TState>): void {
+        this.reporter.report({
+            kind: "flow:start",
+            flowId: activeRun.flow.id,
+            flowName: activeRun.flow.name,
+            runId: activeRun.runId,
+            timestamp: new Date(),
+            params: activeRun.context.params as Record<string, unknown>,
+        });
+    }
+
+    private resolveCompletionStatus<TParams, TState extends StateShape>(
+        activeRun: ActiveRun<TParams, TState>
+    ): RunCompletionStatus {
+        return activeRun.abortController.signal.aborted ? "cancelled" : "completed";
+    }
+
+    private async reportSuccessfulCompletion<TParams, TState extends StateShape>(
+        activeRun: ActiveRun<TParams, TState>,
+        status: RunCompletionStatus,
+        startedAt: number
+    ): Promise<void> {
+        if (status !== "completed") {
+            return;
+        }
+
+        await activeRun.flow.onSuccess?.(activeRun.context, this.buildRunResult(activeRun, status, startedAt));
+    }
+
+    private async handleFlowExecutionError<TParams, TState extends StateShape>(
+        activeRun: ActiveRun<TParams, TState>,
+        error: unknown,
+        startedAt: number
+    ): Promise<RunCompletionStatus> {
+        if (error instanceof FlowStopSignal) {
+            activeRun.stopReason = error.reason;
+
+            const status = this.resolveCompletionStatus(activeRun);
+            await this.reportSuccessfulCompletion(activeRun, status, startedAt);
+            return status;
+        }
+
+        const failure = this.toError(error);
+        activeRun.failure = failure;
+
+        const status = activeRun.abortController.signal.aborted ? "cancelled" : "failed";
+        await this.reportFailure(activeRun, status, failure);
+        return status;
+    }
+
+    private async reportFailure<TParams, TState extends StateShape>(
+        activeRun: ActiveRun<TParams, TState>,
+        status: RunCompletionStatus,
+        failure: Error
+    ): Promise<void> {
+        if (status !== "failed") {
+            return;
+        }
+
+        try {
+            await activeRun.flow.onFailure?.(activeRun.context, failure);
+        } catch (hookError) {
+            activeRun.context.log.error("onFailure hook threw", {
+                error: this.toError(hookError).message,
+            });
+        }
+    }
+
+    private async finalizeRun<TParams, TState extends StateShape>(
+        activeRun: ActiveRun<TParams, TState>,
+        status: RunCompletionStatus,
+        startedAt: number
+    ): Promise<void> {
+        const eventResult = this.buildRunResult(activeRun, status, startedAt);
+        activeRun.status = eventResult.status;
+
+        this.reporter.report({
+            kind: "flow:end",
+            flowId: activeRun.flow.id,
+            flowName: activeRun.flow.name,
+            runId: activeRun.runId,
+            timestamp: new Date(),
+            status: eventResult.status,
+            durationMs: eventResult.durationMs,
+            error: eventResult.error,
+            stopReason: eventResult.stopReason,
+            cancelReason: eventResult.cancelReason,
+        });
+
+        try {
+            await activeRun.flow.onComplete?.(activeRun.context, eventResult);
+        } catch (hookError) {
+            activeRun.context.log.error("onComplete hook threw", {
+                error: this.toError(hookError).message,
+            });
+        }
+
+        const completionResult = this.buildRunResult(activeRun, status, startedAt);
+        activeRun.status = completionResult.status;
+
+        this.releasePauseGate(activeRun);
+        this.activeRuns.delete(activeRun.runId);
+        activeRun.resolveCompletion(completionResult);
+    }
+
+    private releasePauseGate<TParams, TState extends StateShape>(activeRun: ActiveRun<TParams, TState>): void {
+        if (!activeRun.pauseGate) {
+            return;
+        }
+
+        activeRun.pauseGate.resolvePaused();
+        activeRun.pauseGate.resolve();
+        activeRun.pauseGate = null;
     }
 
     private async executeNodes<TParams, TState extends StateShape>(
@@ -277,6 +319,8 @@ export class FlowEngine {
             case "parallel":
                 await this.executeParallel(node, context, activeRun);
                 return;
+            default:
+                return this.assertNever(node);
         }
     }
 
@@ -543,7 +587,13 @@ export class FlowEngine {
                 }
 
                 try {
-                    const value = await tasks[currentIndex]!();
+                    const task = tasks[currentIndex];
+
+                    if (!task) {
+                        return;
+                    }
+
+                    const value = await task();
                     results[currentIndex] = { status: "fulfilled", value };
                 } catch (error) {
                     results[currentIndex] = { status: "rejected", reason: error };
@@ -634,13 +684,13 @@ export class FlowEngine {
             flowId: activeRun.flow.id,
             status: () => activeRun.status,
             join: () => activeRun.completionPromise,
-            cancel: async (reason?: string) => {
+            cancel: (reason?: string) => {
                 if (
                     activeRun.status === "completed" ||
                     activeRun.status === "failed" ||
                     activeRun.status === "cancelled"
                 ) {
-                    return;
+                    return Promise.resolve();
                 }
 
                 activeRun.status = "cancelled";
@@ -651,6 +701,8 @@ export class FlowEngine {
                     activeRun.pauseGate.resolve();
                     activeRun.pauseGate = null;
                 }
+
+                return Promise.resolve();
             },
             pause: async () => {
                 if (activeRun.status !== "running" || activeRun.pauseGate) {
@@ -661,15 +713,21 @@ export class FlowEngine {
                 activeRun.pauseGate = gate;
                 await gate.pausedPromise;
             },
-            resume: async () => {
+            resume: () => {
                 if (!activeRun.pauseGate) {
-                    return;
+                    return Promise.resolve();
                 }
 
                 activeRun.pauseGate.resolve();
                 activeRun.pauseGate = null;
+
+                return Promise.resolve();
             },
         };
+    }
+
+    private assertNever(value: never): never {
+        throw new FlowEngineError(`Unhandled flow node: ${JSON.stringify(value)}`);
     }
 
     private toError(error: unknown): Error {
