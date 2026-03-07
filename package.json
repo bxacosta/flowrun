@@ -1,26 +1,23 @@
 {
   "name": "flowrun",
-  "module": "index.ts",
   "type": "module",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "check": "ultracite check",
-    "typecheck": "bun x tsc --noEmit",
-    "test": "bun test tests/",
-    "test:unit": "bun test tests/unit/",
-    "test:watch": "bun test tests/ --watch",
-    "test:integration": "bun test tests/integration/",
-    "example:basic": "bun run examples/basic.ts",
-    "example:cli": "bun run examples/cli/index.ts",
-    "example:complete": "bun run examples/complete.ts",
-    "example:parallel": "bun run examples/parallel.ts",
-    "fix": "ultracite fix"
+    "build": "tsc --build",
+    "fix": "ultracite check",
+    "check": "ultracite fix",
+    "fix:core": "bun run --cwd ./packages/core fix",
+    "check:core": "bun run --cwd ./packages/core check",
+    "build:core": "bun run --cwd ./packages/core build",
+    "test:core": "bun run --cwd ./packages/core test"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.5",
     "@types/bun": "latest",
+    "typescript": "^5.9.3",
     "ultracite": "7.2.5"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
   }
 }

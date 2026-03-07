@@ -1,0 +1,15 @@
+{
+  "name": "@flowrun/core",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "fix": "ultracite fix ./src ./tests",
+    "check": "ultracite check ./src ./tests",
+    "typecheck": "tsc --noEmit -p ./tsconfig.test.json",
+    "test": "bun test ./tests"
+  }
+}
