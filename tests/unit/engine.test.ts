@@ -277,6 +277,249 @@ describe("FlowEngine", () => {
         expect(result.state.audit).toEqual(["step", "success", "complete"]);
     });
 
+    test("preserves lifecycle order for success hooks and reporter events", async () => {
+        const events: string[] = [];
+        const engine = new FlowEngine({
+            reporter: {
+                report(event) {
+                    events.push(`report:${event.kind}`);
+                },
+            },
+        });
+
+        const flow = defineFlow<undefined, { done?: boolean }>({
+            id: "success-lifecycle-order",
+            steps: [
+                {
+                    kind: "step",
+                    id: "main",
+                    name: "main",
+                    use: [],
+                    run: (ctx) => {
+                        events.push("step:run");
+                        ctx.state.set("done", true);
+                    },
+                },
+            ],
+            onStart: () => {
+                events.push("hook:onStart");
+            },
+            onSuccess: () => {
+                events.push("hook:onSuccess");
+            },
+            onComplete: () => {
+                events.push("hook:onComplete");
+            },
+        });
+
+        const result = await engine.run(flow, undefined);
+
+        expect(result.status).toBe("completed");
+        expect(events).toEqual([
+            "report:flow:start",
+            "hook:onStart",
+            "report:step:start",
+            "step:run",
+            "report:step:end",
+            "hook:onSuccess",
+            "report:flow:end",
+            "hook:onComplete",
+        ]);
+    });
+
+    test("preserves lifecycle order for failure hooks and reporter events", async () => {
+        const events: string[] = [];
+        const engine = new FlowEngine({
+            reporter: {
+                report(event) {
+                    events.push(`report:${event.kind}`);
+                },
+            },
+        });
+
+        const flow = defineFlow<undefined, object>({
+            id: "failure-lifecycle-order",
+            steps: [
+                {
+                    kind: "step",
+                    id: "main",
+                    name: "main",
+                    use: [],
+                    run: () => {
+                        events.push("step:run");
+                        throw new Error("boom");
+                    },
+                },
+            ],
+            onSuccess: () => {
+                events.push("hook:onSuccess");
+            },
+            onFailure: (_ctx, error) => {
+                events.push(`hook:onFailure:${error.message}`);
+            },
+            onComplete: (_ctx, result) => {
+                events.push(`hook:onComplete:${result.status}`);
+            },
+        });
+
+        const result = await engine.run(flow, undefined);
+
+        expect(result.status).toBe("failed");
+        expect(result.error?.message).toBe("boom");
+        expect(events).toEqual([
+            "report:flow:start",
+            "report:step:start",
+            "step:run",
+            "report:step:end",
+            "hook:onFailure:boom",
+            "report:flow:end",
+            "hook:onComplete:failed",
+        ]);
+        expect(events).not.toContain("hook:onSuccess");
+    });
+
+    test("stops scheduling remaining parallel branches in fail-fast mode", async () => {
+        const engine = new FlowEngine();
+        let secondBranchRan = false;
+
+        const flow = defineFlow<undefined, object>({
+            id: "parallel-fail-fast",
+            steps: [
+                parallel(
+                    "race",
+                    [
+                        {
+                            kind: "step",
+                            id: "first",
+                            name: "first",
+                            use: [],
+                            run: () => {
+                                throw new Error("branch failed");
+                            },
+                        },
+                        {
+                            kind: "step",
+                            id: "second",
+                            name: "second",
+                            use: [],
+                            run: () => {
+                                secondBranchRan = true;
+                            },
+                        },
+                    ],
+                    { mode: "fail-fast", concurrency: 1 }
+                ),
+            ],
+        });
+
+        const result = await engine.run(flow, undefined);
+
+        expect(result.status).toBe("failed");
+        expect(result.error?.message).toBe("branch failed");
+        expect(secondBranchRan).toBe(false);
+    });
+
+    test("cancels cleanly while paused before the next node", async () => {
+        const engine = new FlowEngine();
+        const flow = defineFlow<undefined, { order?: string[] }>({
+            id: "cancel-while-paused",
+            initialState: { order: [] },
+            steps: [
+                {
+                    kind: "step",
+                    id: "first",
+                    name: "first",
+                    use: [],
+                    run: (ctx) => {
+                        ctx.state.set("order", [...(ctx.state.get("order") ?? []), "first"]);
+                    },
+                },
+                {
+                    kind: "step",
+                    id: "second",
+                    name: "second",
+                    use: [],
+                    run: (ctx) => {
+                        ctx.state.set("order", [...(ctx.state.get("order") ?? []), "second"]);
+                    },
+                },
+            ],
+        });
+
+        const handle = engine.start(flow, undefined);
+        await handle.pause();
+
+        expect(handle.status()).toBe("paused");
+
+        await handle.cancel("paused cancel");
+        const result = await handle.join();
+
+        expect(result.status).toBe("cancelled");
+        expect(result.cancelReason).toBe("paused cancel");
+        expect(result.state.order).toEqual(["first"]);
+    });
+
+    test("runs onSuccess and onComplete after ctx.stop when not cancelled", async () => {
+        const events: string[] = [];
+        const engine = new FlowEngine({
+            reporter: {
+                report(event) {
+                    events.push(`report:${event.kind}`);
+                },
+            },
+        });
+
+        const flow = defineFlow<undefined, { audit: string[] }>({
+            id: "stop-hooks-order",
+            initialState: { audit: [] },
+            steps: [
+                {
+                    kind: "step",
+                    id: "main",
+                    name: "main",
+                    use: [],
+                    run: (ctx) => {
+                        ctx.state.set("audit", [...ctx.state.snapshot().audit, "step"]);
+                        events.push("step:stop");
+                        ctx.stop("done early");
+                    },
+                },
+                {
+                    kind: "step",
+                    id: "after",
+                    name: "after",
+                    use: [],
+                    run: (ctx) => {
+                        ctx.state.set("audit", [...ctx.state.snapshot().audit, "after"]);
+                    },
+                },
+            ],
+            onSuccess: (ctx) => {
+                events.push("hook:onSuccess");
+                ctx.state.set("audit", [...ctx.state.snapshot().audit, "success"]);
+            },
+            onComplete: (ctx, result) => {
+                events.push(`hook:onComplete:${result.status}`);
+                ctx.state.set("audit", [...ctx.state.snapshot().audit, "complete"]);
+            },
+        });
+
+        const result = await engine.run(flow, undefined);
+
+        expect(result.status).toBe("completed");
+        expect(result.stopReason).toBe("done early");
+        expect(result.state.audit).toEqual(["step", "success", "complete"]);
+        expect(events).toEqual([
+            "report:flow:start",
+            "report:step:start",
+            "step:stop",
+            "report:step:end",
+            "hook:onSuccess",
+            "report:flow:end",
+            "hook:onComplete:completed",
+        ]);
+    });
+
     test("supports append-arrays merge strategy in parallel", async () => {
         const engine = new FlowEngine();
         const flow = defineFlow<undefined, { audit?: string[] }>({

@@ -371,51 +371,11 @@ export class FlowEngine {
                     await task;
                 }
 
-                const stepResult: StepRunResult = {
-                    stepId: step.id,
-                    stepName: step.name,
-                    status: "completed",
-                    attempts: attempt,
-                    durationMs: Date.now() - startedAt,
-                };
-
-                activeRun.stepResults.push(stepResult);
-                this.reporter.report({
-                    kind: "step:end",
-                    flowId: context.flow.id,
-                    runId: context.runId,
-                    timestamp: new Date(),
-                    stepId: step.id,
-                    stepName: step.name,
-                    attempt,
-                    status: "completed",
-                    attempts,
-                    durationMs: Date.now() - attemptStartedAt,
-                });
+                this.recordCompletedStep(step, context, activeRun, attempt, attempts, startedAt, attemptStartedAt);
                 return;
             } catch (error) {
                 if (error instanceof FlowStopSignal) {
-                    const stepResult: StepRunResult = {
-                        stepId: step.id,
-                        stepName: step.name,
-                        status: "completed",
-                        attempts: attempt,
-                        durationMs: Date.now() - startedAt,
-                    };
-
-                    activeRun.stepResults.push(stepResult);
-                    this.reporter.report({
-                        kind: "step:end",
-                        flowId: context.flow.id,
-                        runId: context.runId,
-                        timestamp: new Date(),
-                        stepId: step.id,
-                        stepName: step.name,
-                        attempt,
-                        status: "completed",
-                        attempts,
-                        durationMs: Date.now() - attemptStartedAt,
-                    });
+                    this.recordCompletedStep(step, context, activeRun, attempt, attempts, startedAt, attemptStartedAt);
                     throw error;
                 }
 
@@ -514,6 +474,38 @@ export class FlowEngine {
                 throw lastError;
             }
         }
+    }
+
+    private recordCompletedStep<TParams, TState extends StateShape>(
+        step: StepNode<TParams, TState>,
+        context: FlowContext<TParams, TState>,
+        activeRun: ActiveRun<TParams, TState>,
+        attempt: number,
+        attempts: number,
+        startedAt: number,
+        attemptStartedAt: number
+    ): void {
+        const stepResult: StepRunResult = {
+            stepId: step.id,
+            stepName: step.name,
+            status: "completed",
+            attempts: attempt,
+            durationMs: Date.now() - startedAt,
+        };
+
+        activeRun.stepResults.push(stepResult);
+        this.reporter.report({
+            kind: "step:end",
+            flowId: context.flow.id,
+            runId: context.runId,
+            timestamp: new Date(),
+            stepId: step.id,
+            stepName: step.name,
+            attempt,
+            status: "completed",
+            attempts,
+            durationMs: Date.now() - attemptStartedAt,
+        });
     }
 
     private async executeParallel<TParams, TState extends StateShape>(
