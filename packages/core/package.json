@@ -6,10 +6,9 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "build": "tsc --build",
-    "fix": "ultracite fix ./src ./tests",
-    "check": "ultracite check ./src ./tests",
-    "typecheck": "tsc --noEmit -p ./tsconfig.test.json",
-    "test": "bun test ./tests"
+    "fix": "ultracite fix",
+    "check": "ultracite check",
+    "typecheck": "tsc --project tsconfig.json && tsc --project tsconfig.test.json",
+    "test": "bun test tests"
   }
 }

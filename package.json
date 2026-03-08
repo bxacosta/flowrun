@@ -6,12 +6,13 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc --build",
-    "fix": "ultracite check",
-    "check": "ultracite fix",
+    "fix": "ultracite fix",
+    "check": "ultracite check",
+    "typecheck": "bun run typecheck:core && bun run typecheck:browser",
+    "typecheck:core": "bun run --cwd ./packages/core typecheck",
+    "typecheck:browser": "bun run --cwd ./packages/browser typecheck",
     "fix:core": "bun run --cwd ./packages/core fix",
     "check:core": "bun run --cwd ./packages/core check",
-    "build:core": "bun run --cwd ./packages/core build",
     "test:core": "bun run --cwd ./packages/core test"
   },
   "devDependencies": {
