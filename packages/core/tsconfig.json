@@ -2,8 +2,20 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    /* Language and Environment */
+    "module": "ESNext",
     "lib": ["ESNext"],
-    "types": ["bun"]
+    "types": ["bun"],
+    "moduleResolution": "Bundler",
+
+    /* Modules and Output */
+    "rootDir": "src",
+    "outDir": "dist",
+
+    /* Library Shipping Requirements */
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
   },
-  "include": ["./src"]
+  "include": ["src"]
 }

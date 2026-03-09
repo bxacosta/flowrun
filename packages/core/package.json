@@ -6,9 +6,10 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "dev": "tsc --watch",
     "fix": "ultracite fix",
     "check": "ultracite check",
-    "typecheck": "tsc --project tsconfig.json && tsc --project tsconfig.test.json",
+    "typecheck": "tsc --project tsconfig.test.json",
     "test": "bun test tests"
   }
 }

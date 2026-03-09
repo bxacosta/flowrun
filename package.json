@@ -5,19 +5,19 @@
   "workspaces": [
     "packages/*"
   ],
+  "packageManager": "bun@1.3.10",
   "scripts": {
-    "fix": "ultracite fix",
-    "check": "ultracite check",
-    "typecheck": "bun run typecheck:core && bun run typecheck:browser",
-    "typecheck:core": "bun run --cwd ./packages/core typecheck",
-    "typecheck:browser": "bun run --cwd ./packages/browser typecheck",
-    "fix:core": "bun run --cwd ./packages/core fix",
-    "check:core": "bun run --cwd ./packages/core check",
-    "test:core": "bun run --cwd ./packages/core test"
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "fix": "turbo fix",
+    "check": "turbo check",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.5",
     "@types/bun": "latest",
+    "turbo": "^2.8.16",
     "typescript": "^5.9.3",
     "ultracite": "7.2.5"
   }

@@ -53,5 +53,8 @@ data/
 *.sln
 *.sw?
 
+### Turbo ###
+.turbo
+
 ### Mac OS ###
 .DS_Store
