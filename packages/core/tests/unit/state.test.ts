@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ParallelMergeError } from "../../src";
+import { ParallelMergeError } from "../../src/index.ts";
 import { MemoryStateStore, mergeBranchChanges } from "../../src/core/state.ts";
 
 describe("MemoryStateStore", () => {

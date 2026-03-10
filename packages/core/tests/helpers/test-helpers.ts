@@ -1,4 +1,4 @@
-import type { EngineEvent, Reporter } from "../../src";
+import type { EngineEvent, Reporter } from "../../src/index.ts";
 
 export class SpyReporter implements Reporter {
     readonly events: EngineEvent[] = [];

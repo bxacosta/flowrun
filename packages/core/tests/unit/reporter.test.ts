@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CompositeReporter } from "../../src";
+import { CompositeReporter } from "../../src/index.ts";
 import { SpyReporter } from "../helpers/test-helpers.ts";
 
 describe("CompositeReporter", () => {

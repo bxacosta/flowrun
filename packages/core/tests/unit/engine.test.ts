@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { defineFlow, FlowEngine, parallel } from "../../src";
+import { defineFlow, FlowEngine, parallel } from "../../src/index.ts";
 import { SpyReporter, sleep } from "../helpers/test-helpers.ts";
 
 describe("FlowEngine", () => {

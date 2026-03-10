@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { defineFlow, FlowEngine, type Middleware, parallel, sequence, step } from "../../src";
-import { SpyReporter, sleep } from "../helpers/test-helpers";
+import { defineFlow, FlowEngine, type Middleware, parallel, sequence, step } from "../../src/index.ts";
+import { SpyReporter, sleep } from "../helpers/test-helpers.ts";
 
 interface ImportParams {
     customerTier: "standard" | "vip";

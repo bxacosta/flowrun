@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { defineFlow, FlowEngineError, parallel, sequence, step } from "../../src";
+import { defineFlow, FlowEngineError, parallel, sequence, step } from "../../src/index.ts";
 
 describe("composability", () => {
     test("step creates a step node with sensible defaults", () => {
