@@ -1,21 +1,23 @@
 {
-  "$schema": "https://json.schemastore.org/tsconfig",
+  "$schema": "https://www.schemastore.org/tsconfig",
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    /* Language and Environment */
-    "module": "ESNext",
+    // Module system
+    "module": "NodeNext",
+
+    // Environment
     "lib": ["ESNext"],
     "types": ["bun"],
-    "moduleResolution": "Bundler",
 
-    /* Modules and Output */
-    "rootDir": "src",
-    "outDir": "dist",
-
-    /* Library Shipping Requirements */
+    // Emit
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "rewriteRelativeImportExtensions": true,
+
+    // Project
+    "rootDir": "src",
+    "outDir": "dist"
   },
   "include": ["src"]
 }

@@ -1,31 +1,29 @@
 {
-  "$schema": "https://json.schemastore.org/tsconfig",
+  "$schema": "https://www.schemastore.org/tsconfig",
   "compilerOptions": {
-    // Language and environment
+    // Module resolution
     "target": "ESNext",
-    "module": "Preserve",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
     "moduleDetection": "force",
+
+    // Transpilation constraints
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
 
     // Type safety
     "strict": true,
-    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
     "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
     "noFallthroughCasesInSwitch": true,
 
-    // Module behavior
-    "verbatimModuleSyntax": true,
-    "isolatedModules": true,
-    "erasableSyntaxOnly": true,
-    "resolveJsonModule": true,
-    "forceConsistentCasingInFileNames": true,
-
-    // Stricter checks
+    // Code quality
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noPropertyAccessFromIndexSignature": true,
     "noUncheckedSideEffectImports": true,
-
-    // Performance
-    "skipLibCheck": true
+    "noPropertyAccessFromIndexSignature": true
   }
 }
