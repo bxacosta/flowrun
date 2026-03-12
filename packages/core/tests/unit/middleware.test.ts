@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { NoopReporter } from "../../src/index.ts";
 import { createFlowContext, createStepContext } from "../../src/core/context.ts";
 import { compose } from "../../src/core/middleware.ts";
 import { MemoryStateStore } from "../../src/core/state.ts";
+import { NoopReporter } from "../../src/index.ts";
 
 interface MiddlewareState {
     order?: string[];
