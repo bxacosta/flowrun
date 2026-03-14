@@ -1,14 +1,15 @@
 import type { CoreEvents, EngineEvent, EventMeta } from "./events.ts";
 
-export interface Reporter {
-    report(event: EngineEvent): void;
+export interface EventSubscriber<TEvents = CoreEvents> {
+    on<K extends keyof TEvents & string>(type: K, handler: (data: TEvents[K] & EventMeta) => void): () => void;
+    onAny(handler: (type: string, data: Record<string, unknown> & EventMeta) => void): () => void;
 }
 
-export class EventReporter<TEvents = CoreEvents> implements Reporter {
+export class EventBus<TEvents = CoreEvents> implements EventSubscriber<TEvents> {
     private readonly handlers = new Map<string, Set<(event: unknown) => void>>();
-    private readonly anyHandlers = new Set<(event: EngineEvent) => void>();
+    private readonly anyHandlers = new Set<(type: string, data: Record<string, unknown> & EventMeta) => void>();
 
-    on<K extends keyof TEvents & string>(type: K, handler: (event: TEvents[K] & EventMeta) => void): () => void {
+    on<K extends keyof TEvents & string>(type: K, handler: (data: TEvents[K] & EventMeta) => void): () => void {
         let set = this.handlers.get(type);
 
         if (!set) {
@@ -22,12 +23,12 @@ export class EventReporter<TEvents = CoreEvents> implements Reporter {
         return () => set.delete(wrapped);
     }
 
-    onAny(handler: (event: EngineEvent) => void): () => void {
+    onAny(handler: (type: string, data: Record<string, unknown> & EventMeta) => void): () => void {
         this.anyHandlers.add(handler);
         return () => this.anyHandlers.delete(handler);
     }
 
-    report(event: EngineEvent): void {
+    dispatch(event: EngineEvent): void {
         const typed = this.handlers.get(event.type);
 
         if (typed) {
@@ -40,11 +41,15 @@ export class EventReporter<TEvents = CoreEvents> implements Reporter {
             }
         }
 
-        for (const handler of this.anyHandlers) {
-            try {
-                handler(event);
-            } catch {
-                // Handlers must never crash the engine.
+        if (this.anyHandlers.size > 0) {
+            const data = event as unknown as Record<string, unknown> & EventMeta;
+
+            for (const handler of this.anyHandlers) {
+                try {
+                    handler(event.type, data);
+                } catch {
+                    // Handlers must never crash the engine.
+                }
             }
         }
     }

@@ -60,10 +60,13 @@ export interface LogPayload {
     readonly stepName?: string;
 }
 
-export interface CoreEvents {
+export interface UserEvents {
+    log: LogPayload;
+}
+
+export interface CoreEvents extends UserEvents {
     "flow.ended": FlowEndedPayload;
     "flow.started": FlowStartedPayload;
-    log: LogPayload;
     "step.ended": StepEndedPayload;
     "step.retrying": StepRetryingPayload;
     "step.started": StepStartedPayload;

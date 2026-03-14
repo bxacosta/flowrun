@@ -21,9 +21,10 @@ export type {
     StepStartedEvent,
     StepStartedPayload,
     TypedEvent,
+    UserEvents,
 } from "./core/events.ts";
-export type { Reporter } from "./core/reporter.ts";
-export { EventReporter } from "./core/reporter.ts";
+export type { EventSubscriber } from "./core/reporter.ts";
+export { EventBus } from "./core/reporter.ts";
 export type {
     ErrorMeta,
     ErrorResolution,

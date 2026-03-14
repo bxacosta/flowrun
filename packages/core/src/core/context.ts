@@ -1,12 +1,12 @@
 import { FlowStopSignal } from "./errors.ts";
-import type { Reporter } from "./reporter.ts";
+import type { EngineEvent } from "./events.ts";
 import type { FlowContext, StateShape, StateStore, StepContext, StepInfo } from "./types.ts";
 
 export interface RuntimeContextConfig<TParams, TState extends StateShape> {
+    dispatch: (event: EngineEvent) => void;
     flowId: string;
     flowName: string;
     params: TParams;
-    reporter: Reporter;
     runId: string;
     signal: AbortSignal;
     state: StateStore<TState>;
@@ -32,7 +32,7 @@ export function createFlowContext<TParams, TState extends StateShape>(
                 timestamp: new Date(),
                 ...data,
             };
-            config.reporter.report(event);
+            config.dispatch(event);
         },
         stop(reason?: string): never {
             throw new FlowStopSignal(reason);

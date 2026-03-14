@@ -1,7 +1,8 @@
 import { createBranchFlowContext, createFlowContext, createStepContext } from "./context.ts";
 import { FlowEngineError, FlowStopSignal } from "./errors.ts";
+import type { CoreEvents } from "./events.ts";
 import { compose } from "./middleware.ts";
-import { EventReporter, type Reporter } from "./reporter.ts";
+import { EventBus } from "./reporter.ts";
 import { computeRetryDelay, createLinkedAbortController, runWithTimeout, wait } from "./retry.ts";
 import { MemoryStateStore, mergeBranchChanges } from "./state.ts";
 import type {
@@ -56,10 +57,10 @@ interface InitialStateSource<TState extends StateShape> {
 export class FlowEngine {
     private readonly flows = new Map<string, unknown>();
     private readonly activeRuns = new Set<string>();
-    private readonly reporter: Reporter;
+    private readonly bus: EventBus;
 
     constructor(config: FlowEngineConfig = {}) {
-        this.reporter = config.reporter ?? new EventReporter();
+        this.bus = config.events ?? new EventBus();
     }
 
     register<TParams, TState extends StateShape>(
@@ -87,7 +88,7 @@ export class FlowEngine {
             runId,
             params,
             state,
-            reporter: this.reporter,
+            dispatch: (event) => this.bus.dispatch(event),
             signal: abortController.signal,
         });
 
@@ -173,7 +174,7 @@ export class FlowEngine {
     }
 
     private reportFlowStarted<TParams, TState extends StateShape>(activeRun: ActiveRun<TParams, TState>): void {
-        activeRun.context.emit("flow.started", {
+        this.dispatchEvent(activeRun, "flow.started", {
             flowName: activeRun.flow.name,
             params: activeRun.context.params,
         });
@@ -230,7 +231,7 @@ export class FlowEngine {
         try {
             await activeRun.flow.onFailure?.(activeRun.context, failure);
         } catch (hookError) {
-            activeRun.context.emit("log", {
+            this.dispatchEvent(activeRun, "log", {
                 level: "error",
                 message: "onFailure hook threw",
                 data: { error: this.toError(hookError).message },
@@ -246,7 +247,7 @@ export class FlowEngine {
         const eventResult = this.buildRunResult(activeRun, status, startedAt);
         activeRun.status = eventResult.status;
 
-        activeRun.context.emit("flow.ended", {
+        this.dispatchEvent(activeRun, "flow.ended", {
             flowName: activeRun.flow.name,
             status: eventResult.status,
             durationMs: eventResult.durationMs,
@@ -258,7 +259,7 @@ export class FlowEngine {
         try {
             await activeRun.flow.onComplete?.(activeRun.context, eventResult);
         } catch (hookError) {
-            activeRun.context.emit("log", {
+            this.dispatchEvent(activeRun, "log", {
                 level: "error",
                 message: "onComplete hook threw",
                 data: { error: this.toError(hookError).message },
@@ -314,7 +315,7 @@ export class FlowEngine {
                 await this.executeParallel(node, context, activeRun);
                 return;
             default:
-                return this.assertNever(node);
+                throw new FlowEngineError(`Unhandled flow node: ${JSON.stringify(node)}`);
         }
     }
 
@@ -340,7 +341,7 @@ export class FlowEngine {
                 attemptController.signal
             );
 
-            activeRun.context.emit("step.started", {
+            this.dispatchEvent(activeRun, "step.started", {
                 stepId: step.id,
                 stepName: step.name,
                 attempt,
@@ -371,7 +372,7 @@ export class FlowEngine {
                 lastError = this.toError(error);
 
                 if (attempt < attempts) {
-                    activeRun.context.emit("step.ended", {
+                    this.dispatchEvent(activeRun, "step.ended", {
                         stepId: step.id,
                         stepName: step.name,
                         attempt,
@@ -383,7 +384,7 @@ export class FlowEngine {
 
                     const delayMs = computeRetryDelay(step.retry ?? { attempts }, attempt - 1);
 
-                    activeRun.context.emit("step.retrying", {
+                    this.dispatchEvent(activeRun, "step.retrying", {
                         stepId: step.id,
                         stepName: step.name,
                         attempt,
@@ -396,7 +397,7 @@ export class FlowEngine {
                     continue;
                 }
 
-                const resolution = await this.resolveErrorResolution(step, lastError, stepContext, {
+                const resolution = await this.resolveErrorResolution(activeRun, step, lastError, stepContext, {
                     attempt,
                     attempts,
                 });
@@ -412,7 +413,7 @@ export class FlowEngine {
                     };
 
                     activeRun.stepResults.push(stepResult);
-                    activeRun.context.emit("step.ended", {
+                    this.dispatchEvent(activeRun, "step.ended", {
                         stepId: step.id,
                         stepName: step.name,
                         attempt,
@@ -434,7 +435,7 @@ export class FlowEngine {
                 };
 
                 activeRun.stepResults.push(stepResult);
-                activeRun.context.emit("step.ended", {
+                this.dispatchEvent(activeRun, "step.ended", {
                     stepId: step.id,
                     stepName: step.name,
                     attempt,
@@ -466,7 +467,7 @@ export class FlowEngine {
         };
 
         activeRun.stepResults.push(stepResult);
-        activeRun.context.emit("step.ended", {
+        this.dispatchEvent(activeRun, "step.ended", {
             stepId: step.id,
             stepName: step.name,
             attempt,
@@ -568,6 +569,7 @@ export class FlowEngine {
     }
 
     private async resolveErrorResolution<TParams, TState extends StateShape>(
+        activeRun: ActiveRun<TParams, TState>,
         step: StepNode<TParams, TState>,
         error: Error,
         context: StepContext<TParams, TState>,
@@ -584,7 +586,7 @@ export class FlowEngine {
         try {
             return await step.onError(error, context, meta);
         } catch (resolutionError) {
-            context.emit("log", {
+            this.dispatchEvent(activeRun, "log", {
                 level: "error",
                 message: "onError resolver threw",
                 data: { error: this.toError(resolutionError).message },
@@ -683,8 +685,19 @@ export class FlowEngine {
         };
     }
 
-    private assertNever(value: never): never {
-        throw new FlowEngineError(`Unhandled flow node: ${JSON.stringify(value)}`);
+    private dispatchEvent<K extends keyof CoreEvents & string>(
+        run: { flow: { id: string }; runId: string },
+        type: K,
+        data: CoreEvents[K]
+    ): void {
+        const event = {
+            type,
+            flowId: run.flow.id,
+            runId: run.runId,
+            timestamp: new Date(),
+            ...data,
+        };
+        this.bus.dispatch(event);
     }
 
     private toError(error: unknown): Error {

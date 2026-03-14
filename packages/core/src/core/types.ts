@@ -1,5 +1,5 @@
-import type { CoreEvents } from "./events.ts";
-import type { Reporter } from "./reporter.ts";
+import type { UserEvents } from "./events.ts";
+import type { EventBus } from "./reporter.ts";
 
 export type StateShape = object;
 
@@ -60,13 +60,12 @@ export interface StepInfo {
 }
 
 export interface FlowContext<TParams = Record<string, unknown>, TState extends StateShape = StateShape> {
-    emit<K extends keyof CoreEvents & string>(type: K, data: CoreEvents[K]): void;
+    emit<K extends keyof UserEvents & string>(type: K, data: UserEvents[K]): void;
     readonly flow: FlowInfo;
     readonly params: Readonly<TParams>;
     readonly runId: string;
     readonly signal: AbortSignal;
     readonly state: StateStore<TState>;
-
     stop(reason?: string): never;
 }
 
@@ -169,7 +168,6 @@ export interface FlowHandle<TState extends StateShape = StateShape> {
     pause(): Promise<void>;
     resume(): Promise<void>;
     readonly runId: string;
-
     status(): FlowStatus;
 }
 
@@ -179,7 +177,6 @@ export interface FlowBuilder<TParams = Record<string, unknown>, TState extends S
         nodes: FlowNode<TParams, TState>[],
         options?: ParallelOptions<TState>
     ): ParallelNode<TParams, TState>;
-
     sequence(id: string, nodes: FlowNode<TParams, TState>[], options?: SequenceOptions): SequenceNode<TParams, TState>;
     step(
         id: string,
@@ -214,5 +211,5 @@ export interface FlowDefinitionInput<TParams = Record<string, unknown>, TState e
 }
 
 export interface FlowEngineConfig {
-    reporter?: Reporter;
+    events?: EventBus;
 }
