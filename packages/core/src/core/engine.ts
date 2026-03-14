@@ -1,7 +1,7 @@
 import { createBranchFlowContext, createFlowContext, createStepContext } from "./context.ts";
 import { FlowEngineError, FlowStopSignal } from "./errors.ts";
 import { compose } from "./middleware.ts";
-import { NoopReporter, type Reporter } from "./reporter.ts";
+import { EventReporter, type Reporter } from "./reporter.ts";
 import { computeRetryDelay, createLinkedAbortController, runWithTimeout, wait } from "./retry.ts";
 import { MemoryStateStore, mergeBranchChanges } from "./state.ts";
 import type {
@@ -37,7 +37,6 @@ interface ActiveRun<TParams, TState extends StateShape> {
     flow: FlowDefinition<TParams, TState>;
     pauseGate: PauseGate | null;
     rejectCompletion: (error: unknown) => void;
-    reporter: Reporter;
     resolveCompletion: (result: RunResult<TState>) => void;
     runId: string;
     state: MemoryStateStore<TState>;
@@ -60,7 +59,7 @@ export class FlowEngine {
     private readonly reporter: Reporter;
 
     constructor(config: FlowEngineConfig = {}) {
-        this.reporter = config.reporter ?? new NoopReporter();
+        this.reporter = config.reporter ?? new EventReporter();
     }
 
     register<TParams, TState extends StateShape>(
@@ -101,7 +100,6 @@ export class FlowEngine {
         const activeRun: ActiveRun<TParams, TState> = {
             runId,
             flow,
-            reporter: this.reporter,
             state,
             context,
             abortController,
@@ -162,7 +160,7 @@ export class FlowEngine {
         let finalStatus: RunCompletionStatus = "completed";
 
         try {
-            this.reportFlowStart(activeRun);
+            this.reportFlowStarted(activeRun);
             await activeRun.flow.onStart?.(activeRun.context);
             await this.executeNodes(activeRun.flow.steps, activeRun.context, activeRun);
             finalStatus = this.resolveCompletionStatus(activeRun);
@@ -174,14 +172,10 @@ export class FlowEngine {
         }
     }
 
-    private reportFlowStart<TParams, TState extends StateShape>(activeRun: ActiveRun<TParams, TState>): void {
-        this.reporter.report({
-            kind: "flow:start",
-            flowId: activeRun.flow.id,
+    private reportFlowStarted<TParams, TState extends StateShape>(activeRun: ActiveRun<TParams, TState>): void {
+        activeRun.context.emit("flow.started", {
             flowName: activeRun.flow.name,
-            runId: activeRun.runId,
-            timestamp: new Date(),
-            params: activeRun.context.params as Record<string, unknown>,
+            params: activeRun.context.params,
         });
     }
 
@@ -236,8 +230,10 @@ export class FlowEngine {
         try {
             await activeRun.flow.onFailure?.(activeRun.context, failure);
         } catch (hookError) {
-            activeRun.context.log.error("onFailure hook threw", {
-                error: this.toError(hookError).message,
+            activeRun.context.emit("log", {
+                level: "error",
+                message: "onFailure hook threw",
+                data: { error: this.toError(hookError).message },
             });
         }
     }
@@ -250,12 +246,8 @@ export class FlowEngine {
         const eventResult = this.buildRunResult(activeRun, status, startedAt);
         activeRun.status = eventResult.status;
 
-        this.reporter.report({
-            kind: "flow:end",
-            flowId: activeRun.flow.id,
+        activeRun.context.emit("flow.ended", {
             flowName: activeRun.flow.name,
-            runId: activeRun.runId,
-            timestamp: new Date(),
             status: eventResult.status,
             durationMs: eventResult.durationMs,
             error: eventResult.error,
@@ -266,8 +258,10 @@ export class FlowEngine {
         try {
             await activeRun.flow.onComplete?.(activeRun.context, eventResult);
         } catch (hookError) {
-            activeRun.context.log.error("onComplete hook threw", {
-                error: this.toError(hookError).message,
+            activeRun.context.emit("log", {
+                level: "error",
+                message: "onComplete hook threw",
+                data: { error: this.toError(hookError).message },
             });
         }
 
@@ -341,17 +335,12 @@ export class FlowEngine {
             const attemptController = createLinkedAbortController(context.signal);
             const stepContext = createStepContext(
                 context,
-                activeRun.reporter,
                 { id: step.id, name: step.name },
                 attempt,
                 attemptController.signal
             );
 
-            this.reporter.report({
-                kind: "step:start",
-                flowId: context.flow.id,
-                runId: context.runId,
-                timestamp: new Date(),
+            activeRun.context.emit("step.started", {
                 stepId: step.id,
                 stepName: step.name,
                 attempt,
@@ -371,22 +360,18 @@ export class FlowEngine {
                     await task;
                 }
 
-                this.recordCompletedStep(step, context, activeRun, attempt, attempts, startedAt, attemptStartedAt);
+                this.recordCompletedStep(step, activeRun, attempt, attempts, startedAt, attemptStartedAt);
                 return;
             } catch (error) {
                 if (error instanceof FlowStopSignal) {
-                    this.recordCompletedStep(step, context, activeRun, attempt, attempts, startedAt, attemptStartedAt);
+                    this.recordCompletedStep(step, activeRun, attempt, attempts, startedAt, attemptStartedAt);
                     throw error;
                 }
 
                 lastError = this.toError(error);
 
                 if (attempt < attempts) {
-                    this.reporter.report({
-                        kind: "step:end",
-                        flowId: context.flow.id,
-                        runId: context.runId,
-                        timestamp: new Date(),
+                    activeRun.context.emit("step.ended", {
                         stepId: step.id,
                         stepName: step.name,
                         attempt,
@@ -398,11 +383,7 @@ export class FlowEngine {
 
                     const delayMs = computeRetryDelay(step.retry ?? { attempts }, attempt - 1);
 
-                    this.reporter.report({
-                        kind: "step:retry",
-                        flowId: context.flow.id,
-                        runId: context.runId,
-                        timestamp: new Date(),
+                    activeRun.context.emit("step.retrying", {
                         stepId: step.id,
                         stepName: step.name,
                         attempt,
@@ -431,11 +412,7 @@ export class FlowEngine {
                     };
 
                     activeRun.stepResults.push(stepResult);
-                    this.reporter.report({
-                        kind: "step:end",
-                        flowId: context.flow.id,
-                        runId: context.runId,
-                        timestamp: new Date(),
+                    activeRun.context.emit("step.ended", {
                         stepId: step.id,
                         stepName: step.name,
                         attempt,
@@ -457,11 +434,7 @@ export class FlowEngine {
                 };
 
                 activeRun.stepResults.push(stepResult);
-                this.reporter.report({
-                    kind: "step:end",
-                    flowId: context.flow.id,
-                    runId: context.runId,
-                    timestamp: new Date(),
+                activeRun.context.emit("step.ended", {
                     stepId: step.id,
                     stepName: step.name,
                     attempt,
@@ -478,7 +451,6 @@ export class FlowEngine {
 
     private recordCompletedStep<TParams, TState extends StateShape>(
         step: StepNode<TParams, TState>,
-        context: FlowContext<TParams, TState>,
         activeRun: ActiveRun<TParams, TState>,
         attempt: number,
         attempts: number,
@@ -494,11 +466,7 @@ export class FlowEngine {
         };
 
         activeRun.stepResults.push(stepResult);
-        this.reporter.report({
-            kind: "step:end",
-            flowId: context.flow.id,
-            runId: context.runId,
-            timestamp: new Date(),
+        activeRun.context.emit("step.ended", {
             stepId: step.id,
             stepName: step.name,
             attempt,
@@ -517,12 +485,7 @@ export class FlowEngine {
         const concurrency = Math.max(1, node.concurrency ?? node.nodes.length);
         const tasks = node.nodes.map((child) => async (): Promise<BranchResult<TState>> => {
             const branchState = activeRun.state.fork();
-            const branchContext = createBranchFlowContext(
-                context,
-                activeRun.reporter,
-                branchState,
-                groupController.signal
-            );
+            const branchContext = createBranchFlowContext(context, branchState, groupController.signal);
 
             await this.executeNode(child, branchContext, activeRun);
             return { patch: branchState.changes() };
@@ -621,8 +584,10 @@ export class FlowEngine {
         try {
             return await step.onError(error, context, meta);
         } catch (resolutionError) {
-            context.log.error("onError resolver threw", {
-                error: this.toError(resolutionError).message,
+            context.emit("log", {
+                level: "error",
+                message: "onError resolver threw",
+                data: { error: this.toError(resolutionError).message },
             });
             return "fail";
         }

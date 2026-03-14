@@ -1,35 +1,50 @@
-import type { EngineEvent } from "./events.ts";
+import type { CoreEvents, EngineEvent, EventMeta } from "./events.ts";
 
 export interface Reporter {
     report(event: EngineEvent): void;
 }
 
-export interface ReporterRoute {
-    filter?: (event: EngineEvent) => boolean;
-    reporter: Reporter;
-}
+export class EventReporter<TEvents = CoreEvents> implements Reporter {
+    private readonly handlers = new Map<string, Set<(event: unknown) => void>>();
+    private readonly anyHandlers = new Set<(event: EngineEvent) => void>();
 
-export class NoopReporter implements Reporter {
-    report(_event: EngineEvent): void {
-        // No-op: intentionally empty
+    on<K extends keyof TEvents & string>(type: K, handler: (event: TEvents[K] & EventMeta) => void): () => void {
+        let set = this.handlers.get(type);
+
+        if (!set) {
+            set = new Set();
+            this.handlers.set(type, set);
+        }
+
+        const wrapped = handler as (event: unknown) => void;
+        set.add(wrapped);
+
+        return () => set.delete(wrapped);
     }
-}
 
-export class CompositeReporter implements Reporter {
-    private readonly routes: ReporterRoute[];
-
-    constructor(routes: ReporterRoute[]) {
-        this.routes = [...routes];
+    onAny(handler: (event: EngineEvent) => void): () => void {
+        this.anyHandlers.add(handler);
+        return () => this.anyHandlers.delete(handler);
     }
 
     report(event: EngineEvent): void {
-        for (const route of this.routes) {
-            try {
-                if (!route.filter || route.filter(event)) {
-                    route.reporter.report(event);
+        const typed = this.handlers.get(event.type);
+
+        if (typed) {
+            for (const handler of typed) {
+                try {
+                    handler(event);
+                } catch {
+                    // Handlers must never crash the engine.
                 }
+            }
+        }
+
+        for (const handler of this.anyHandlers) {
+            try {
+                handler(event);
             } catch {
-                // Reporters must never crash the engine.
+                // Handlers must never crash the engine.
             }
         }
     }

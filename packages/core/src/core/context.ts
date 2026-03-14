@@ -1,5 +1,4 @@
 import { FlowStopSignal } from "./errors.ts";
-import { createLogger } from "./logger.ts";
 import type { Reporter } from "./reporter.ts";
 import type { FlowContext, StateShape, StateStore, StepContext, StepInfo } from "./types.ts";
 
@@ -25,10 +24,16 @@ export function createFlowContext<TParams, TState extends StateShape>(
         params: config.params,
         state: config.state,
         signal: config.signal,
-        log: createLogger(config.reporter, {
-            flowId: config.flowId,
-            runId: config.runId,
-        }),
+        emit(type, data) {
+            const event = {
+                type,
+                flowId: config.flowId,
+                runId: config.runId,
+                timestamp: new Date(),
+                ...data,
+            };
+            config.reporter.report(event);
+        },
         stop(reason?: string): never {
             throw new FlowStopSignal(reason);
         },
@@ -37,7 +42,6 @@ export function createFlowContext<TParams, TState extends StateShape>(
 
 export function createStepContext<TParams, TState extends StateShape>(
     base: FlowContext<TParams, TState>,
-    reporter: Reporter,
     step: StepInfo,
     attempt: number,
     signal: AbortSignal
@@ -47,18 +51,11 @@ export function createStepContext<TParams, TState extends StateShape>(
         signal,
         step,
         attempt,
-        log: createLogger(reporter, {
-            flowId: base.flow.id,
-            runId: base.runId,
-            stepId: step.id,
-            stepName: step.name,
-        }),
     };
 }
 
 export function createBranchFlowContext<TParams, TState extends StateShape>(
     base: FlowContext<TParams, TState>,
-    reporter: Reporter,
     state: StateStore<TState>,
     signal: AbortSignal
 ): FlowContext<TParams, TState> {
@@ -66,10 +63,6 @@ export function createBranchFlowContext<TParams, TState extends StateShape>(
         ...base,
         state,
         signal,
-        log: createLogger(reporter, {
-            flowId: base.flow.id,
-            runId: base.runId,
-        }),
         stop(reason?: string): never {
             throw new FlowStopSignal(reason);
         },

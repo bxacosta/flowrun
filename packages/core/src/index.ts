@@ -3,17 +3,27 @@ export { defineFlow, parallel, sequence, step } from "./core/composability.ts";
 export { FlowEngine } from "./core/engine.ts";
 export { FlowEngineError, ParallelMergeError, StepTimeoutError } from "./core/errors.ts";
 export type {
+    CoreEvent,
+    CoreEvents,
     EngineEvent,
-    FlowEndEvent,
-    FlowStartEvent,
+    EventMeta,
+    FlowEndedEvent,
+    FlowEndedPayload,
+    FlowStartedEvent,
+    FlowStartedPayload,
     LogEvent,
     LogLevel,
-    StepEndEvent,
-    StepRetryEvent,
-    StepStartEvent,
+    LogPayload,
+    StepEndedEvent,
+    StepEndedPayload,
+    StepRetryingEvent,
+    StepRetryingPayload,
+    StepStartedEvent,
+    StepStartedPayload,
+    TypedEvent,
 } from "./core/events.ts";
-export type { Reporter, ReporterRoute } from "./core/reporter.ts";
-export { CompositeReporter, NoopReporter } from "./core/reporter.ts";
+export type { Reporter } from "./core/reporter.ts";
+export { EventReporter } from "./core/reporter.ts";
 export type {
     ErrorMeta,
     ErrorResolution,

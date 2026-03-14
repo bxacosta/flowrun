@@ -1,4 +1,4 @@
-import type { Logger } from "./logger.ts";
+import type { CoreEvents } from "./events.ts";
 import type { Reporter } from "./reporter.ts";
 
 export type StateShape = object;
@@ -60,8 +60,8 @@ export interface StepInfo {
 }
 
 export interface FlowContext<TParams = Record<string, unknown>, TState extends StateShape = StateShape> {
+    emit<K extends keyof CoreEvents & string>(type: K, data: CoreEvents[K]): void;
     readonly flow: FlowInfo;
-    readonly log: Logger;
     readonly params: Readonly<TParams>;
     readonly runId: string;
     readonly signal: AbortSignal;

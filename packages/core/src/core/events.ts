@@ -1,66 +1,87 @@
 import type { RunCompletionStatus, StepStatus } from "./types.ts";
 
-export type LogLevel = "debug" | "info" | "warn" | "error";
-
-export interface EventBase {
+export interface EventMeta {
     readonly flowId: string;
-    readonly kind: string;
     readonly runId: string;
     readonly timestamp: Date;
 }
 
-export interface FlowStartEvent extends EventBase {
-    readonly flowName: string;
-    readonly kind: "flow:start";
-    readonly params: Record<string, unknown>;
+export interface EngineEvent extends EventMeta {
+    readonly type: string;
 }
 
-export interface FlowEndEvent extends EventBase {
+export interface FlowStartedPayload {
+    readonly flowName: string;
+    readonly params: unknown;
+}
+
+export interface FlowEndedPayload {
     readonly cancelReason?: string;
     readonly durationMs: number;
     readonly error?: Error;
     readonly flowName: string;
-    readonly kind: "flow:end";
     readonly status: RunCompletionStatus;
     readonly stopReason?: string;
 }
 
-export interface StepStartEvent extends EventBase {
+export interface StepStartedPayload {
     readonly attempt: number;
     readonly attempts: number;
-    readonly kind: "step:start";
     readonly stepId: string;
     readonly stepName: string;
 }
 
-export interface StepRetryEvent extends EventBase {
-    readonly attempt: number;
-    readonly attempts: number;
-    readonly delayMs: number;
-    readonly error: Error;
-    readonly kind: "step:retry";
-    readonly stepId: string;
-    readonly stepName: string;
-}
-
-export interface StepEndEvent extends EventBase {
+export interface StepEndedPayload {
     readonly attempt: number;
     readonly attempts: number;
     readonly durationMs: number;
     readonly error?: Error;
-    readonly kind: "step:end";
     readonly status: StepStatus;
     readonly stepId: string;
     readonly stepName: string;
 }
 
-export interface LogEvent extends EventBase {
+export interface StepRetryingPayload {
+    readonly attempt: number;
+    readonly attempts: number;
+    readonly delayMs: number;
+    readonly error: Error;
+    readonly stepId: string;
+    readonly stepName: string;
+}
+
+export type LogLevel = "debug" | "info" | "warn" | "error";
+
+export interface LogPayload {
     readonly data?: Record<string, unknown>;
-    readonly kind: "log";
     readonly level: LogLevel;
     readonly message: string;
     readonly stepId?: string;
     readonly stepName?: string;
 }
 
-export type EngineEvent = FlowStartEvent | FlowEndEvent | StepStartEvent | StepRetryEvent | StepEndEvent | LogEvent;
+export interface CoreEvents {
+    "flow.ended": FlowEndedPayload;
+    "flow.started": FlowStartedPayload;
+    log: LogPayload;
+    "step.ended": StepEndedPayload;
+    "step.retrying": StepRetryingPayload;
+    "step.started": StepStartedPayload;
+}
+
+export type TypedEvent<K extends string, T> = EventMeta & T & { readonly type: K };
+
+export type FlowStartedEvent = TypedEvent<"flow.started", FlowStartedPayload>;
+export type FlowEndedEvent = TypedEvent<"flow.ended", FlowEndedPayload>;
+export type StepStartedEvent = TypedEvent<"step.started", StepStartedPayload>;
+export type StepEndedEvent = TypedEvent<"step.ended", StepEndedPayload>;
+export type StepRetryingEvent = TypedEvent<"step.retrying", StepRetryingPayload>;
+export type LogEvent = TypedEvent<"log", LogPayload>;
+
+export type CoreEvent =
+    | FlowStartedEvent
+    | FlowEndedEvent
+    | StepStartedEvent
+    | StepEndedEvent
+    | StepRetryingEvent
+    | LogEvent;
