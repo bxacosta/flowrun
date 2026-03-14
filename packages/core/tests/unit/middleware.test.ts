@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createFlowContext, createStepContext } from "../../src/core/context.ts";
 import { compose } from "../../src/core/middleware.ts";
 import { MemoryStateStore } from "../../src/core/state.ts";
-import { NoopReporter } from "../../src/index.ts";
+import { EventBus } from "../../src/index.ts";
 
 interface MiddlewareState {
     order?: string[];
@@ -10,18 +10,18 @@ interface MiddlewareState {
 }
 
 function makeStepContext() {
-    const reporter = new NoopReporter();
+    const bus = new EventBus();
     const base = createFlowContext({
         flowId: "flow",
         flowName: "Flow",
         runId: "run",
         params: { source: "test" },
         state: new MemoryStateStore<MiddlewareState>(),
-        reporter,
+        dispatch: (event) => bus.dispatch(event),
         signal: new AbortController().signal,
     });
 
-    return createStepContext(base, reporter, { id: "step", name: "Step" }, 1, base.signal);
+    return createStepContext(base, { id: "step", name: "Step" }, 1, base.signal);
 }
 
 describe("middleware compose", () => {

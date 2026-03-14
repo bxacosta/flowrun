@@ -1,5 +1,5 @@
 import type { UserEvents } from "./events.ts";
-import type { EventBus } from "./reporter.ts";
+import type { EventSubscriber } from "./reporter.ts";
 
 export type StateShape = object;
 
@@ -211,5 +211,5 @@ export interface FlowDefinitionInput<TParams = Record<string, unknown>, TState e
 }
 
 export interface FlowEngineConfig {
-    events?: EventBus;
+    subscribers?: ((events: EventSubscriber) => void)[];
 }

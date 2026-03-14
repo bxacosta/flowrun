@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { defineFlow, FlowEngine, type Middleware, parallel, sequence, step } from "../../src/index.ts";
-import { SpyReporter, sleep } from "../helpers/test-helpers.ts";
+import {
+    defineFlow,
+    type FlowEndedEvent,
+    FlowEngine,
+    type Middleware,
+    parallel,
+    sequence,
+    step,
+} from "../../src/index.ts";
+import { EventSpy, sleep } from "../helpers/test-helpers.ts";
 
 interface ImportParams {
     customerTier: "standard" | "vip";
@@ -19,8 +27,8 @@ interface ImportState {
 
 describe("integration flow", () => {
     test("runs a full flow with middleware, retry, skip, parallel and hooks", async () => {
-        const reporter = new SpyReporter();
-        const engine = new FlowEngine({ reporter });
+        const spy = new EventSpy();
+        const engine = new FlowEngine({ subscribers: [spy.subscriber] });
         let persistAttempts = 0;
         let onStartCalled = false;
         let onSuccessCalled = false;
@@ -29,7 +37,13 @@ describe("integration flow", () => {
         const timingMiddleware: Middleware<ImportParams, ImportState> = async (ctx, next) => {
             const startedAt = Date.now();
             await next();
-            ctx.log.info("timed", { step: ctx.step.id, durationMs: Date.now() - startedAt });
+            ctx.emit("log", {
+                level: "info",
+                message: "timed",
+                stepId: ctx.step.id,
+                stepName: ctx.step.name,
+                data: { durationMs: Date.now() - startedAt },
+            });
         };
 
         const flow = defineFlow<ImportParams, ImportState>({
@@ -107,7 +121,7 @@ describe("integration flow", () => {
             },
             onComplete: (ctx, result) => {
                 onCompleteCalled = true;
-                ctx.log.info("complete", { status: result.status });
+                ctx.emit("log", { level: "info", message: "complete", data: { status: result.status } });
             },
         });
 
@@ -128,9 +142,9 @@ describe("integration flow", () => {
         expect(result.steps).toHaveLength(6);
         expect(result.steps.find((step) => step.stepId === "load-recommendations")?.status).toBe("skipped");
         expect(result.steps.find((step) => step.stepId === "persist")?.attempts).toBe(2);
-        expect(reporter.byKind("step:start")).toHaveLength(7);
-        expect(reporter.byKind("step:end")).toHaveLength(7);
-        expect(reporter.byKind("step:retry")).toHaveLength(1);
-        expect(reporter.byKind("flow:end")[0]?.status).toBe("completed");
+        expect(spy.byType("step.started")).toHaveLength(7);
+        expect(spy.byType("step.ended")).toHaveLength(7);
+        expect(spy.byType("step.retrying")).toHaveLength(1);
+        expect((spy.byType("flow.ended")[0] as FlowEndedEvent | undefined)?.status).toBe("completed");
     });
 });

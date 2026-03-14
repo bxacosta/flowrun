@@ -1,52 +1,94 @@
 import { describe, expect, test } from "bun:test";
-import { CompositeReporter } from "../../src/index.ts";
-import { SpyReporter } from "../helpers/test-helpers.ts";
+import { EventBus, type EventMeta } from "../../src/index.ts";
 
-describe("CompositeReporter", () => {
-    test("routes events to every reporter that matches", () => {
-        const a = new SpyReporter();
-        const b = new SpyReporter();
-        const composite = new CompositeReporter([
-            { reporter: a },
-            { reporter: b, filter: (event) => event.kind !== "log" },
-        ]);
+describe("EventBus", () => {
+    test("dispatches typed events to registered handlers", () => {
+        const bus = new EventBus();
+        const received: unknown[] = [];
 
-        composite.report({
-            kind: "flow:start",
+        bus.on("flow.started", (data) => {
+            received.push(data.flowName);
+        });
+
+        const event = {
+            type: "flow.started" as const,
             flowId: "flow",
             flowName: "Flow",
             runId: "run",
             timestamp: new Date(),
             params: {},
-        });
+        };
+        bus.dispatch(event);
 
-        expect(a.events).toHaveLength(1);
-        expect(b.events).toHaveLength(1);
+        expect(received).toEqual(["Flow"]);
     });
 
-    test("swallows reporter failures so others still receive the event", () => {
-        const good = new SpyReporter();
-        const composite = new CompositeReporter([
-            {
-                reporter: {
-                    report() {
-                        throw new Error("boom");
-                    },
-                },
-            },
-            { reporter: good },
-        ]);
+    test("dispatches to onAny handlers with (type, data) signature", () => {
+        const bus = new EventBus();
+        const received: Array<{ type: string; data: Record<string, unknown> & EventMeta }> = [];
 
-        composite.report({
-            kind: "flow:end",
+        bus.onAny((type, data) => received.push({ type, data }));
+
+        const event = {
+            type: "flow.started" as const,
             flowId: "flow",
             flowName: "Flow",
             runId: "run",
             timestamp: new Date(),
-            status: "completed",
-            durationMs: 1,
+            params: {},
+        };
+        bus.dispatch(event);
+
+        expect(received).toHaveLength(1);
+        expect(received[0]?.type).toBe("flow.started");
+        expect(received[0]?.data.flowId).toBe("flow");
+    });
+
+    test("unsubscribe removes handler", () => {
+        const bus = new EventBus();
+        const received: unknown[] = [];
+
+        const off = bus.on("flow.started", (data) => {
+            received.push(data.flowName);
         });
 
-        expect(good.events).toHaveLength(1);
+        const event = {
+            type: "flow.started" as const,
+            flowId: "flow",
+            flowName: "Flow",
+            runId: "run",
+            timestamp: new Date(),
+            params: {},
+        };
+
+        bus.dispatch(event);
+        off();
+        bus.dispatch(event);
+
+        expect(received).toHaveLength(1);
+    });
+
+    test("swallows handler errors so other handlers still receive the event", () => {
+        const bus = new EventBus();
+        const received: string[] = [];
+
+        bus.on("flow.ended", () => {
+            throw new Error("boom");
+        });
+
+        bus.onAny((type) => received.push(type));
+
+        const event = {
+            type: "flow.ended" as const,
+            flowId: "flow",
+            flowName: "Flow",
+            runId: "run",
+            timestamp: new Date(),
+            status: "completed" as const,
+            durationMs: 1,
+        };
+        bus.dispatch(event);
+
+        expect(received).toHaveLength(1);
     });
 });

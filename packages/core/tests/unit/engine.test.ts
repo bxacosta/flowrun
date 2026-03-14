@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { defineFlow, FlowEngine, parallel } from "../../src/index.ts";
-import { SpyReporter, sleep } from "../helpers/test-helpers.ts";
+import { EventSpy, sleep } from "../helpers/test-helpers.ts";
 
 describe("FlowEngine", () => {
     test("runs a simple registered flow and emits lifecycle events", async () => {
-        const reporter = new SpyReporter();
-        const engine = new FlowEngine({ reporter });
+        const spy = new EventSpy();
+        const engine = new FlowEngine({ subscribers: [spy.subscriber] });
         const flow = defineFlow<{ userId: string }, { userId?: string; saved?: boolean }>({
             id: "sync-user",
             steps: [
@@ -40,10 +40,10 @@ describe("FlowEngine", () => {
         expect(result.status).toBe("completed");
         expect(result.state).toEqual({ userId: "u1", saved: true });
         expect(result.steps.map((step) => step.status)).toEqual(["completed", "completed"]);
-        expect(reporter.byKind("flow:start")).toHaveLength(1);
-        expect(reporter.byKind("flow:end")).toHaveLength(1);
-        expect(reporter.byKind("step:start")).toHaveLength(2);
-        expect(reporter.byKind("step:end")).toHaveLength(2);
+        expect(spy.byType("flow.started")).toHaveLength(1);
+        expect(spy.byType("flow.ended")).toHaveLength(1);
+        expect(spy.byType("step.started")).toHaveLength(2);
+        expect(spy.byType("step.ended")).toHaveLength(2);
     });
 
     test("retries then succeeds", async () => {
@@ -278,13 +278,11 @@ describe("FlowEngine", () => {
     });
 
     test("preserves lifecycle order for success hooks and reporter events", async () => {
-        const events: string[] = [];
+        const trace: string[] = [];
         const engine = new FlowEngine({
-            reporter: {
-                report(event) {
-                    events.push(`report:${event.kind}`);
-                },
-            },
+            subscribers: [(events) => {
+                events.onAny((type) => trace.push(`report:${type}`));
+            }],
         });
 
         const flow = defineFlow<undefined, { done?: boolean }>({
@@ -296,45 +294,43 @@ describe("FlowEngine", () => {
                     name: "main",
                     use: [],
                     run: (ctx) => {
-                        events.push("step:run");
+                        trace.push("step:run");
                         ctx.state.set("done", true);
                     },
                 },
             ],
             onStart: () => {
-                events.push("hook:onStart");
+                trace.push("hook:onStart");
             },
             onSuccess: () => {
-                events.push("hook:onSuccess");
+                trace.push("hook:onSuccess");
             },
             onComplete: () => {
-                events.push("hook:onComplete");
+                trace.push("hook:onComplete");
             },
         });
 
         const result = await engine.run(flow, undefined);
 
         expect(result.status).toBe("completed");
-        expect(events).toEqual([
-            "report:flow:start",
+        expect(trace).toEqual([
+            "report:flow.started",
             "hook:onStart",
-            "report:step:start",
+            "report:step.started",
             "step:run",
-            "report:step:end",
+            "report:step.ended",
             "hook:onSuccess",
-            "report:flow:end",
+            "report:flow.ended",
             "hook:onComplete",
         ]);
     });
 
     test("preserves lifecycle order for failure hooks and reporter events", async () => {
-        const events: string[] = [];
+        const trace: string[] = [];
         const engine = new FlowEngine({
-            reporter: {
-                report(event) {
-                    events.push(`report:${event.kind}`);
-                },
-            },
+            subscribers: [(events) => {
+                events.onAny((type) => trace.push(`report:${type}`));
+            }],
         });
 
         const flow = defineFlow<undefined, object>({
@@ -346,19 +342,19 @@ describe("FlowEngine", () => {
                     name: "main",
                     use: [],
                     run: () => {
-                        events.push("step:run");
+                        trace.push("step:run");
                         throw new Error("boom");
                     },
                 },
             ],
             onSuccess: () => {
-                events.push("hook:onSuccess");
+                trace.push("hook:onSuccess");
             },
             onFailure: (_ctx, error) => {
-                events.push(`hook:onFailure:${error.message}`);
+                trace.push(`hook:onFailure:${error.message}`);
             },
             onComplete: (_ctx, result) => {
-                events.push(`hook:onComplete:${result.status}`);
+                trace.push(`hook:onComplete:${result.status}`);
             },
         });
 
@@ -366,16 +362,16 @@ describe("FlowEngine", () => {
 
         expect(result.status).toBe("failed");
         expect(result.error?.message).toBe("boom");
-        expect(events).toEqual([
-            "report:flow:start",
-            "report:step:start",
+        expect(trace).toEqual([
+            "report:flow.started",
+            "report:step.started",
             "step:run",
-            "report:step:end",
+            "report:step.ended",
             "hook:onFailure:boom",
-            "report:flow:end",
+            "report:flow.ended",
             "hook:onComplete:failed",
         ]);
-        expect(events).not.toContain("hook:onSuccess");
+        expect(trace).not.toContain("hook:onSuccess");
     });
 
     test("stops scheduling remaining parallel branches in fail-fast mode", async () => {
@@ -460,13 +456,11 @@ describe("FlowEngine", () => {
     });
 
     test("runs onSuccess and onComplete after ctx.stop when not cancelled", async () => {
-        const events: string[] = [];
+        const trace: string[] = [];
         const engine = new FlowEngine({
-            reporter: {
-                report(event) {
-                    events.push(`report:${event.kind}`);
-                },
-            },
+            subscribers: [(events) => {
+                events.onAny((type) => trace.push(`report:${type}`));
+            }],
         });
 
         const flow = defineFlow<undefined, { audit: string[] }>({
@@ -480,7 +474,7 @@ describe("FlowEngine", () => {
                     use: [],
                     run: (ctx) => {
                         ctx.state.set("audit", [...ctx.state.snapshot().audit, "step"]);
-                        events.push("step:stop");
+                        trace.push("step:stop");
                         ctx.stop("done early");
                     },
                 },
@@ -495,11 +489,11 @@ describe("FlowEngine", () => {
                 },
             ],
             onSuccess: (ctx) => {
-                events.push("hook:onSuccess");
+                trace.push("hook:onSuccess");
                 ctx.state.set("audit", [...ctx.state.snapshot().audit, "success"]);
             },
             onComplete: (ctx, result) => {
-                events.push(`hook:onComplete:${result.status}`);
+                trace.push(`hook:onComplete:${result.status}`);
                 ctx.state.set("audit", [...ctx.state.snapshot().audit, "complete"]);
             },
         });
@@ -509,13 +503,13 @@ describe("FlowEngine", () => {
         expect(result.status).toBe("completed");
         expect(result.stopReason).toBe("done early");
         expect(result.state.audit).toEqual(["step", "success", "complete"]);
-        expect(events).toEqual([
-            "report:flow:start",
-            "report:step:start",
+        expect(trace).toEqual([
+            "report:flow.started",
+            "report:step.started",
             "step:stop",
-            "report:step:end",
+            "report:step.ended",
             "hook:onSuccess",
-            "report:flow:end",
+            "report:flow.ended",
             "hook:onComplete:completed",
         ]);
     });
@@ -562,8 +556,8 @@ describe("FlowEngine", () => {
     });
 
     test("emits attempt events for retries", async () => {
-        const reporter = new SpyReporter();
-        const engine = new FlowEngine({ reporter });
+        const spy = new EventSpy();
+        const engine = new FlowEngine({ subscribers: [spy.subscriber] });
         let attempts = 0;
 
         const flow = defineFlow<undefined, object>({
@@ -588,8 +582,8 @@ describe("FlowEngine", () => {
         const result = await engine.run(flow, undefined);
 
         expect(result.status).toBe("completed");
-        expect(reporter.byKind("step:start")).toHaveLength(2);
-        expect(reporter.byKind("step:end")).toHaveLength(2);
-        expect(reporter.byKind("step:retry")).toHaveLength(1);
+        expect(spy.byType("step.started")).toHaveLength(2);
+        expect(spy.byType("step.ended")).toHaveLength(2);
+        expect(spy.byType("step.retrying")).toHaveLength(1);
     });
 });

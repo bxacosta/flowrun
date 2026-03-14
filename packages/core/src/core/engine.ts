@@ -2,7 +2,7 @@ import { createBranchFlowContext, createFlowContext, createStepContext } from ".
 import { FlowEngineError, FlowStopSignal } from "./errors.ts";
 import type { CoreEvents } from "./events.ts";
 import { compose } from "./middleware.ts";
-import { EventBus } from "./reporter.ts";
+import { EventBus, type EventSubscriber } from "./reporter.ts";
 import { computeRetryDelay, createLinkedAbortController, runWithTimeout, wait } from "./retry.ts";
 import { MemoryStateStore, mergeBranchChanges } from "./state.ts";
 import type {
@@ -58,9 +58,15 @@ export class FlowEngine {
     private readonly flows = new Map<string, unknown>();
     private readonly activeRuns = new Set<string>();
     private readonly bus: EventBus;
+    readonly events: EventSubscriber;
 
     constructor(config: FlowEngineConfig = {}) {
-        this.bus = config.events ?? new EventBus();
+        this.bus = new EventBus();
+        this.events = this.bus;
+
+        for (const subscriber of config.subscribers ?? []) {
+            subscriber(this.bus);
+        }
     }
 
     register<TParams, TState extends StateShape>(
