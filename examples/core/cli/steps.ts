@@ -1,4 +1,4 @@
-import { type StepNode, step } from "../../src";
+import { type StepNode, step } from "@flowrun/core";
 import { sleep } from "../shared/runtime.ts";
 import { appendAudit, type CliImportParams, type CliImportState, markBatchStage } from "./shared.ts";
 

@@ -1,4 +1,4 @@
-import type { Middleware } from "../../src";
+import type { Middleware } from "@flowrun/core";
 
 export interface CliImportParams {
     interactive: boolean;

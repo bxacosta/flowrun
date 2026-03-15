@@ -1,5 +1,5 @@
-import { defineFlow, FlowEngine } from "../src";
-import { ConsoleReporter } from "./shared/reporter.ts";
+import { defineFlow, FlowEngine } from "@flowrun/core";
+import { consoleSubscriber } from "./shared/reporter.ts";
 
 interface SyncUserParams {
     includeAudit: boolean;
@@ -20,7 +20,13 @@ const syncUserFlow = defineFlow<SyncUserParams, SyncUserState>({
     },
     build: ({ step }) => [
         step("fetch-user", (ctx) => {
-            ctx.log.info("Fetching user", { userId: ctx.params.userId });
+            ctx.emit("log", {
+                level: "info",
+                message: "Fetching user",
+                data: {
+                    userId: ctx.params.userId
+                }
+            });
             ctx.state.set("user", {
                 id: ctx.params.userId,
                 name: "Ada Lovelace",
@@ -45,20 +51,30 @@ const syncUserFlow = defineFlow<SyncUserParams, SyncUserState>({
         }),
         step("save-user", (ctx) => {
             const user = ctx.state.get("user");
-            ctx.log.info("Saving user", { userId: user?.id });
+            ctx.emit("log", {
+                level: "info",
+                message: "Saving user",
+                data: {
+                    userId: user?.id
+                }
+            });
             ctx.state.set("saved", true);
         }),
     ],
     onSuccess: (ctx, result) => {
-        ctx.log.info("Flow completed", {
-            status: result.status,
-            steps: result.steps.length,
+        ctx.emit("log", {
+            level: "info",
+            message: "Flow completed",
+            data: {
+                status: result.status,
+                steps: result.steps.length
+            },
         });
     },
 });
 
 const engine = new FlowEngine({
-    reporter: new ConsoleReporter(),
+    subscribers: [consoleSubscriber],
 });
 
 const result = await engine.run(syncUserFlow, {

@@ -1,4 +1,4 @@
-import { defineFlow, FlowEngine } from "../src";
+import { defineFlow, FlowEngine } from "@flowrun/core";
 import { ConsoleReporter } from "./shared/reporter.ts";
 
 interface ImportParams {

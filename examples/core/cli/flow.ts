@@ -1,4 +1,4 @@
-import { defineFlow, parallel, sequence } from "../../src";
+import { defineFlow, parallel, sequence } from "@flowrun/core";
 import {
     appendAudit,
     type CliImportParams,

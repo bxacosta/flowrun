@@ -1,5 +1,5 @@
 import { emitKeypressEvents } from "node:readline";
-import { FlowEngine } from "../../src";
+import { FlowEngine } from "@flowrun/core";
 import { ConsoleReporter } from "../shared/reporter.ts";
 import { cliImportFlow } from "./flow.ts";
 

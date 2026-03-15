@@ -1,6 +1,6 @@
-import { defineFlow, FlowEngine, type Middleware } from "../src";
-import { ConsoleReporter } from "./shared/reporter.ts";
-import { sleep } from "./shared/runtime.ts";
+import {defineFlow, FlowEngine, type Middleware} from "@flowrun/core";
+import {createConsoleBus} from "./shared/reporter.ts";
+import {sleep} from "./shared/runtime.ts";
 
 interface FulfillmentParams {
     customerTier: "standard" | "vip";
@@ -33,9 +33,13 @@ interface FulfillmentState {
 const timingMiddleware: Middleware<FulfillmentParams, FulfillmentState> = async (ctx, next) => {
     const startedAt = Date.now();
     await next();
-    ctx.log.info("Step timing", {
-        step: ctx.step.name,
-        durationMs: Date.now() - startedAt,
+    ctx.emit("log", {
+        level: "info",
+        message: "Step timing",
+        data: {
+            step: ctx.step.name,
+            durationMs: Date.now() - startedAt,
+        }
     });
 };
 
@@ -107,8 +111,12 @@ const fulfillmentFlow = defineFlow<FulfillmentParams, FulfillmentState>({
                         {
                             use: [
                                 async (ctx, next) => {
-                                    ctx.log.info("Entering critical pricing step", {
-                                        step: ctx.step.id,
+                                    ctx.emit("log", {
+                                        level: "info",
+                                        message: "Entering critical pricing step",
+                                        data: {
+                                            step: ctx.step.id,
+                                        }
                                     });
                                     await next();
                                 },
@@ -176,31 +184,43 @@ const fulfillmentFlow = defineFlow<FulfillmentParams, FulfillmentState>({
     ],
     onStart: (ctx) => {
         ctx.state.set("audit", [...ctx.state.snapshot().audit, "flow-started"]);
-        ctx.log.info("Starting fulfillment", {
-            orderId: ctx.params.orderId,
-            customerTier: ctx.params.customerTier,
+        ctx.emit("log", {
+            level: "info",
+            message: "Starting fulfillment",
+            data: {
+                orderId: ctx.params.orderId,
+                customerTier: ctx.params.customerTier,
+            }
         });
     },
     onSuccess: (ctx, result) => {
         ctx.state.set("audit", [...ctx.state.snapshot().audit, "flow-succeeded"]);
-        ctx.log.info("Fulfillment finished", {
-            status: result.status,
-            finalized: result.state.finalized,
-            completedSteps: result.steps.filter((step) => step.status === "completed").length,
-            skippedSteps: result.steps.filter((step) => step.status === "skipped").length,
+        ctx.emit("log", {
+            level: "info",
+            message: "Fulfillment finished",
+            data: {
+                status: result.status,
+                finalized: result.state.finalized,
+                completedSteps: result.steps.filter((step) => step.status === "completed").length,
+                skippedSteps: result.steps.filter((step) => step.status === "skipped").length,
+            }
         });
     },
     onComplete: (ctx, result) => {
         ctx.state.set("audit", [...ctx.state.snapshot().audit, `flow-complete:${result.status}`]);
-        ctx.log.info("Final snapshot", {
-            status: result.status,
-            state: result.state,
+        ctx.emit("log", {
+            level: "info",
+            message: "Final snapshot",
+            data: {
+                status: result.status,
+                state: result.state,
+            }
         });
     },
 });
 
 const engine = new FlowEngine({
-    reporter: new ConsoleReporter(),
+    events: createConsoleBus(),
 });
 
 const result = await engine.run(fulfillmentFlow, {

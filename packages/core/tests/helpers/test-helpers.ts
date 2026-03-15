@@ -1,14 +1,16 @@
-import type { EngineEvent, Reporter } from "../../src/index.ts";
+import { type EngineEvent, type EventSubscriber } from "../../src/index.ts";
 
-export class SpyReporter implements Reporter {
+export class EventSpy {
     readonly events: EngineEvent[] = [];
 
-    report(event: EngineEvent): void {
-        this.events.push(event);
-    }
+    subscriber = (events: EventSubscriber): void => {
+        events.onAny((type, data) => {
+            this.events.push({ ...data, type } as EngineEvent);
+        });
+    };
 
-    byKind<TKind extends EngineEvent["kind"]>(kind: TKind): Extract<EngineEvent, { kind: TKind }>[] {
-        return this.events.filter((event): event is Extract<EngineEvent, { kind: TKind }> => event.kind === kind);
+    byType(type: string): EngineEvent[] {
+        return this.events.filter((event) => event.type === type);
     }
 }
 
