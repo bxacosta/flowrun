@@ -1,0 +1,14 @@
+{
+  "$schema": "https://www.schemastore.org/tsconfig",
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // Module system
+    "module": "Preserve",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+
+    // Project
+    "rootDir": "."
+  },
+  "include": ["core"]
+}

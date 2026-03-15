@@ -12,6 +12,12 @@
         "ultracite": "7.2.5",
       },
     },
+    "examples": {
+      "name": "@flowrun/examples",
+      "dependencies": {
+        "@flowrun/core": "workspace:*",
+      },
+    },
     "packages/browser": {
       "name": "@flowrun/browser",
       "version": "0.0.1",
@@ -50,6 +56,8 @@
     "@flowrun/browser": ["@flowrun/browser@workspace:packages/browser"],
 
     "@flowrun/core": ["@flowrun/core@workspace:packages/core"],
+
+    "@flowrun/examples": ["@flowrun/examples@workspace:examples"],
 
     "@types/bun": ["@types/bun@1.3.10", "", { "dependencies": { "bun-types": "1.3.10" } }, "sha512-0+rlrUrOrTSskibryHbvQkDOWRJwJZqZlxrUs1u4oOoTln8+WIXBPmAuCF35SWB2z4Zl3E84Nl/D0P7803nigQ=="],
 

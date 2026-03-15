@@ -1,0 +1,10 @@
+{
+  "name": "@flowrun/examples",
+  "private": true,
+  "type": "module",
+  "scripts": {
+  },
+  "dependencies": {
+    "@flowrun/core": "workspace:*"
+  }
+}
