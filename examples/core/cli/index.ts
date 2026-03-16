@@ -1,6 +1,6 @@
 import { emitKeypressEvents } from "node:readline";
 import { FlowEngine } from "@flowrun/core";
-import { ConsoleReporter } from "../shared/reporter.ts";
+import { consoleSubscriber } from "../shared/reporter.ts";
 import { cliImportFlow } from "./flow.ts";
 
 function printControls(): void {
@@ -19,7 +19,7 @@ function printControls(): void {
 async function main(): Promise<void> {
     const interactive = process.stdin.isTTY;
     const engine = new FlowEngine({
-        reporter: new ConsoleReporter(),
+        subscribers: [consoleSubscriber],
     });
 
     const handle = engine.start(cliImportFlow, {

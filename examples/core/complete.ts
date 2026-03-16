@@ -1,5 +1,5 @@
 import {defineFlow, FlowEngine, type Middleware} from "@flowrun/core";
-import {createConsoleBus} from "./shared/reporter.ts";
+import {consoleSubscriber} from "./shared/reporter.ts";
 import {sleep} from "./shared/runtime.ts";
 
 interface FulfillmentParams {
@@ -220,7 +220,7 @@ const fulfillmentFlow = defineFlow<FulfillmentParams, FulfillmentState>({
 });
 
 const engine = new FlowEngine({
-    events: createConsoleBus(),
+    subscribers: [consoleSubscriber],
 });
 
 const result = await engine.run(fulfillmentFlow, {

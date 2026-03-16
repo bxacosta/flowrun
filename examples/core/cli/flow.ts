@@ -43,16 +43,24 @@ export const cliImportFlow = defineFlow<CliImportParams, CliImportState>({
     ],
     onStart: (ctx) => {
         appendAudit(ctx.state, "flow-started");
-        ctx.log.info("CLI demo started", {
-            source: ctx.params.source,
-            interactive: ctx.params.interactive,
+        ctx.emit("log", {
+            level: "info",
+            message: "CLI demo started",
+            data: {
+                source: ctx.params.source,
+                interactive: ctx.params.interactive,
+            },
         });
     },
     onSuccess: (ctx, result) => {
         appendAudit(ctx.state, "flow-succeeded");
-        ctx.log.info("CLI demo finished", {
-            status: result.status,
-            uploadedBatches: countUploadedBatches(result.state),
+        ctx.emit("log", {
+            level: "info",
+            message: "CLI demo finished",
+            data: {
+                status: result.status,
+                uploadedBatches: countUploadedBatches(result.state),
+            },
         });
     },
     onComplete: (ctx, result) => {

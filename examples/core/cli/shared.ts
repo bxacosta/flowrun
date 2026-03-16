@@ -74,8 +74,12 @@ export function countUploadedBatches(state: Readonly<CliImportState>): number {
 export const timingMiddleware: Middleware<CliImportParams, CliImportState> = async (ctx, next) => {
     const startedAt = Date.now();
     await next();
-    ctx.log.info("Step timing", {
-        step: ctx.step.name,
-        durationMs: Date.now() - startedAt,
+    ctx.emit("log", {
+        level: "info",
+        message: "Step timing",
+        data: {
+            step: ctx.step.name,
+            durationMs: Date.now() - startedAt,
+        },
     });
 };

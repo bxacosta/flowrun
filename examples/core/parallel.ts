@@ -1,5 +1,5 @@
 import { defineFlow, FlowEngine } from "@flowrun/core";
-import { ConsoleReporter } from "./shared/reporter.ts";
+import { consoleSubscriber } from "./shared/reporter.ts";
 
 interface ImportParams {
     source: string;
@@ -21,7 +21,11 @@ const importFlow = defineFlow<ImportParams, ImportState>({
             [
                 sequence("profile-pipeline", [
                     step("fetch-profile", (ctx) => {
-                        ctx.log.info("Loading profile", { source: ctx.params.source });
+                        ctx.emit("log", {
+                            level: "info",
+                            message: "Loading profile",
+                            data: { source: ctx.params.source },
+                        });
                         ctx.state.set("profile", {
                             name: "Grace Hopper",
                             source: ctx.params.source,
@@ -45,7 +49,11 @@ const importFlow = defineFlow<ImportParams, ImportState>({
         step(
             "persist-import",
             (ctx) => {
-                ctx.log.info("Persisting import", ctx.state.snapshot());
+                ctx.emit("log", {
+                    level: "info",
+                    message: "Persisting import",
+                    data: ctx.state.snapshot() as Record<string, unknown>,
+                });
                 ctx.state.set("imported", true);
             },
             {
@@ -60,7 +68,7 @@ const importFlow = defineFlow<ImportParams, ImportState>({
 });
 
 const engine = new FlowEngine({
-    reporter: new ConsoleReporter(),
+    subscribers: [consoleSubscriber],
 });
 
 const result = await engine.run(importFlow, { source: "crm" });
