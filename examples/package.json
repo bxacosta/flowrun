@@ -5,7 +5,11 @@
   "scripts": {
     "fix": "ultracite fix",
     "check": "ultracite check",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "core:basic": "bun run core/basic.ts",
+    "core:parallel": "bun run core/parallel.ts",
+    "core:complete": "bun run core/complete.ts",
+    "core:cli": "bun run core/cli/index.ts"
   },
   "dependencies": {
     "@flowrun/core": "workspace:*"
