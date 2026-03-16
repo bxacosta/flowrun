@@ -24,8 +24,8 @@ const syncUserFlow = defineFlow<SyncUserParams, SyncUserState>({
                 level: "info",
                 message: "Fetching user",
                 data: {
-                    userId: ctx.params.userId
-                }
+                    userId: ctx.params.userId,
+                },
             });
             ctx.state.set("user", {
                 id: ctx.params.userId,
@@ -55,8 +55,8 @@ const syncUserFlow = defineFlow<SyncUserParams, SyncUserState>({
                 level: "info",
                 message: "Saving user",
                 data: {
-                    userId: user?.id
-                }
+                    userId: user?.id,
+                },
             });
             ctx.state.set("saved", true);
         }),
@@ -67,7 +67,7 @@ const syncUserFlow = defineFlow<SyncUserParams, SyncUserState>({
             message: "Flow completed",
             data: {
                 status: result.status,
-                steps: result.steps.length
+                steps: result.steps.length,
             },
         });
     },

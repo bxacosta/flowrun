@@ -1,4 +1,4 @@
-import { type EngineEvent, type EventSubscriber } from "../../src/index.ts";
+import type { EngineEvent, EventSubscriber } from "../../src/index.ts";
 
 export class EventSpy {
     readonly events: EngineEvent[] = [];

@@ -1,6 +1,6 @@
-import {defineFlow, FlowEngine, type Middleware} from "@flowrun/core";
-import {consoleSubscriber} from "./shared/reporter.ts";
-import {sleep} from "./shared/runtime.ts";
+import { defineFlow, FlowEngine, type Middleware } from "@flowrun/core";
+import { consoleSubscriber } from "./shared/reporter.ts";
+import { sleep } from "./shared/runtime.ts";
 
 interface FulfillmentParams {
     customerTier: "standard" | "vip";
@@ -39,7 +39,7 @@ const timingMiddleware: Middleware<FulfillmentParams, FulfillmentState> = async 
         data: {
             step: ctx.step.name,
             durationMs: Date.now() - startedAt,
-        }
+        },
     });
 };
 
@@ -116,7 +116,7 @@ const fulfillmentFlow = defineFlow<FulfillmentParams, FulfillmentState>({
                                         message: "Entering critical pricing step",
                                         data: {
                                             step: ctx.step.id,
-                                        }
+                                        },
                                     });
                                     await next();
                                 },
@@ -190,7 +190,7 @@ const fulfillmentFlow = defineFlow<FulfillmentParams, FulfillmentState>({
             data: {
                 orderId: ctx.params.orderId,
                 customerTier: ctx.params.customerTier,
-            }
+            },
         });
     },
     onSuccess: (ctx, result) => {
@@ -203,7 +203,7 @@ const fulfillmentFlow = defineFlow<FulfillmentParams, FulfillmentState>({
                 finalized: result.state.finalized,
                 completedSteps: result.steps.filter((step) => step.status === "completed").length,
                 skippedSteps: result.steps.filter((step) => step.status === "skipped").length,
-            }
+            },
         });
     },
     onComplete: (ctx, result) => {
@@ -214,7 +214,7 @@ const fulfillmentFlow = defineFlow<FulfillmentParams, FulfillmentState>({
             data: {
                 status: result.status,
                 state: result.state,
-            }
+            },
         });
     },
 });

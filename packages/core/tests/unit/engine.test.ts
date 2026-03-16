@@ -280,9 +280,11 @@ describe("FlowEngine", () => {
     test("preserves lifecycle order for success hooks and reporter events", async () => {
         const trace: string[] = [];
         const engine = new FlowEngine({
-            subscribers: [(events) => {
-                events.onAny((type) => trace.push(`report:${type}`));
-            }],
+            subscribers: [
+                (events) => {
+                    events.onAny((type) => trace.push(`report:${type}`));
+                },
+            ],
         });
 
         const flow = defineFlow<undefined, { done?: boolean }>({
@@ -328,9 +330,11 @@ describe("FlowEngine", () => {
     test("preserves lifecycle order for failure hooks and reporter events", async () => {
         const trace: string[] = [];
         const engine = new FlowEngine({
-            subscribers: [(events) => {
-                events.onAny((type) => trace.push(`report:${type}`));
-            }],
+            subscribers: [
+                (events) => {
+                    events.onAny((type) => trace.push(`report:${type}`));
+                },
+            ],
         });
 
         const flow = defineFlow<undefined, object>({
@@ -458,9 +462,11 @@ describe("FlowEngine", () => {
     test("runs onSuccess and onComplete after ctx.stop when not cancelled", async () => {
         const trace: string[] = [];
         const engine = new FlowEngine({
-            subscribers: [(events) => {
-                events.onAny((type) => trace.push(`report:${type}`));
-            }],
+            subscribers: [
+                (events) => {
+                    events.onAny((type) => trace.push(`report:${type}`));
+                },
+            ],
         });
 
         const flow = defineFlow<undefined, { audit: string[] }>({
