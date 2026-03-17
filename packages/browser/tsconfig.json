@@ -1,0 +1,23 @@
+{
+  "$schema": "https://www.schemastore.org/tsconfig",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Module system
+    "module": "NodeNext",
+
+    // Environment
+    "lib": ["ESNext"],
+    "types": ["bun"],
+
+    // Emit
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rewriteRelativeImportExtensions": true,
+
+    // Project
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}

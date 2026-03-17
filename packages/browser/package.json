@@ -1,0 +1,16 @@
+{
+  "name": "@flowrun/browser",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "fix": "ultracite fix",
+    "check": "ultracite check",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@flowrun/core": "workspace:*"
+  }
+}
