@@ -1,33 +1,38 @@
 export class FlowEngineError extends Error {
-    constructor(message: string, options?: ErrorOptions) {
-        super(message, options);
+    constructor(message: string) {
+        super(message);
         this.name = "FlowEngineError";
     }
 }
 
-export class StepTimeoutError extends FlowEngineError {
-    constructor(stepName: string, timeoutMs: number) {
-        super(`Step "${stepName}" timed out after ${timeoutMs}ms`);
-        this.name = "StepTimeoutError";
+export class TaskTimeoutError extends FlowEngineError {
+    readonly taskId: string;
+    readonly timeoutMs: number;
+
+    constructor(taskId: string, timeoutMs: number) {
+        super(`Task "${taskId}" timed out after ${timeoutMs}ms`);
+        this.name = "TaskTimeoutError";
+        this.taskId = taskId;
+        this.timeoutMs = timeoutMs;
     }
 }
 
 export class ParallelMergeError extends FlowEngineError {
-    readonly keys: string[];
+    readonly key: string;
 
-    constructor(keys: string[]) {
-        super(`Parallel branches wrote conflicting state keys: ${keys.join(", ")}`);
+    constructor(key: string, message?: string) {
+        super(message ?? `Parallel branches wrote conflicting values for key "${key}"`);
         this.name = "ParallelMergeError";
-        this.keys = keys;
+        this.key = key;
     }
 }
 
-export class FlowStopSignal extends Error {
-    readonly reason?: string;
+export class StopFlowError extends Error {
+    readonly reason: string | undefined;
 
     constructor(reason?: string) {
         super(reason ?? "Flow stopped");
-        this.name = "FlowStopSignal";
+        this.name = "StopFlowError";
         this.reason = reason;
     }
 }

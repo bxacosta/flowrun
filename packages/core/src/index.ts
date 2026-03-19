@@ -1,58 +1,118 @@
-// biome-ignore lint/performance/noBarrelFile: public API entry point for the library
-export { defineFlow, parallel, sequence, step } from "./core/composability.ts";
-export { FlowEngine } from "./core/engine.ts";
-export { FlowEngineError, ParallelMergeError, StepTimeoutError } from "./core/errors.ts";
+// ── Types ────────────────────────────────────────────────────────────
+
 export type {
-    CoreEvent,
-    CoreEvents,
-    EngineEvent,
-    EventMeta,
-    FlowEndedEvent,
-    FlowEndedPayload,
-    FlowStartedEvent,
-    FlowStartedPayload,
-    LogEvent,
-    LogLevel,
-    LogPayload,
-    StepEndedEvent,
-    StepEndedPayload,
-    StepRetryingEvent,
-    StepRetryingPayload,
-    StepStartedEvent,
-    StepStartedPayload,
-    TypedEvent,
-    UserEvents,
-} from "./core/events.ts";
-export type { EventSubscriber } from "./core/reporter.ts";
-export { EventBus } from "./core/reporter.ts";
-export type {
-    ErrorMeta,
+    AnyEventEnvelope,
+    AnyExtension,
+    AnyFlowDefinition,
+    BaseRunResult,
+    // Events
+    BuiltInEventMap,
+    CancelledResult,
+    CompatibleFlow,
+    CompletedResult,
+    // Context
+    CoreFlowContext,
+    CoreTaskContext,
+    EmptyEventMap,
+    EngineEventMap,
+    ErasedFlowNode,
     ErrorResolution,
-    FlowBuilder,
+    ErrorResolutionMeta,
+    ErrorResolver,
+    EventEnvelope,
+    EventHandler,
+    EventMap,
+    EventMetadata,
+    EventSubscriber,
+    EventSubscriberApi,
+    Extension,
+    ExtensionContext,
+    ExtensionContextMap,
+    // Extensions
+    ExtensionCreateInfo,
+    ExtensionEventMap,
+    ExtensionEvents,
+    FailedResult,
+    FlowBuilderApi,
     FlowContext,
     FlowDefinition,
-    FlowDefinitionInput,
+    // Engine
+    FlowEngineOptions,
+    // Flow Handle
     FlowHandle,
+    // Flow Definition
+    FlowHooks,
+    // Info
+    FlowInfo,
     FlowNode,
-    FlowStatus,
+    FlowParams,
+    FlowRequiredContext,
+    FlowState,
+    FlowUserEvents,
+    GroupDefinition,
+    GroupOptions,
+    LifecycleEventMap,
+    // Logging
+    LogEvent,
+    Logger,
+    LogLevel,
+    // Parallel
+    MergeResolver,
+    MergeStrategy,
     Middleware,
-    ParallelMergeConfig,
-    ParallelMergeMode,
-    ParallelMergeResolver,
+    MiddlewareNext,
+    NodeRequiredContext,
+    NodesRequiredContext,
+    ParallelBranchInfo,
+    ParallelContextCleanup,
+    ParallelContextFork,
+    ParallelDefinition,
     ParallelMode,
-    ParallelNode,
     ParallelOptions,
+    // Retry & Error Resolution
     RetryPolicy,
-    RunCompletionStatus,
+    RetryStrategy,
     RunResult,
-    SequenceNode,
-    SequenceOptions,
+    RunStatus,
+    // Primitives
     StateShape,
+    // State
     StateStore,
-    StepContext,
-    StepHandler,
-    StepNode,
-    StepOptions,
-    StepRunResult,
-    StepStatus,
+    TaskContext,
+    // Node Definitions
+    TaskDefinition,
+    TaskErrorResolution,
+    // Handlers & Middleware
+    TaskHandler,
+    TaskInfo,
+    // Node Options
+    TaskOptions,
+    // Run Results
+    TaskRunResult,
+    TaskStatus,
+    TerminalStatus,
+    UserEmitEventMap,
+    UserEventMap,
 } from "./core/types.ts";
+
+// ── Errors ──────────────────────────────────────────────────────────
+
+export {
+    FlowEngineError,
+    ParallelMergeError,
+    StopFlowError,
+    TaskTimeoutError,
+} from "./core/errors.ts";
+
+// ── Definitions ─────────────────────────────────────────────────────
+
+export type { FlowInput } from "./definitions/define-flow.ts";
+export { defineFlow } from "./definitions/define-flow.ts";
+export type { FlowKit } from "./definitions/flow-kit.ts";
+
+export { createFlowKit } from "./definitions/flow-kit.ts";
+export { group, parallel, task } from "./definitions/node-factories.ts";
+
+// ── Engine ──────────────────────────────────────────────────────────
+
+export { createFlowEngine, FlowEngine } from "./engine/flow-engine.ts";
