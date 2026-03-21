@@ -3,12 +3,12 @@ import { FlowEngineError } from "../core/errors.ts";
 import type {
     CompletedResult,
     EventMap,
+    Extension,
+    ExtensionApi,
     FlowInfo,
     LogEvent,
     Logger,
     RunResult,
-    ServiceFactory,
-    ServiceFactoryApi,
     StateShape,
     TaskRunResult,
 } from "../core/types.ts";
@@ -22,15 +22,15 @@ import { executeNodes } from "./execute-nodes.ts";
 import type { ExecutionContext } from "./execution-types.ts";
 import type { ResolvedFlowPlan } from "./resolver.ts";
 
-// ── Service helpers ─────────────────────────────────────────────────
+// ── Extension helpers ───────────────────────────────────────────────
 
 export interface ExecuteFlowOptions {
     readonly eventBus: EventBus<EventMap>;
+    readonly extension?: Extension<object>;
     readonly params: unknown;
     readonly plan: ResolvedFlowPlan;
     readonly runController: RunController;
     readonly runId: string;
-    readonly service?: ServiceFactory<object>;
 }
 
 const normalizeError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
@@ -44,14 +44,14 @@ const createInitialState = (initialState: StateShape | (() => StateShape) | unde
     return cloneValue(resolved);
 };
 
-const validateServiceContext = (context: object): void => {
+const validateExtensionContext = (context: object): void => {
     if (Array.isArray(context) || context === null) {
-        throw new FlowEngineError("Service context must be an object");
+        throw new FlowEngineError("Extension context must be an object");
     }
 
     for (const key of Object.keys(context)) {
         if (coreContextKeys.includes(key as (typeof coreContextKeys)[number])) {
-            throw new FlowEngineError(`Service context key "${key}" collides with a core context property`);
+            throw new FlowEngineError(`Extension context key "${key}" collides with a core context property`);
         }
     }
 };
@@ -92,13 +92,13 @@ const createRunResult = (
     };
 };
 
-const createServiceFactoryApi = (
+const createExtensionApi = (
     flowInfo: FlowInfo,
     params: unknown,
     runId: string,
     signal: AbortSignal,
     eventBus: EventBus<EventMap>
-): ServiceFactoryApi => {
+): ExtensionApi => {
     const emit = (type: string, data: Record<string, unknown>): void => {
         eventBus.dispatch({ flowId: flowInfo.id, payload: data, runId, type });
     };
@@ -122,33 +122,30 @@ const createServiceFactoryApi = (
     return { emit, flow: flowInfo, log, params, runId, signal };
 };
 
-const createServiceContext = async (
-    service: ServiceFactory<object> | undefined,
-    api: ServiceFactoryApi
-): Promise<object> => {
-    if (service === undefined) {
+const createExtensionContext = async (extension: Extension<object> | undefined, api: ExtensionApi): Promise<object> => {
+    if (extension === undefined) {
         return {};
     }
 
-    const context = await service.create(api);
-    validateServiceContext(context);
+    const context = await extension.create(api);
+    validateExtensionContext(context);
     return context;
 };
 
-const disposeService = async (
-    service: ServiceFactory<object> | undefined,
+const disposeExtension = async (
+    extension: Extension<object> | undefined,
     context: object,
-    api: ServiceFactoryApi,
+    api: ExtensionApi,
     logInternal: (message: string, data?: unknown) => void
 ): Promise<void> => {
-    if (service === undefined || service.dispose === undefined) {
+    if (extension === undefined || extension.dispose === undefined) {
         return;
     }
 
     try {
-        await service.dispose(context, api);
+        await extension.dispose(context, api);
     } catch (error) {
-        logInternal("Service dispose failed", { error: normalizeError(error) });
+        logInternal("Extension dispose failed", { error: normalizeError(error) });
     }
 };
 
@@ -163,7 +160,7 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
     const stateStore = new FlowStateStore<StateShape>(createInitialState(options.plan.flow.initialState));
     const taskResults: TaskRunResult[] = [];
 
-    let serviceContext: object = {};
+    let extensionContext: object = {};
     let finalError: Error | undefined;
     let finalStatus: "cancelled" | "completed" | "failed" = "completed";
 
@@ -185,7 +182,7 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
         });
     };
 
-    const serviceApi = createServiceFactoryApi(
+    const extensionApi = createExtensionApi(
         flowInfo,
         options.params,
         options.runId,
@@ -194,7 +191,7 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
     );
 
     try {
-        serviceContext = await createServiceContext(options.service, serviceApi);
+        extensionContext = await createExtensionContext(options.extension, extensionApi);
 
         const flowContext = createFlowContext({
             emit: emitUserEvent,
@@ -204,7 +201,7 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
             signal: options.runController.signal,
             state: stateStore,
             stop: (reason) => options.runController.requestStop(reason),
-            userContext: serviceContext,
+            userContext: extensionContext,
         });
 
         options.eventBus.dispatch({
@@ -228,7 +225,7 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
                     params: options.params,
                     runController: options.runController,
                     runId: options.runId,
-                    scopedContext: serviceContext,
+                    scopedContext: extensionContext,
                     signal: options.runController.signal,
                     stateStore,
                     taskResults,
@@ -345,6 +342,6 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
         options.runController.setTerminalStatus(result.status);
         return result;
     } finally {
-        await disposeService(options.service, serviceContext, serviceApi, logInternal);
+        await disposeExtension(options.extension, extensionContext, extensionApi, logInternal);
     }
 };

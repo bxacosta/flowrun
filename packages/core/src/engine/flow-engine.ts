@@ -5,14 +5,14 @@ import type {
     EventMap,
     EventSubscriber,
     EventSubscriberApi,
+    Extension,
+    ExtensionApi,
     FlowDefinition,
     FlowEngineOptions,
     FlowHandle,
-    MergeServiceTypes,
+    MergeExtensionTypes,
     ParamsOf,
     RunResult,
-    ServiceFactory,
-    ServiceFactoryApi,
     StateOf,
     StateShape,
     TaskContext,
@@ -23,34 +23,32 @@ import { resolveFlow } from "../execution/resolver.ts";
 import { FlowHandleImpl } from "./flow-handle.ts";
 import { RunController } from "./run-controller.ts";
 
-const normalizeServices = (
-    services: readonly ServiceFactory<object>[] | undefined
-): ServiceFactory<object> | undefined => {
-    if (services === undefined || services.length === 0) {
+const normalizeExtensions = (extensions: readonly Extension<object>[] | undefined): Extension<object> | undefined => {
+    if (extensions === undefined || extensions.length === 0) {
         return undefined;
     }
 
-    if (services.length === 1) {
-        return services[0];
+    if (extensions.length === 1) {
+        return extensions[0];
     }
 
     return {
-        create: async (api: ServiceFactoryApi) => {
+        create: async (api: ExtensionApi) => {
             let merged: object = {};
 
-            for (const service of services) {
-                const ctx = await service.create(api);
+            for (const extension of extensions) {
+                const ctx = await extension.create(api);
                 merged = { ...merged, ...ctx };
             }
 
             return merged;
         },
-        dispose: async (ext: object, api: ServiceFactoryApi) => {
-            for (let i = services.length - 1; i >= 0; i--) {
-                const service = services[i];
+        dispose: async (ext: object, api: ExtensionApi) => {
+            for (let i = extensions.length - 1; i >= 0; i--) {
+                const extension = extensions[i];
 
-                if (service?.dispose !== undefined) {
-                    await service.dispose(ext, api);
+                if (extension?.dispose !== undefined) {
+                    await extension.dispose(ext, api);
                 }
             }
         },
@@ -59,15 +57,15 @@ const normalizeServices = (
 
 export class FlowEngine<TExt extends object = object, TUserEvents extends EventMap = {}> {
     private readonly eventBus: EventBus<EventMap>;
+    private readonly extension: Extension<object> | undefined;
     private readonly registry = new Map<string, FlowDefinition<any>>();
-    private readonly service: ServiceFactory<object> | undefined;
 
     readonly events: EventSubscriberApi<EngineEventMap<TUserEvents>>;
 
     constructor(options?: FlowEngineOptions<TUserEvents>) {
         this.eventBus = new EventBus(options?.onSubscriberError);
         this.events = this.eventBus.createSubscriberApi() as EventSubscriberApi<EngineEventMap<TUserEvents>>;
-        this.service = normalizeServices(options?.services);
+        this.extension = normalizeExtensions(options?.extensions);
 
         for (const subscriber of options?.subscribers ?? []) {
             this.eventBus.register(subscriber as EventSubscriber<EventMap>);
@@ -95,11 +93,11 @@ export class FlowEngine<TExt extends object = object, TUserEvents extends EventM
 
         const resultPromise = executeFlow({
             eventBus: this.eventBus,
+            extension: this.extension,
             params,
             plan,
             runController,
             runId,
-            service: this.service,
         });
 
         return new FlowHandleImpl(flow.id, runId, runController, resultPromise);
@@ -130,11 +128,11 @@ export class FlowEngine<TExt extends object = object, TUserEvents extends EventM
 }
 
 export const createFlowEngine = <
-    const TServices extends readonly ServiceFactory<object>[] = [],
+    const TExtensions extends readonly Extension<object>[] = [],
     TUserEvents extends EventMap = {},
 >(
     options?: FlowEngineOptions<TUserEvents> & {
-        readonly services?: TServices;
+        readonly extensions?: TExtensions;
     }
-): FlowEngine<MergeServiceTypes<TServices>, TUserEvents> =>
-    new FlowEngine<MergeServiceTypes<TServices>, TUserEvents>(options);
+): FlowEngine<MergeExtensionTypes<TExtensions>, TUserEvents> =>
+    new FlowEngine<MergeExtensionTypes<TExtensions>, TUserEvents>(options);

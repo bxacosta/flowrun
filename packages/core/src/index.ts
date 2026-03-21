@@ -17,6 +17,9 @@ export type {
     EventMetadata,
     EventSubscriber,
     EventSubscriberApi,
+    Extension,
+    // Extension
+    ExtensionApi,
     FailedResult,
     FlowBuilderApi,
     // Context
@@ -39,9 +42,9 @@ export type {
     LogEvent,
     Logger,
     LogLevel,
+    MergeExtensionTypes,
     // Parallel
     MergeResolver,
-    MergeServiceTypes,
     MergeStrategy,
     Middleware,
     MiddlewareNext,
@@ -56,9 +59,6 @@ export type {
     RetryStrategy,
     RunResult,
     RunStatus,
-    ServiceFactory,
-    // ServiceFactory
-    ServiceFactoryApi,
     StateOf,
     // Primitives
     StateShape,

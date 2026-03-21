@@ -354,9 +354,9 @@ export type RunResult<TState extends StateShape> =
     | CompletedResult<TState>
     | FailedResult<TState>;
 
-// ── ServiceFactory ──────────────────────────────────────────────────
+// ── Extension ────────────────────────────────────────────────────────
 
-export interface ServiceFactoryApi {
+export interface ExtensionApi {
     emit(type: string, data: Record<string, unknown>): void;
     readonly flow: FlowInfo;
     readonly log: Logger;
@@ -365,9 +365,9 @@ export interface ServiceFactoryApi {
     readonly signal: AbortSignal;
 }
 
-export interface ServiceFactory<TExt extends object> {
-    create(api: ServiceFactoryApi): TExt | Promise<TExt>;
-    dispose?(ext: TExt, api: ServiceFactoryApi): void | Promise<void>;
+export interface Extension<TExt extends object> {
+    create(api: ExtensionApi): TExt | Promise<TExt>;
+    dispose?(ext: TExt, api: ExtensionApi): void | Promise<void>;
 }
 
 // ── FlowHandle ───────────────────────────────────────────────────────
@@ -384,15 +384,15 @@ export interface FlowHandle<TState extends StateShape> {
 
 // ── Engine Options ───────────────────────────────────────────────────
 
-export type MergeServiceTypes<T extends readonly ServiceFactory<object>[]> = T extends readonly [
-    ServiceFactory<infer A extends object>,
-    ...infer Rest extends readonly ServiceFactory<object>[],
+export type MergeExtensionTypes<T extends readonly Extension<object>[]> = T extends readonly [
+    Extension<infer A extends object>,
+    ...infer Rest extends readonly Extension<object>[],
 ]
-    ? A & MergeServiceTypes<Rest>
+    ? A & MergeExtensionTypes<Rest>
     : object;
 
 export interface FlowEngineOptions<TUserEvents extends EventMap = {}> {
+    readonly extensions?: readonly Extension<object>[];
     readonly onSubscriberError?: (error: Error, type: string) => void;
-    readonly services?: readonly ServiceFactory<object>[];
     readonly subscribers?: readonly EventSubscriber<EngineEventMap<TUserEvents>>[];
 }
