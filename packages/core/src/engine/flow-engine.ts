@@ -8,9 +8,11 @@ import type {
     FlowDefinition,
     FlowEngineOptions,
     FlowHandle,
+    MergeServiceTypes,
     ParamsOf,
     RunResult,
     ServiceFactory,
+    ServiceFactoryApi,
     StateOf,
     StateShape,
     TaskContext,
@@ -21,6 +23,40 @@ import { resolveFlow } from "../execution/resolver.ts";
 import { FlowHandleImpl } from "./flow-handle.ts";
 import { RunController } from "./run-controller.ts";
 
+const normalizeServices = (
+    services: readonly ServiceFactory<object>[] | undefined
+): ServiceFactory<object> | undefined => {
+    if (services === undefined || services.length === 0) {
+        return undefined;
+    }
+
+    if (services.length === 1) {
+        return services[0];
+    }
+
+    return {
+        create: async (api: ServiceFactoryApi) => {
+            let merged: object = {};
+
+            for (const service of services) {
+                const ctx = await service.create(api);
+                merged = { ...merged, ...ctx };
+            }
+
+            return merged;
+        },
+        dispose: async (ext: object, api: ServiceFactoryApi) => {
+            for (let i = services.length - 1; i >= 0; i--) {
+                const service = services[i];
+
+                if (service?.dispose !== undefined) {
+                    await service.dispose(ext, api);
+                }
+            }
+        },
+    };
+};
+
 export class FlowEngine<TExt extends object = object, TUserEvents extends EventMap = {}> {
     private readonly eventBus: EventBus<EventMap>;
     private readonly registry = new Map<string, FlowDefinition<any>>();
@@ -28,10 +64,10 @@ export class FlowEngine<TExt extends object = object, TUserEvents extends EventM
 
     readonly events: EventSubscriberApi<EngineEventMap<TUserEvents>>;
 
-    constructor(options?: FlowEngineOptions<TExt, TUserEvents>) {
+    constructor(options?: FlowEngineOptions<TUserEvents>) {
         this.eventBus = new EventBus(options?.onSubscriberError);
         this.events = this.eventBus.createSubscriberApi() as EventSubscriberApi<EngineEventMap<TUserEvents>>;
-        this.service = options?.services as ServiceFactory<object> | undefined;
+        this.service = normalizeServices(options?.services);
 
         for (const subscriber of options?.subscribers ?? []) {
             this.eventBus.register(subscriber as EventSubscriber<EventMap>);
@@ -93,6 +129,12 @@ export class FlowEngine<TExt extends object = object, TUserEvents extends EventM
     }
 }
 
-export const createFlowEngine = <TExt extends object = object, TUserEvents extends EventMap = {}>(
-    options?: FlowEngineOptions<TExt, TUserEvents>
-): FlowEngine<TExt, TUserEvents> => new FlowEngine<TExt, TUserEvents>(options);
+export const createFlowEngine = <
+    const TServices extends readonly ServiceFactory<object>[] = [],
+    TUserEvents extends EventMap = {},
+>(
+    options?: FlowEngineOptions<TUserEvents> & {
+        readonly services?: TServices;
+    }
+): FlowEngine<MergeServiceTypes<TServices>, TUserEvents> =>
+    new FlowEngine<MergeServiceTypes<TServices>, TUserEvents>(options);

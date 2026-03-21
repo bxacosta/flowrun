@@ -41,6 +41,7 @@ export type {
     LogLevel,
     // Parallel
     MergeResolver,
+    MergeServiceTypes,
     MergeStrategy,
     Middleware,
     MiddlewareNext,
@@ -99,7 +100,3 @@ export { group, parallel, task } from "./definitions/node-factories.ts";
 // ── Engine ──────────────────────────────────────────────────────────
 
 export { createFlowEngine, FlowEngine } from "./engine/flow-engine.ts";
-
-// ── Utilities ───────────────────────────────────────────────────────
-
-export { composeServices } from "./utils/compose-services.ts";

@@ -384,8 +384,15 @@ export interface FlowHandle<TState extends StateShape> {
 
 // ── Engine Options ───────────────────────────────────────────────────
 
-export interface FlowEngineOptions<TExt extends object = object, TUserEvents extends EventMap = {}> {
+export type MergeServiceTypes<T extends readonly ServiceFactory<object>[]> = T extends readonly [
+    ServiceFactory<infer A extends object>,
+    ...infer Rest extends readonly ServiceFactory<object>[],
+]
+    ? A & MergeServiceTypes<Rest>
+    : object;
+
+export interface FlowEngineOptions<TUserEvents extends EventMap = {}> {
     readonly onSubscriberError?: (error: Error, type: string) => void;
-    readonly services?: ServiceFactory<TExt>;
+    readonly services?: readonly ServiceFactory<object>[];
     readonly subscribers?: readonly EventSubscriber<EngineEventMap<TUserEvents>>[];
 }
