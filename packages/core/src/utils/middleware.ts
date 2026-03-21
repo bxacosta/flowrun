@@ -1,5 +1,5 @@
 import { FlowEngineError } from "../core/errors.ts";
-import type { Middleware, MiddlewareNext, StateShape, UserEventMap } from "../core/types.ts";
+import type { MiddlewareNext } from "../core/types.ts";
 
 export const composeMiddleware = <TContext>(
     middlewares: readonly ((context: TContext, next: MiddlewareNext) => void | Promise<void>)[],
@@ -30,12 +30,3 @@ export const composeMiddleware = <TContext>(
         await dispatch(0);
     };
 };
-
-export const mergeMiddleware = <
-    TParams,
-    TState extends StateShape,
-    TContext extends object,
-    TUserEvents extends UserEventMap,
->(
-    ...middlewares: readonly (readonly Middleware<TParams, TState, TContext, TUserEvents>[])[]
-): readonly Middleware<TParams, TState, TContext, TUserEvents>[] => middlewares.flat();

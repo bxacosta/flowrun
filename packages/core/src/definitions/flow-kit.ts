@@ -1,91 +1,41 @@
 import type {
-    ErasedFlowNode,
     FlowDefinition,
+    FlowNode,
     GroupDefinition,
     GroupOptions,
-    NodesRequiredContext,
     ParallelDefinition,
     ParallelOptions,
-    StateShape,
+    TaskContext,
     TaskDefinition,
     TaskHandler,
     TaskOptions,
-    UserEventMap,
 } from "../core/types.ts";
-import type { Simplify } from "../utils/type-helpers.ts";
 import { defineFlow, type FlowInput } from "./define-flow.ts";
 import { group as createGroup, parallel as createParallel, task as createTask } from "./node-factories.ts";
 
-export interface FlowKit<TBaseContext extends object, TBaseEvents extends UserEventMap> {
-    defineFlow<
-        TParams,
-        TState extends StateShape = {},
-        TFlowEvents extends UserEventMap = {},
-        TNodes extends readonly ErasedFlowNode<
-            TParams,
-            TState,
-            Simplify<TBaseEvents & TFlowEvents>,
-            TBaseContext
-        >[] = readonly ErasedFlowNode<TParams, TState, Simplify<TBaseEvents & TFlowEvents>, TBaseContext>[],
-    >(
-        input: FlowInput<TParams, TState, TBaseContext, Simplify<TBaseEvents & TFlowEvents>, TNodes>
-    ): FlowDefinition<TParams, TState, Simplify<TBaseEvents & TFlowEvents>, TBaseContext, NodesRequiredContext<TNodes>>;
+export interface FlowKit<TExt extends object = object> {
+    defineFlow<TContext extends TaskContext & TExt>(input: FlowInput<TContext>): FlowDefinition<TContext>;
 
-    group<
-        TParams,
-        TState extends StateShape,
-        TFlowEvents extends UserEventMap,
-        TNodes extends readonly ErasedFlowNode<TParams, TState, Simplify<TBaseEvents & TFlowEvents>, TBaseContext>[],
-    >(
+    group<TContext extends TaskContext & TExt>(
         id: string,
-        children: TNodes,
+        children: readonly FlowNode<TContext>[],
         options?: GroupOptions
-    ): GroupDefinition<
-        TParams,
-        TState,
-        Simplify<TBaseEvents & TFlowEvents>,
-        TBaseContext,
-        NodesRequiredContext<TNodes>
-    >;
+    ): GroupDefinition<TContext>;
 
-    parallel<
-        TParams,
-        TState extends StateShape,
-        TFlowEvents extends UserEventMap,
-        TNodes extends readonly ErasedFlowNode<TParams, TState, Simplify<TBaseEvents & TFlowEvents>, TBaseContext>[],
-    >(
+    parallel<TContext extends TaskContext & TExt>(
         id: string,
-        children: TNodes,
-        options?: ParallelOptions<TState, Simplify<TBaseContext & NodesRequiredContext<TNodes>>>
-    ): ParallelDefinition<
-        TParams,
-        TState,
-        Simplify<TBaseEvents & TFlowEvents>,
-        TBaseContext,
-        NodesRequiredContext<TNodes>
-    >;
+        children: readonly FlowNode<TContext>[],
+        options?: ParallelOptions<TContext>
+    ): ParallelDefinition<TContext>;
 
-    task<TParams, TState extends StateShape, TFlowEvents extends UserEventMap, TRequiredContext extends object = {}>(
+    task<TContext extends TaskContext & TExt>(
         id: string,
-        handler: TaskHandler<
-            TParams,
-            TState,
-            Simplify<TBaseContext & TRequiredContext>,
-            Simplify<TBaseEvents & TFlowEvents>
-        >,
-        options?: TaskOptions<
-            TParams,
-            TState,
-            Simplify<TBaseContext & TRequiredContext>,
-            Simplify<TBaseEvents & TFlowEvents>
-        >
-    ): TaskDefinition<TParams, TState, Simplify<TBaseEvents & TFlowEvents>, TBaseContext, TRequiredContext>;
+        handler: TaskHandler<TContext>,
+        options?: TaskOptions<TContext>
+    ): TaskDefinition<TContext>;
 }
 
-export const createFlowKit = <TBaseContext extends object = {}, TBaseEvents extends UserEventMap = {}>(): FlowKit<
-    TBaseContext,
-    TBaseEvents
-> =>
+export const createFlowKit = <TExt extends object = object>(): FlowKit<TExt> =>
     ({
         defineFlow: (input) => defineFlow(input),
 
@@ -94,4 +44,4 @@ export const createFlowKit = <TBaseContext extends object = {}, TBaseEvents exte
         parallel: (id, children, options) => createParallel(id, children, options),
 
         task: (id, handler, options) => createTask(id, handler, options),
-    }) as FlowKit<TBaseContext, TBaseEvents>;
+    }) as FlowKit<TExt>;

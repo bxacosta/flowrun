@@ -2,20 +2,12 @@
 
 export type {
     AnyEventEnvelope,
-    AnyExtension,
-    AnyFlowDefinition,
     BaseRunResult,
     // Events
     BuiltInEventMap,
     CancelledResult,
-    CompatibleFlow,
     CompletedResult,
-    // Context
-    CoreFlowContext,
-    CoreTaskContext,
-    EmptyEventMap,
     EngineEventMap,
-    ErasedFlowNode,
     ErrorResolution,
     ErrorResolutionMeta,
     ErrorResolver,
@@ -25,16 +17,11 @@ export type {
     EventMetadata,
     EventSubscriber,
     EventSubscriberApi,
-    Extension,
-    ExtensionContext,
-    ExtensionContextMap,
-    // Extensions
-    ExtensionCreateInfo,
-    ExtensionEventMap,
-    ExtensionEvents,
     FailedResult,
     FlowBuilderApi,
+    // Context
     FlowContext,
+    FlowCtxOf,
     FlowDefinition,
     // Engine
     FlowEngineOptions,
@@ -45,10 +32,6 @@ export type {
     // Info
     FlowInfo,
     FlowNode,
-    FlowParams,
-    FlowRequiredContext,
-    FlowState,
-    FlowUserEvents,
     GroupDefinition,
     GroupOptions,
     LifecycleEventMap,
@@ -61,19 +44,21 @@ export type {
     MergeStrategy,
     Middleware,
     MiddlewareNext,
-    NodeRequiredContext,
-    NodesRequiredContext,
     ParallelBranchInfo,
-    ParallelContextCleanup,
-    ParallelContextFork,
     ParallelDefinition,
     ParallelMode,
     ParallelOptions,
+    // Context Utility Types
+    ParamsOf,
     // Retry & Error Resolution
     RetryPolicy,
     RetryStrategy,
     RunResult,
     RunStatus,
+    ServiceFactory,
+    // ServiceFactory
+    ServiceFactoryApi,
+    StateOf,
     // Primitives
     StateShape,
     // State
@@ -91,8 +76,6 @@ export type {
     TaskRunResult,
     TaskStatus,
     TerminalStatus,
-    UserEmitEventMap,
-    UserEventMap,
 } from "./core/types.ts";
 
 // ── Errors ──────────────────────────────────────────────────────────
@@ -116,3 +99,7 @@ export { group, parallel, task } from "./definitions/node-factories.ts";
 // ── Engine ──────────────────────────────────────────────────────────
 
 export { createFlowEngine, FlowEngine } from "./engine/flow-engine.ts";
+
+// ── Utilities ───────────────────────────────────────────────────────
+
+export { composeServices } from "./utils/compose-services.ts";

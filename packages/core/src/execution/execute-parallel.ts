@@ -1,44 +1,38 @@
 import { isDeepStrictEqual } from "node:util";
 import { ParallelMergeError } from "../core/errors.ts";
-import type {
-    MergeResolver,
-    MergeStrategy,
-    ParallelBranchInfo,
-    StateShape,
-    TaskRunResult,
-    UserEventMap,
-} from "../core/types.ts";
+import type { MergeResolver, MergeStrategy, ParallelBranchInfo, StateShape, TaskRunResult } from "../core/types.ts";
 import type { FlowStateStore } from "../state/state-store.ts";
 import { createCompositeAbortController } from "../utils/abort.ts";
 import { cloneValue } from "../utils/clone.ts";
+import { createFlowContext } from "./context-factory.ts";
 import { executeNodes } from "./execute-nodes.ts";
 import type { ExecutionContext, NodeExecutionOutcome } from "./execution-types.ts";
 import type { ResolvedNode, ResolvedParallelNode } from "./resolver.ts";
 
-interface BranchResult<TState extends StateShape> {
+interface BranchResult {
     readonly error?: Error;
     readonly index: number;
-    readonly stateStore: FlowStateStore<TState>;
+    readonly stateStore: FlowStateStore<StateShape>;
     readonly stopReason?: string;
     readonly taskResults: readonly TaskRunResult[];
 }
 
 const normalizeError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
-const mergeBranchStates = <TState extends StateShape>(
-    parentState: FlowStateStore<TState>,
-    branches: readonly BranchResult<TState>[],
-    merge: MergeStrategy<TState>
+const mergeBranchStates = (
+    parentState: FlowStateStore<StateShape>,
+    branches: readonly BranchResult[],
+    merge: MergeStrategy<StateShape>
 ): void => {
-    const valuesByKey = new Map<keyof TState, { index: number; value: TState[keyof TState] }[]>();
+    const valuesByKey = new Map<string, { index: number; value: unknown }[]>();
 
     for (const branch of branches) {
         const writtenValues = branch.stateStore.getWrittenValues();
 
         for (const [key, value] of writtenValues.entries()) {
-            const entries = valuesByKey.get(key) ?? [];
+            const entries = valuesByKey.get(key as string) ?? [];
             entries.push({ index: branch.index, value });
-            valuesByKey.set(key, entries);
+            valuesByKey.set(key as string, entries);
         }
     }
 
@@ -51,7 +45,7 @@ const mergeBranchStates = <TState extends StateShape>(
         }
 
         if (ordered.length === 1) {
-            parentState.set(key, first.value as TState[typeof key]);
+            parentState.set(key, first.value);
             continue;
         }
 
@@ -59,7 +53,7 @@ const mergeBranchStates = <TState extends StateShape>(
             const last = ordered[ordered.length - 1];
 
             if (last !== undefined) {
-                parentState.set(key, last.value as TState[typeof key]);
+                parentState.set(key, last.value);
             }
 
             continue;
@@ -74,7 +68,7 @@ const mergeBranchStates = <TState extends StateShape>(
             }
 
             const merged = ordered.flatMap((entry) => entry.value as unknown[]);
-            parentState.set(key, cloneValue(merged) as TState[typeof key]);
+            parentState.set(key, cloneValue(merged));
             continue;
         }
 
@@ -83,40 +77,32 @@ const mergeBranchStates = <TState extends StateShape>(
                 throw new ParallelMergeError(String(key));
             }
 
-            parentState.set(key, first.value as TState[typeof key]);
+            parentState.set(key, first.value);
             continue;
         }
 
-        const resolver = merge as MergeResolver<TState>;
+        const resolver = merge as MergeResolver<StateShape>;
         const resolved = resolver(
             key,
-            ordered.map((entry) => entry.value as TState[typeof key])
+            ordered.map((entry) => entry.value)
         );
         parentState.set(key, resolved);
     }
 };
 
-export const executeParallel = async <
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
->(
-    context: ExecutionContext<TParams, TState, TUserEvents, TBaseContext>,
-    node: ResolvedParallelNode<TParams, TState, TUserEvents, TBaseContext>
+export const executeParallel = async (
+    context: ExecutionContext,
+    node: ResolvedParallelNode
 ): Promise<NodeExecutionOutcome> => {
     const limit = node.definition.concurrency ?? node.branches.length;
     const activeBranches = new Set<Promise<void>>();
-    const branchResults: BranchResult<TState>[] = [];
+    const branchResults: BranchResult[] = [];
     const groupAbortController = new AbortController();
     let fatalError: Error | undefined;
     let nextIndex = 0;
     let stopReason: string | undefined;
 
-    const runBranch = async (
-        branchNodes: readonly ResolvedNode<TParams, TState, TUserEvents, TBaseContext>[],
-        index: number
-    ): Promise<void> => {
+    const runBranch = async (branchNodes: readonly ResolvedNode[], index: number): Promise<void> => {
         const branchDefinition = node.definition.children[index];
 
         if (branchDefinition === undefined) {
@@ -133,13 +119,26 @@ export const executeParallel = async <
 
         const branchState = context.stateStore.fork();
         const branchTaskResults: TaskRunResult[] = [];
-        const branchScopedContext =
-            node.definition.forkContext !== undefined
-                ? await (node.definition.forkContext as any)(context.scopedContext, meta)
-                : context.scopedContext;
         const branchSignal = createCompositeAbortController([context.signal, groupAbortController.signal]);
 
-        let branchResult: BranchResult<TState> = {
+        // Build a flow-level context for forkContext/cleanupContext callbacks
+        const flowCtx = createFlowContext({
+            emit: (type, data) => context.emitUserEvent(type, data),
+            flow: context.flowInfo,
+            params: context.params,
+            runId: context.runId,
+            signal: branchSignal.signal,
+            state: branchState,
+            stop: (reason) => context.runController.requestStop(reason),
+            userContext: context.scopedContext,
+        });
+
+        const branchScopedContext =
+            node.definition.forkContext !== undefined
+                ? await (node.definition.forkContext as any)(flowCtx, meta)
+                : context.scopedContext;
+
+        let branchResult: BranchResult = {
             index,
             stateStore: branchState,
             taskResults: branchTaskResults,
@@ -188,7 +187,18 @@ export const executeParallel = async <
 
             if (node.definition.cleanupContext !== undefined) {
                 try {
-                    await (node.definition.cleanupContext as any)(branchScopedContext, meta);
+                    // Pass the forked flow context for cleanup
+                    const cleanupCtx = createFlowContext({
+                        emit: (type, data) => context.emitUserEvent(type, data),
+                        flow: context.flowInfo,
+                        params: context.params,
+                        runId: context.runId,
+                        signal: branchSignal.signal,
+                        state: branchState,
+                        stop: (reason) => context.runController.requestStop(reason),
+                        userContext: branchScopedContext,
+                    });
+                    await (node.definition.cleanupContext as any)(cleanupCtx, meta);
                 } catch {
                     // Cleanup failures are silently ignored
                 }

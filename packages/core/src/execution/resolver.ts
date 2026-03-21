@@ -1,62 +1,25 @@
-import type {
-    ErasedFlowNode,
-    FlowDefinition,
-    ParallelDefinition,
-    StateShape,
-    TaskDefinition,
-    UserEventMap,
-} from "../core/types.ts";
+import type { FlowDefinition, FlowNode, ParallelDefinition, TaskDefinition } from "../core/types.ts";
 
-export interface ResolvedTaskNode<
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
-> {
-    readonly definition: TaskDefinition<TParams, TState, TUserEvents, TBaseContext, object>;
+export interface ResolvedTaskNode {
+    readonly definition: TaskDefinition<any>;
     readonly kind: "task";
 }
 
-export interface ResolvedParallelNode<
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
-> {
-    readonly branches: readonly ResolvedNode<TParams, TState, TUserEvents, TBaseContext>[][];
-    readonly definition: ParallelDefinition<TParams, TState, TUserEvents, TBaseContext, object>;
+export interface ResolvedParallelNode {
+    readonly branches: readonly ResolvedNode[][];
+    readonly definition: ParallelDefinition<any>;
     readonly kind: "parallel";
 }
 
-export type ResolvedNode<
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
-> =
-    | ResolvedParallelNode<TParams, TState, TUserEvents, TBaseContext>
-    | ResolvedTaskNode<TParams, TState, TUserEvents, TBaseContext>;
+export type ResolvedNode = ResolvedParallelNode | ResolvedTaskNode;
 
-export interface ResolvedFlowPlan<
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
-    TRequiredContext extends object,
-> {
-    readonly flow: FlowDefinition<TParams, TState, TUserEvents, TBaseContext, TRequiredContext>;
-    readonly nodes: readonly ResolvedNode<TParams, TState, TUserEvents, TBaseContext>[];
+export interface ResolvedFlowPlan {
+    readonly flow: FlowDefinition<any>;
+    readonly nodes: readonly ResolvedNode[];
 }
 
-const resolveNodes = <
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
->(
-    nodes: readonly ErasedFlowNode<TParams, TState, TUserEvents, TBaseContext>[]
-): ResolvedNode<TParams, TState, TUserEvents, TBaseContext>[] => {
-    const result: ResolvedNode<TParams, TState, TUserEvents, TBaseContext>[] = [];
+const resolveNodes = (nodes: readonly FlowNode<any>[]): ResolvedNode[] => {
+    const result: ResolvedNode[] = [];
 
     for (const node of nodes) {
         if (node.kind === "task") {
@@ -79,15 +42,7 @@ const resolveNodes = <
     return result;
 };
 
-export const resolveFlow = <
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
-    TRequiredContext extends object,
->(
-    flow: FlowDefinition<TParams, TState, TUserEvents, TBaseContext, TRequiredContext>
-): ResolvedFlowPlan<TParams, TState, TUserEvents, TBaseContext, TRequiredContext> => ({
+export const resolveFlow = (flow: FlowDefinition<any>): ResolvedFlowPlan => ({
     flow,
     nodes: resolveNodes(flow.nodes),
 });

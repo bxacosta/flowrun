@@ -1,17 +1,9 @@
 import { defaultRetryDelay, defaultRetryStrategy } from "../core/constants.ts";
 import { TaskTimeoutError } from "../core/errors.ts";
-import type {
-    ErrorResolution,
-    Middleware,
-    MiddlewareNext,
-    StateShape,
-    TaskDefinition,
-    UserEmitEventMap,
-    UserEventMap,
-} from "../core/types.ts";
+import type { ErrorResolution, MiddlewareNext, TaskDefinition } from "../core/types.ts";
 import { createLinkedAbortController } from "../utils/abort.ts";
 import { waitForDelay } from "../utils/delay.ts";
-import { composeMiddleware, mergeMiddleware } from "../utils/middleware.ts";
+import { composeMiddleware } from "../utils/middleware.ts";
 import { getDurationMs } from "../utils/time.ts";
 import { createTaskContext } from "./context-factory.ts";
 import type { ExecutionContext, TaskExecutionOutcome } from "./execution-types.ts";
@@ -83,15 +75,10 @@ const runWithTimeout = async (
     });
 };
 
-const resolveTaskError = async <
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
->(
+const resolveTaskError = async (
     error: Error,
-    context: ExecutionContext<TParams, TState, TUserEvents, TBaseContext>,
-    task: TaskDefinition<TParams, TState, TUserEvents, TBaseContext, object>,
+    context: ExecutionContext,
+    task: TaskDefinition<any>,
     attempt: number,
     attempts: number,
     attemptSignal: AbortSignal
@@ -106,10 +93,7 @@ const resolveTaskError = async <
 
     const taskContext = createTaskContext(
         {
-            emit: <TType extends keyof UserEmitEventMap<TUserEvents> & string>(
-                type: TType,
-                data: UserEmitEventMap<TUserEvents>[TType]
-            ) => {
+            emit: (type, data) => {
                 context.emitUserEvent(type, data);
             },
             flow: context.flowInfo,
@@ -134,14 +118,9 @@ const resolveTaskError = async <
     }
 };
 
-export const executeTask = async <
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
->(
-    context: ExecutionContext<TParams, TState, TUserEvents, TBaseContext>,
-    task: TaskDefinition<TParams, TState, TUserEvents, TBaseContext, object>
+export const executeTask = async (
+    context: ExecutionContext,
+    task: TaskDefinition<any>
 ): Promise<TaskExecutionOutcome> => {
     const attempts = task.retry?.attempts ?? 1;
     let totalDurationMs = 0;
@@ -153,10 +132,7 @@ export const executeTask = async <
         try {
             const taskContext = createTaskContext(
                 {
-                    emit: <TType extends keyof UserEmitEventMap<TUserEvents> & string>(
-                        type: TType,
-                        data: UserEmitEventMap<TUserEvents>[TType]
-                    ) => {
+                    emit: (type, data) => {
                         context.emitUserEvent(type, data);
                     },
                     flow: context.flowInfo,
@@ -178,16 +154,14 @@ export const executeTask = async <
                 type: "task.started",
             });
 
-            // Merge flow-level and task-level middleware, compose with handler
-            const pipeline = composeMiddleware<any>(
-                mergeMiddleware<any, any, any, any>(
-                    context.flowMiddleware as readonly Middleware<any, any, any, any>[],
-                    task.middleware as readonly Middleware<any, any, any, any>[]
-                ) as readonly ((context: any, next: MiddlewareNext) => void | Promise<void>)[],
-                async (ctx) => {
-                    await task.handler(ctx);
-                }
-            );
+            const allMiddleware = [...context.flowMiddleware, ...task.middleware] as readonly ((
+                context: any,
+                next: MiddlewareNext
+            ) => void | Promise<void>)[];
+
+            const pipeline = composeMiddleware(allMiddleware, async (ctx) => {
+                await task.handler(ctx);
+            });
 
             await runWithTimeout(
                 async () => {

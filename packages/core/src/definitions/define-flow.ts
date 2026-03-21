@@ -1,21 +1,18 @@
 import { FlowEngineError } from "../core/errors.ts";
 import type {
-    ErasedFlowNode,
     FlowBuilderApi,
     FlowDefinition,
     FlowHooks,
     FlowNode,
     GroupOptions,
     Middleware,
-    NodesRequiredContext,
     ParallelOptions,
     RetryPolicy,
-    StateShape,
+    StateOf,
+    TaskContext,
     TaskHandler,
     TaskOptions,
-    UserEventMap,
 } from "../core/types.ts";
-import type { Simplify } from "../utils/type-helpers.ts";
 import { group, parallel, task } from "./node-factories.ts";
 
 // ── Validation ───────────────────────────────────────────────────────
@@ -34,15 +31,7 @@ const validateRetryPolicy = (taskId: string, retry: RetryPolicy): void => {
     }
 };
 
-const validateNode = <
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
->(
-    node: FlowNode<TParams, TState, TUserEvents, TBaseContext, object>,
-    ids: Set<string>
-): void => {
+const validateNode = (node: FlowNode<any>, ids: Set<string>): void => {
     if (ids.has(node.id)) {
         throw new FlowEngineError(`Duplicate node id "${node.id}"`);
     }
@@ -86,15 +75,7 @@ const validateNode = <
     }
 };
 
-const validateFlowDefinition = <
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
-    TRequiredContext extends object,
->(
-    flow: FlowDefinition<TParams, TState, TUserEvents, TBaseContext, TRequiredContext>
-): void => {
+const validateFlowDefinition = (flow: FlowDefinition<any>): void => {
     if (flow.nodes.length === 0) {
         throw new FlowEngineError(`Flow "${flow.id}" must contain at least one node`);
     }
@@ -108,104 +89,50 @@ const validateFlowDefinition = <
 
 // ── Input types ──────────────────────────────────────────────────────
 
-interface SharedFlowInput<
-    TParams,
-    TState extends StateShape,
-    TBaseContext extends object,
-    TUserEvents extends UserEventMap,
-    TRequiredContext extends object,
-> {
-    readonly hooks?: FlowHooks<TParams, TState, TBaseContext, TUserEvents>;
+interface FlowInputBase<TContext extends TaskContext> {
+    readonly hooks?: FlowHooks<TContext>;
     readonly id: string;
-    readonly initialState?: TState | (() => TState);
-    readonly middleware?: readonly Middleware<
-        TParams,
-        TState,
-        Simplify<TBaseContext & TRequiredContext>,
-        TUserEvents
-    >[];
+    readonly initialState?: StateOf<TContext> | (() => StateOf<TContext>);
+    readonly middleware?: readonly Middleware<TContext>[];
     readonly name?: string;
 }
 
-type FlowInputFromNodes<
-    TParams,
-    TState extends StateShape,
-    TBaseContext extends object,
-    TUserEvents extends UserEventMap,
-    TNodes extends readonly ErasedFlowNode<TParams, TState, TUserEvents, TBaseContext>[],
-> = SharedFlowInput<TParams, TState, TBaseContext, TUserEvents, NodesRequiredContext<TNodes>> & {
+type FlowInputWithNodes<TContext extends TaskContext> = FlowInputBase<TContext> & {
     readonly build?: never;
-    readonly nodes: TNodes;
+    readonly nodes: readonly FlowNode<TContext>[];
 };
 
-type FlowInputFromBuilder<
-    TParams,
-    TState extends StateShape,
-    TBaseContext extends object,
-    TUserEvents extends UserEventMap,
-    TNodes extends readonly ErasedFlowNode<TParams, TState, TUserEvents, TBaseContext>[],
-> = SharedFlowInput<TParams, TState, TBaseContext, TUserEvents, NodesRequiredContext<TNodes>> & {
-    readonly build: (builder: FlowBuilderApi<TParams, TState, TBaseContext, TUserEvents>) => TNodes;
+type FlowInputWithBuilder<TContext extends TaskContext> = FlowInputBase<TContext> & {
+    readonly build: (builder: FlowBuilderApi<TContext>) => readonly FlowNode<TContext>[];
     readonly nodes?: never;
 };
 
-export type FlowInput<
-    TParams,
-    TState extends StateShape,
-    TBaseContext extends object,
-    TUserEvents extends UserEventMap,
-    TNodes extends readonly ErasedFlowNode<TParams, TState, TUserEvents, TBaseContext>[],
-> =
-    | FlowInputFromBuilder<TParams, TState, TBaseContext, TUserEvents, TNodes>
-    | FlowInputFromNodes<TParams, TState, TBaseContext, TUserEvents, TNodes>;
+export type FlowInput<TContext extends TaskContext = TaskContext> =
+    | FlowInputWithBuilder<TContext>
+    | FlowInputWithNodes<TContext>;
 
 // ── Builder API ──────────────────────────────────────────────────────
 
-const createBuilderApi = <
-    TParams,
-    TState extends StateShape,
-    TBaseContext extends object,
-    TUserEvents extends UserEventMap,
->(): FlowBuilderApi<TParams, TState, TBaseContext, TUserEvents> => ({
-    group: <TNodes extends readonly ErasedFlowNode<TParams, TState, TUserEvents, TBaseContext>[]>(
-        id: string,
-        children: TNodes,
-        options?: GroupOptions
-    ) => group<TParams, TState, TBaseContext, TUserEvents, TNodes>(id, children, options),
+const createBuilderApi = <TContext extends TaskContext>(): FlowBuilderApi<TContext> => ({
+    group: (id: string, children: readonly FlowNode<TContext>[], options?: GroupOptions) =>
+        group<TContext>(id, children, options),
 
-    parallel: <TNodes extends readonly ErasedFlowNode<TParams, TState, TUserEvents, TBaseContext>[]>(
-        id: string,
-        children: TNodes,
-        options?: ParallelOptions<TState, Simplify<TBaseContext & NodesRequiredContext<TNodes>>>
-    ) => parallel<TParams, TState, TBaseContext, TUserEvents, TNodes>(id, children, options),
+    parallel: (id: string, children: readonly FlowNode<TContext>[], options?: ParallelOptions<TContext>) =>
+        parallel<TContext>(id, children, options),
 
-    task: <TRequiredContext extends object = {}>(
-        id: string,
-        handler: TaskHandler<TParams, TState, Simplify<TBaseContext & TRequiredContext>, TUserEvents>,
-        options?: TaskOptions<TParams, TState, Simplify<TBaseContext & TRequiredContext>, TUserEvents>
-    ) => task<TParams, TState, TBaseContext, TUserEvents, TRequiredContext>(id, handler, options),
+    task: (id: string, handler: TaskHandler<TContext>, options?: TaskOptions<TContext>) =>
+        task<TContext>(id, handler, options),
 });
 
 // ── defineFlow ───────────────────────────────────────────────────────
 
-export const defineFlow = <
-    TParams,
-    TState extends StateShape = {},
-    TBaseContext extends object = {},
-    TUserEvents extends UserEventMap = {},
-    TNodes extends readonly ErasedFlowNode<TParams, TState, TUserEvents, TBaseContext>[] = readonly ErasedFlowNode<
-        TParams,
-        TState,
-        TUserEvents,
-        TBaseContext
-    >[],
->(
-    input: FlowInput<TParams, TState, TBaseContext, TUserEvents, TNodes>
-): FlowDefinition<TParams, TState, TUserEvents, TBaseContext, NodesRequiredContext<TNodes>> => {
-    const builderApi = createBuilderApi<TParams, TState, TBaseContext, TUserEvents>();
+export const defineFlow = <TContext extends TaskContext = TaskContext>(
+    input: FlowInput<TContext>
+): FlowDefinition<TContext> => {
+    const builderApi = createBuilderApi<TContext>();
     const nodes = input.build !== undefined ? input.build(builderApi) : input.nodes;
 
-    const flow: FlowDefinition<TParams, TState, TUserEvents, TBaseContext, NodesRequiredContext<TNodes>> = {
+    const flow: FlowDefinition<TContext> = {
         hooks: input.hooks ?? {},
         id: input.id,
         initialState: input.initialState,

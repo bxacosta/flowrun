@@ -7,40 +7,24 @@ import type {
     StateStore,
     TaskContext,
     TaskInfo,
-    UserEmitEventMap,
-    UserEventMap,
 } from "../core/types.ts";
 
-export interface SharedContextOptions<
-    TParams,
-    TState extends StateShape,
-    TContext extends object,
-    TUserEvents extends UserEventMap,
-> {
-    readonly emit: <TType extends keyof UserEmitEventMap<TUserEvents> & string>(
-        type: TType,
-        data: UserEmitEventMap<TUserEvents>[TType]
-    ) => void;
+export interface SharedContextOptions {
+    readonly emit: (type: string, data: Record<string, unknown>) => void;
     readonly flow: FlowInfo;
-    readonly params: TParams;
+    readonly params: unknown;
     readonly runId: string;
     readonly signal: AbortSignal;
-    readonly state: StateStore<TState>;
+    readonly state: StateStore<StateShape>;
     readonly stop: (reason?: string) => never;
-    readonly userContext: TContext;
+    readonly userContext: object;
 }
 
-const emitLog = <TParams, TState extends StateShape, TContext extends object, TUserEvents extends UserEventMap>(
-    options: SharedContextOptions<TParams, TState, TContext, TUserEvents>,
-    payload: LogEvent
-): void => {
-    options.emit("log" as keyof UserEmitEventMap<TUserEvents> & string, payload as any);
+const emitLog = (options: SharedContextOptions, payload: LogEvent): void => {
+    options.emit("log", payload as unknown as Record<string, unknown>);
 };
 
-const createLogger = <TParams, TState extends StateShape, TContext extends object, TUserEvents extends UserEventMap>(
-    options: SharedContextOptions<TParams, TState, TContext, TUserEvents>,
-    task: TaskInfo | undefined
-): Logger => ({
+const createLogger = (options: SharedContextOptions, task: TaskInfo | undefined): Logger => ({
     debug: (message, data) => {
         emitLog(options, { data, level: "debug", message, taskId: task?.id, taskName: task?.name });
     },
@@ -55,14 +39,7 @@ const createLogger = <TParams, TState extends StateShape, TContext extends objec
     },
 });
 
-export const createFlowContext = <
-    TParams,
-    TState extends StateShape,
-    TContext extends object,
-    TUserEvents extends UserEventMap,
->(
-    options: SharedContextOptions<TParams, TState, TContext, TUserEvents>
-): FlowContext<TParams, TState, TContext, TUserEvents> =>
+export const createFlowContext = (options: SharedContextOptions): FlowContext =>
     ({
         ...options.userContext,
         emit: options.emit,
@@ -73,18 +50,9 @@ export const createFlowContext = <
         signal: options.signal,
         state: options.state,
         stop: options.stop,
-    }) as FlowContext<TParams, TState, TContext, TUserEvents>;
+    }) as FlowContext;
 
-export const createTaskContext = <
-    TParams,
-    TState extends StateShape,
-    TContext extends object,
-    TUserEvents extends UserEventMap,
->(
-    options: SharedContextOptions<TParams, TState, TContext, TUserEvents>,
-    task: TaskInfo,
-    attempt: number
-): TaskContext<TParams, TState, TContext, TUserEvents> =>
+export const createTaskContext = (options: SharedContextOptions, task: TaskInfo, attempt: number): TaskContext =>
     ({
         ...options.userContext,
         attempt,
@@ -97,4 +65,4 @@ export const createTaskContext = <
         state: options.state,
         stop: options.stop,
         task,
-    }) as TaskContext<TParams, TState, TContext, TUserEvents>;
+    }) as TaskContext;

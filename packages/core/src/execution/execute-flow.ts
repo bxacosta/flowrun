@@ -1,17 +1,16 @@
 import { coreContextKeys } from "../core/constants.ts";
 import { FlowEngineError } from "../core/errors.ts";
 import type {
-    AnyExtension,
     CompletedResult,
     EventMap,
-    Extension,
     FlowInfo,
-    Middleware,
+    LogEvent,
+    Logger,
     RunResult,
+    ServiceFactory,
+    ServiceFactoryApi,
     StateShape,
     TaskRunResult,
-    UserEmitEventMap,
-    UserEventMap,
 } from "../core/types.ts";
 import type { RunController } from "../engine/run-controller.ts";
 import type { EventBus } from "../events/event-bus.ts";
@@ -23,32 +22,20 @@ import { executeNodes } from "./execute-nodes.ts";
 import type { ExecutionContext } from "./execution-types.ts";
 import type { ResolvedFlowPlan } from "./resolver.ts";
 
-// ── Extension helpers ────────────────────────────────────────────────
+// ── Service helpers ─────────────────────────────────────────────────
 
-interface ExtensionRecord {
-    readonly context: object;
-    readonly definition: Extension<object, UserEventMap>;
-}
-
-export interface ExecuteFlowOptions<
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
-> {
+export interface ExecuteFlowOptions {
     readonly eventBus: EventBus<EventMap>;
-    readonly extensions: readonly AnyExtension[];
-    readonly params: TParams;
-    readonly plan: ResolvedFlowPlan<TParams, TState, TUserEvents, TBaseContext, object>;
+    readonly params: unknown;
+    readonly plan: ResolvedFlowPlan;
     readonly runController: RunController;
     readonly runId: string;
+    readonly service?: ServiceFactory<object>;
 }
 
 const normalizeError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
-const createInitialState = <TState extends StateShape>(
-    initialState: TState | (() => TState) | undefined
-): Partial<TState> => {
+const createInitialState = (initialState: StateShape | (() => StateShape) | undefined): Partial<StateShape> => {
     if (initialState === undefined) {
         return {};
     }
@@ -57,35 +44,29 @@ const createInitialState = <TState extends StateShape>(
     return cloneValue(resolved);
 };
 
-const mergeExtensionContext = (target: Record<string, unknown>, extensionContext: object): void => {
-    if (Array.isArray(extensionContext) || extensionContext === null) {
-        throw new FlowEngineError("Extension context must be an object");
+const validateServiceContext = (context: object): void => {
+    if (Array.isArray(context) || context === null) {
+        throw new FlowEngineError("Service context must be an object");
     }
 
-    for (const key of Object.keys(extensionContext)) {
+    for (const key of Object.keys(context)) {
         if (coreContextKeys.includes(key as (typeof coreContextKeys)[number])) {
-            throw new FlowEngineError(`Extension context key "${key}" collides with a core context property`);
+            throw new FlowEngineError(`Service context key "${key}" collides with a core context property`);
         }
-
-        if (key in target) {
-            throw new FlowEngineError(`Extension context key "${key}" collides with another extension`);
-        }
-
-        target[key] = (extensionContext as Record<string, unknown>)[key];
     }
 };
 
-const createRunResult = <TState extends StateShape>(
+const createRunResult = (
     flowInfo: FlowInfo,
     runId: string,
-    stateStore: FlowStateStore<TState>,
+    stateStore: FlowStateStore<StateShape>,
     taskResults: readonly TaskRunResult[],
     durationMs: number,
     status: "cancelled" | "completed" | "failed",
     error: Error | undefined,
     stopReason: string | undefined,
     cancelReason: string | undefined
-): RunResult<TState> => {
+): RunResult<StateShape> => {
     const base = {
         durationMs,
         flowId: flowInfo.id,
@@ -111,108 +92,109 @@ const createRunResult = <TState extends StateShape>(
     };
 };
 
-const createExtensionInstances = async (
-    extensions: readonly AnyExtension[],
+const createServiceFactoryApi = (
     flowInfo: FlowInfo,
     params: unknown,
     runId: string,
     signal: AbortSignal,
     eventBus: EventBus<EventMap>
-): Promise<{ extensionContext: Record<string, unknown>; records: ExtensionRecord[] }> => {
-    const extensionContext: Record<string, unknown> = {};
-    const records: ExtensionRecord[] = [];
+): ServiceFactoryApi => {
+    const emit = (type: string, data: Record<string, unknown>): void => {
+        eventBus.dispatch({ flowId: flowInfo.id, payload: data, runId, type });
+    };
 
-    for (const extension of extensions) {
-        const ctx = await extension.create({
-            emit: (type: string, data: Record<string, unknown>) => {
-                eventBus.dispatch({ flowId: flowInfo.id, payload: data, runId, type });
-            },
-            flow: flowInfo,
-            params,
+    const emitLog = (payload: LogEvent): void => {
+        eventBus.dispatch({
+            flowId: flowInfo.id,
+            payload: payload as unknown as Record<string, unknown>,
             runId,
-            signal,
-        } as any);
+            type: "log",
+        });
+    };
 
-        records.push({ context: ctx, definition: extension });
-        mergeExtensionContext(extensionContext, ctx);
-    }
+    const log: Logger = {
+        debug: (message, data) => emitLog({ data, level: "debug", message }),
+        error: (message, data) => emitLog({ data, level: "error", message }),
+        info: (message, data) => emitLog({ data, level: "info", message }),
+        warn: (message, data) => emitLog({ data, level: "warn", message }),
+    };
 
-    return { extensionContext, records };
+    return { emit, flow: flowInfo, log, params, runId, signal };
 };
 
-const disposeExtensions = async (
-    records: readonly ExtensionRecord[],
+const createServiceContext = async (
+    service: ServiceFactory<object> | undefined,
+    api: ServiceFactoryApi
+): Promise<object> => {
+    if (service === undefined) {
+        return {};
+    }
+
+    const context = await service.create(api);
+    validateServiceContext(context);
+    return context;
+};
+
+const disposeService = async (
+    service: ServiceFactory<object> | undefined,
+    context: object,
+    api: ServiceFactoryApi,
     logInternal: (message: string, data?: unknown) => void
 ): Promise<void> => {
-    for (const record of [...records].reverse()) {
-        if (record.definition.dispose === undefined) {
-            continue;
-        }
+    if (service === undefined || service.dispose === undefined) {
+        return;
+    }
 
-        try {
-            await record.definition.dispose(record.context);
-        } catch (error) {
-            logInternal("Extension dispose failed", { error: normalizeError(error) });
-        }
+    try {
+        await service.dispose(context, api);
+    } catch (error) {
+        logInternal("Service dispose failed", { error: normalizeError(error) });
     }
 };
 
 // ── Main execution ──────────────────────────────────────────────────
 
-export const executeFlow = async <
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
->(
-    options: ExecuteFlowOptions<TParams, TState, TUserEvents, TBaseContext>
-): Promise<RunResult<TState>> => {
+export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResult<StateShape>> => {
     const startTime = performance.now();
     const flowInfo: FlowInfo = {
         id: options.plan.flow.id,
         name: options.plan.flow.name,
     };
-    const stateStore = new FlowStateStore<TState>(createInitialState(options.plan.flow.initialState));
+    const stateStore = new FlowStateStore<StateShape>(createInitialState(options.plan.flow.initialState));
     const taskResults: TaskRunResult[] = [];
 
-    let extensionContext = {} as TBaseContext;
-    let extensionRecords: readonly ExtensionRecord[] = [];
+    let serviceContext: object = {};
     let finalError: Error | undefined;
     let finalStatus: "cancelled" | "completed" | "failed" = "completed";
 
     const logInternal = (message: string, data?: unknown): void => {
         options.eventBus.dispatch({
             flowId: flowInfo.id,
-            payload: { data, level: "error", message },
+            payload: { data, level: "error", message } as unknown as Record<string, unknown>,
             runId: options.runId,
             type: "log",
         });
     };
 
-    const emitUserEvent = <TType extends keyof UserEmitEventMap<TUserEvents> & string>(
-        type: TType,
-        data: UserEmitEventMap<TUserEvents>[TType]
-    ): void => {
+    const emitUserEvent = (type: string, data: Record<string, unknown>): void => {
         options.eventBus.dispatch({
             flowId: flowInfo.id,
-            payload: data as Record<string, unknown>,
+            payload: data,
             runId: options.runId,
             type,
         });
     };
 
-    try {
-        const created = await createExtensionInstances(
-            options.extensions,
-            flowInfo,
-            options.params,
-            options.runId,
-            options.runController.signal,
-            options.eventBus
-        );
+    const serviceApi = createServiceFactoryApi(
+        flowInfo,
+        options.params,
+        options.runId,
+        options.runController.signal,
+        options.eventBus
+    );
 
-        extensionContext = created.extensionContext as TBaseContext;
-        extensionRecords = created.records;
+    try {
+        serviceContext = await createServiceContext(options.service, serviceApi);
 
         const flowContext = createFlowContext({
             emit: emitUserEvent,
@@ -222,7 +204,7 @@ export const executeFlow = async <
             signal: options.runController.signal,
             state: stateStore,
             stop: (reason) => options.runController.requestStop(reason),
-            userContext: extensionContext,
+            userContext: serviceContext,
         });
 
         options.eventBus.dispatch({
@@ -238,20 +220,15 @@ export const executeFlow = async <
             }
 
             if (!(options.runController.isCancelled || options.runController.isStopped)) {
-                const executionContext: ExecutionContext<TParams, TState, TUserEvents, TBaseContext> = {
+                const executionContext: ExecutionContext = {
                     eventBus: options.eventBus,
                     emitUserEvent,
                     flowInfo,
-                    flowMiddleware: options.plan.flow.middleware as readonly Middleware<
-                        TParams,
-                        TState,
-                        TBaseContext,
-                        TUserEvents
-                    >[],
+                    flowMiddleware: options.plan.flow.middleware,
                     params: options.params,
                     runController: options.runController,
                     runId: options.runId,
-                    scopedContext: extensionContext,
+                    scopedContext: serviceContext,
                     signal: options.runController.signal,
                     stateStore,
                     taskResults,
@@ -277,7 +254,7 @@ export const executeFlow = async <
                     undefined,
                     options.runController.stopReason,
                     options.runController.cancelReason
-                ) as CompletedResult<TState>;
+                ) as CompletedResult<StateShape>;
 
                 await options.plan.flow.hooks.onSuccess(flowContext as any, successResult);
             }
@@ -368,6 +345,6 @@ export const executeFlow = async <
         options.runController.setTerminalStatus(result.status);
         return result;
     } finally {
-        await disposeExtensions(extensionRecords, logInternal);
+        await disposeService(options.service, serviceContext, serviceApi, logInternal);
     }
 };

@@ -1,31 +1,23 @@
 import { defaultMergeStrategy, defaultParallelMode } from "../core/constants.ts";
 import type {
-    ErasedFlowNode,
+    FlowNode,
     GroupDefinition,
     GroupOptions,
     MergeStrategy,
-    NodesRequiredContext,
     ParallelDefinition,
     ParallelOptions,
-    StateShape,
+    StateOf,
+    TaskContext,
     TaskDefinition,
     TaskHandler,
     TaskOptions,
-    UserEventMap,
 } from "../core/types.ts";
-import type { Simplify } from "../utils/type-helpers.ts";
 
-export const task = <
-    TParams,
-    TState extends StateShape,
-    TBaseContext extends object,
-    TUserEvents extends UserEventMap,
-    TRequiredContext extends object = {},
->(
+export const task = <TContext extends TaskContext = TaskContext>(
     id: string,
-    handler: TaskHandler<TParams, TState, Simplify<TBaseContext & TRequiredContext>, TUserEvents>,
-    options?: TaskOptions<TParams, TState, Simplify<TBaseContext & TRequiredContext>, TUserEvents>
-): TaskDefinition<TParams, TState, TUserEvents, TBaseContext, TRequiredContext> => ({
+    handler: TaskHandler<TContext>,
+    options?: TaskOptions<TContext>
+): TaskDefinition<TContext> => ({
     handler,
     id,
     kind: "task",
@@ -36,41 +28,29 @@ export const task = <
     timeoutMs: options?.timeoutMs,
 });
 
-export const group = <
-    TParams,
-    TState extends StateShape,
-    TBaseContext extends object,
-    TUserEvents extends UserEventMap,
-    TNodes extends readonly ErasedFlowNode<TParams, TState, TUserEvents, TBaseContext>[],
->(
+export const group = <TContext extends TaskContext = TaskContext>(
     id: string,
-    children: TNodes,
+    children: readonly FlowNode<TContext>[],
     options?: GroupOptions
-): GroupDefinition<TParams, TState, TUserEvents, TBaseContext, NodesRequiredContext<TNodes>> => ({
+): GroupDefinition<TContext> => ({
     children,
     id,
     kind: "group",
     name: options?.name ?? id,
 });
 
-export const parallel = <
-    TParams,
-    TState extends StateShape,
-    TBaseContext extends object,
-    TUserEvents extends UserEventMap,
-    TNodes extends readonly ErasedFlowNode<TParams, TState, TUserEvents, TBaseContext>[],
->(
+export const parallel = <TContext extends TaskContext = TaskContext>(
     id: string,
-    children: TNodes,
-    options?: ParallelOptions<TState, Simplify<TBaseContext & NodesRequiredContext<TNodes>>>
-): ParallelDefinition<TParams, TState, TUserEvents, TBaseContext, NodesRequiredContext<TNodes>> => ({
+    children: readonly FlowNode<TContext>[],
+    options?: ParallelOptions<TContext>
+): ParallelDefinition<TContext> => ({
     children,
     cleanupContext: options?.cleanupContext,
     concurrency: options?.concurrency,
     forkContext: options?.forkContext,
     id,
     kind: "parallel",
-    merge: (options?.merge ?? defaultMergeStrategy) as MergeStrategy<TState>,
+    merge: (options?.merge ?? defaultMergeStrategy) as MergeStrategy<StateOf<TContext>>,
     mode: options?.mode ?? defaultParallelMode,
     name: options?.name ?? id,
 });

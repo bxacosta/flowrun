@@ -1,25 +1,4 @@
-import type { CollapseIntersection, Simplify, StripIndexSignature } from "../utils/type-helpers.ts";
-
-// ── Branded type tokens (internal) ──────────────────────────────────
-
-declare const flowDefinitionToken: unique symbol;
-declare const flowNodeToken: unique symbol;
-
-interface FlowTypeMetadata<
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
-    TRequiredContext extends object,
-> {
-    readonly baseContext: TBaseContext;
-    readonly params: TParams;
-    readonly requiredContext: TRequiredContext;
-    readonly state: TState;
-    readonly userEvents: TUserEvents;
-}
-
-type FlowNodeContextMetadata<TRequiredContext extends object> = TRequiredContext;
+import type { Simplify, StripIndexSignature } from "../utils/type-helpers.ts";
 
 // ── Primitives ──────────────────────────────────────────────────────
 
@@ -114,34 +93,18 @@ export interface LifecycleEventMap {
     };
 }
 
-export type UserEventMap = EventMap;
-
-type ReservedEventName = keyof BuiltInEventMap | keyof LifecycleEventMap;
-type CleanUserEvents<T extends UserEventMap> = Omit<StripIndexSignature<T>, ReservedEventName>;
-
-export type EngineEventMap<TUserEvents extends UserEventMap, TExtensionEvents extends UserEventMap> = {
+export type EngineEventMap<TUserEvents extends EventMap = {}> = {
     [K in
         | keyof LifecycleEventMap
         | keyof BuiltInEventMap
-        | keyof CleanUserEvents<TUserEvents>
-        | keyof CleanUserEvents<TExtensionEvents>]: K extends keyof LifecycleEventMap
+        | keyof StripIndexSignature<TUserEvents>]: K extends keyof LifecycleEventMap
         ? LifecycleEventMap[K]
         : K extends keyof BuiltInEventMap
           ? BuiltInEventMap[K]
-          : K extends keyof CleanUserEvents<TUserEvents>
-            ? CleanUserEvents<TUserEvents>[K]
-            : K extends keyof CleanUserEvents<TExtensionEvents>
-              ? CleanUserEvents<TExtensionEvents>[K]
-              : never;
+          : K extends keyof TUserEvents
+            ? TUserEvents[K]
+            : never;
 } & EventMap;
-
-export type UserEmitEventMap<TUserEvents extends UserEventMap> = {
-    [K in keyof BuiltInEventMap | keyof CleanUserEvents<TUserEvents>]: K extends keyof BuiltInEventMap
-        ? BuiltInEventMap[K]
-        : K extends keyof CleanUserEvents<TUserEvents>
-          ? CleanUserEvents<TUserEvents>[K]
-          : never;
-};
 
 export interface EventMetadata<TType extends string = string> {
     readonly flowId: string;
@@ -183,11 +146,8 @@ export interface StateStore<TState extends StateShape> {
 
 // ── Context ──────────────────────────────────────────────────────────
 
-export interface CoreFlowContext<TParams, TState extends StateShape, TUserEvents extends UserEventMap> {
-    emit<TType extends keyof UserEmitEventMap<TUserEvents> & string>(
-        type: TType,
-        data: UserEmitEventMap<TUserEvents>[TType]
-    ): void;
+export interface FlowContext<TParams = unknown, TState extends StateShape = StateShape> {
+    emit(type: string, data: Record<string, unknown>): void;
     readonly flow: FlowInfo;
     readonly log: Logger;
     readonly params: TParams;
@@ -197,43 +157,29 @@ export interface CoreFlowContext<TParams, TState extends StateShape, TUserEvents
     stop(reason?: string): never;
 }
 
-export interface CoreTaskContext<TParams, TState extends StateShape, TUserEvents extends UserEventMap>
-    extends CoreFlowContext<TParams, TState, TUserEvents> {
+export interface TaskContext<TParams = unknown, TState extends StateShape = StateShape>
+    extends FlowContext<TParams, TState> {
     readonly attempt: number;
     readonly task: TaskInfo;
 }
 
-export type FlowContext<
-    TParams,
-    TState extends StateShape,
-    TContext extends object,
-    TUserEvents extends UserEventMap,
-> = Simplify<CoreFlowContext<TParams, TState, TUserEvents> & TContext>;
+// ── Context Utility Types ────────────────────────────────────────────
 
-export type TaskContext<
-    TParams,
-    TState extends StateShape,
-    TContext extends object,
-    TUserEvents extends UserEventMap,
-> = Simplify<CoreTaskContext<TParams, TState, TUserEvents> & TContext>;
+export type ParamsOf<T> = T extends FlowContext<infer P, any> ? P : never;
+export type StateOf<T> = T extends FlowContext<any, infer S> ? S : never;
+export type FlowCtxOf<TContext extends TaskContext> = FlowContext<ParamsOf<TContext>, StateOf<TContext>> &
+    Omit<TContext, keyof TaskContext>;
 
 // ── Handlers & Middleware ────────────────────────────────────────────
 
-export type TaskHandler<
-    TParams,
-    TState extends StateShape,
-    TContext extends object,
-    TUserEvents extends UserEventMap,
-> = (context: TaskContext<TParams, TState, TContext, TUserEvents>) => unknown | Promise<unknown>;
+export type TaskHandler<TContext extends TaskContext = TaskContext> = (context: TContext) => unknown | Promise<unknown>;
 
 export type MiddlewareNext = () => Promise<void>;
 
-export type Middleware<
-    TParams,
-    TState extends StateShape,
-    TContext extends object,
-    TUserEvents extends UserEventMap,
-> = (context: TaskContext<TParams, TState, TContext, TUserEvents>, next: MiddlewareNext) => void | Promise<void>;
+export type Middleware<TContext extends TaskContext = TaskContext> = (
+    context: TContext,
+    next: MiddlewareNext
+) => void | Promise<void>;
 
 // ── Retry & Error Resolution ─────────────────────────────────────────
 
@@ -249,23 +195,13 @@ export interface ErrorResolutionMeta {
     readonly attempts: number;
 }
 
-export type ErrorResolver<
-    TParams,
-    TState extends StateShape,
-    TContext extends object,
-    TUserEvents extends UserEventMap,
-> = (
+export type ErrorResolver<TContext extends TaskContext = TaskContext> = (
     error: Error,
-    context: TaskContext<TParams, TState, TContext, TUserEvents>,
+    context: TContext,
     meta: ErrorResolutionMeta
 ) => ErrorResolution | Promise<ErrorResolution>;
 
-export type TaskErrorResolution<
-    TParams,
-    TState extends StateShape,
-    TContext extends object,
-    TUserEvents extends UserEventMap,
-> = ErrorResolution | ErrorResolver<TParams, TState, TContext, TUserEvents>;
+export type TaskErrorResolution<TContext extends TaskContext = TaskContext> = ErrorResolution | ErrorResolver<TContext>;
 
 // ── Parallel Options ─────────────────────────────────────────────────
 
@@ -276,27 +212,12 @@ export type MergeResolver<TState extends StateShape> = <TKey extends keyof TStat
 
 export type MergeStrategy<TState extends StateShape> = "arrays" | "overwrite" | "strict" | MergeResolver<TState>;
 
-export type ParallelContextFork<TContext extends object> = (
-    context: TContext,
-    meta: ParallelBranchInfo
-) => TContext | Promise<TContext>;
-
-export type ParallelContextCleanup<TContext extends object> = (
-    context: TContext,
-    meta: ParallelBranchInfo
-) => void | Promise<void>;
-
 // ── Node Definitions ─────────────────────────────────────────────────
 
-export interface TaskOptions<
-    TParams,
-    TState extends StateShape,
-    TContext extends object,
-    TUserEvents extends UserEventMap,
-> {
-    readonly middleware?: readonly Middleware<TParams, TState, TContext, TUserEvents>[];
+export interface TaskOptions<TContext extends TaskContext = TaskContext> {
+    readonly middleware?: readonly Middleware<TContext>[];
     readonly name?: string;
-    readonly onError?: TaskErrorResolution<TParams, TState, TContext, TUserEvents>;
+    readonly onError?: TaskErrorResolution<TContext>;
     readonly retry?: RetryPolicy;
     readonly timeoutMs?: number;
 }
@@ -305,160 +226,86 @@ export interface GroupOptions {
     readonly name?: string;
 }
 
-export interface ParallelOptions<TState extends StateShape, TContext extends object> extends GroupOptions {
-    readonly cleanupContext?: ParallelContextCleanup<TContext>;
+export interface ParallelOptions<TContext extends TaskContext = TaskContext> extends GroupOptions {
+    readonly cleanupContext?: (context: FlowCtxOf<TContext>, meta: ParallelBranchInfo) => void | Promise<void>;
     readonly concurrency?: number;
-    readonly forkContext?: ParallelContextFork<TContext>;
-    readonly merge?: MergeStrategy<TState>;
+    readonly forkContext?: (
+        context: FlowCtxOf<TContext>,
+        meta: ParallelBranchInfo
+    ) => FlowCtxOf<TContext> | Promise<FlowCtxOf<TContext>>;
+    readonly merge?: MergeStrategy<StateOf<TContext>>;
     readonly mode?: ParallelMode;
 }
 
-export interface TaskDefinition<
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
-    TRequiredContext extends object,
-> {
-    readonly handler: TaskHandler<TParams, TState, Simplify<TBaseContext & TRequiredContext>, TUserEvents>;
+export interface TaskDefinition<TContext extends TaskContext = TaskContext> {
+    readonly handler: TaskHandler<TContext>;
     readonly id: string;
     readonly kind: "task";
-    readonly middleware: readonly Middleware<TParams, TState, Simplify<TBaseContext & TRequiredContext>, TUserEvents>[];
+    readonly middleware: readonly Middleware<TContext>[];
     readonly name: string;
-    readonly onError?: TaskErrorResolution<TParams, TState, Simplify<TBaseContext & TRequiredContext>, TUserEvents>;
+    readonly onError?: TaskErrorResolution<TContext>;
     readonly retry?: RetryPolicy;
     readonly timeoutMs?: number;
-    readonly [flowNodeToken]?: FlowNodeContextMetadata<TRequiredContext>;
 }
 
-export interface GroupDefinition<
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
-    TRequiredContext extends object,
-> {
-    readonly children: readonly ErasedFlowNode<TParams, TState, TUserEvents, TBaseContext>[];
+export interface GroupDefinition<TContext extends TaskContext = TaskContext> {
+    readonly children: readonly FlowNode<TContext>[];
     readonly id: string;
     readonly kind: "group";
     readonly name: string;
-    readonly [flowNodeToken]?: FlowNodeContextMetadata<TRequiredContext>;
 }
 
-export interface ParallelDefinition<
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
-    TRequiredContext extends object,
-> {
-    readonly children: readonly ErasedFlowNode<TParams, TState, TUserEvents, TBaseContext>[];
-    readonly cleanupContext?: ParallelContextCleanup<Simplify<TBaseContext & TRequiredContext>>;
+export interface ParallelDefinition<TContext extends TaskContext = TaskContext> {
+    readonly children: readonly FlowNode<TContext>[];
+    readonly cleanupContext?: (context: FlowCtxOf<TContext>, meta: ParallelBranchInfo) => void | Promise<void>;
     readonly concurrency?: number;
-    readonly forkContext?: ParallelContextFork<Simplify<TBaseContext & TRequiredContext>>;
+    readonly forkContext?: (
+        context: FlowCtxOf<TContext>,
+        meta: ParallelBranchInfo
+    ) => FlowCtxOf<TContext> | Promise<FlowCtxOf<TContext>>;
     readonly id: string;
     readonly kind: "parallel";
-    readonly merge: MergeStrategy<TState>;
+    readonly merge: MergeStrategy<StateOf<TContext>>;
     readonly mode: ParallelMode;
     readonly name: string;
-    readonly [flowNodeToken]?: FlowNodeContextMetadata<TRequiredContext>;
 }
 
-export type FlowNode<
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
-    TRequiredContext extends object,
-> =
-    | GroupDefinition<TParams, TState, TUserEvents, TBaseContext, TRequiredContext>
-    | ParallelDefinition<TParams, TState, TUserEvents, TBaseContext, TRequiredContext>
-    | TaskDefinition<TParams, TState, TUserEvents, TBaseContext, TRequiredContext>;
-
-export type ErasedFlowNode<
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
-> = FlowNode<TParams, TState, TUserEvents, TBaseContext, object>;
-
-// ── Node Required Context Extraction ─────────────────────────────────
-
-type ExtractedNodeMetadata<TNode> = TNode extends {
-    readonly [flowNodeToken]?: infer TMeta;
-}
-    ? TMeta
-    : never;
-
-export type NodeRequiredContext<TNode> =
-    ExtractedNodeMetadata<TNode> extends infer TReq ? (TReq extends object ? TReq : never) : never;
-
-export type NodesRequiredContext<TNodes extends readonly unknown[]> = Simplify<
-    CollapseIntersection<NodeRequiredContext<TNodes[number]>>
->;
+export type FlowNode<TContext extends TaskContext = TaskContext> =
+    | GroupDefinition<TContext>
+    | ParallelDefinition<TContext>
+    | TaskDefinition<TContext>;
 
 // ── Flow Definition ──────────────────────────────────────────────────
 
-export interface FlowHooks<
-    TParams,
-    TState extends StateShape,
-    TBaseContext extends object,
-    TUserEvents extends UserEventMap,
-> {
-    readonly onComplete?: (
-        context: FlowContext<TParams, TState, TBaseContext, TUserEvents>,
-        result: RunResult<TState>
-    ) => void | Promise<void>;
-    readonly onFailure?: (
-        context: FlowContext<TParams, TState, TBaseContext, TUserEvents>,
-        error: Error
-    ) => void | Promise<void>;
-    readonly onStart?: (context: FlowContext<TParams, TState, TBaseContext, TUserEvents>) => void | Promise<void>;
+export interface FlowHooks<TContext extends TaskContext = TaskContext> {
+    readonly onComplete?: (context: FlowCtxOf<TContext>, result: RunResult<StateOf<TContext>>) => void | Promise<void>;
+    readonly onFailure?: (context: FlowCtxOf<TContext>, error: Error) => void | Promise<void>;
+    readonly onStart?: (context: FlowCtxOf<TContext>) => void | Promise<void>;
     readonly onSuccess?: (
-        context: FlowContext<TParams, TState, TBaseContext, TUserEvents>,
-        result: CompletedResult<TState>
+        context: FlowCtxOf<TContext>,
+        result: CompletedResult<StateOf<TContext>>
     ) => void | Promise<void>;
 }
 
-export interface FlowBuilderApi<
-    TParams,
-    TState extends StateShape,
-    TBaseContext extends object,
-    TUserEvents extends UserEventMap,
-> {
-    group<TNodes extends readonly ErasedFlowNode<TParams, TState, TUserEvents, TBaseContext>[]>(
-        id: string,
-        children: TNodes,
-        options?: GroupOptions
-    ): GroupDefinition<TParams, TState, TUserEvents, TBaseContext, NodesRequiredContext<TNodes>>;
+export interface FlowBuilderApi<TContext extends TaskContext = TaskContext> {
+    group(id: string, children: readonly FlowNode<TContext>[], options?: GroupOptions): GroupDefinition<TContext>;
 
-    parallel<TNodes extends readonly ErasedFlowNode<TParams, TState, TUserEvents, TBaseContext>[]>(
+    parallel(
         id: string,
-        children: TNodes,
-        options?: ParallelOptions<TState, Simplify<TBaseContext & NodesRequiredContext<TNodes>>>
-    ): ParallelDefinition<TParams, TState, TUserEvents, TBaseContext, NodesRequiredContext<TNodes>>;
+        children: readonly FlowNode<TContext>[],
+        options?: ParallelOptions<TContext>
+    ): ParallelDefinition<TContext>;
 
-    task<TRequiredContext extends object = {}>(
-        id: string,
-        handler: TaskHandler<TParams, TState, Simplify<TBaseContext & TRequiredContext>, TUserEvents>,
-        options?: TaskOptions<TParams, TState, Simplify<TBaseContext & TRequiredContext>, TUserEvents>
-    ): TaskDefinition<TParams, TState, TUserEvents, TBaseContext, TRequiredContext>;
+    task(id: string, handler: TaskHandler<TContext>, options?: TaskOptions<TContext>): TaskDefinition<TContext>;
 }
 
-export interface FlowDefinition<
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
-    TRequiredContext extends object,
-> {
-    readonly hooks: FlowHooks<TParams, TState, TBaseContext, TUserEvents>;
+export interface FlowDefinition<TContext extends TaskContext = TaskContext> {
+    readonly hooks: FlowHooks<TContext>;
     readonly id: string;
-    readonly initialState?: TState | (() => TState);
-    readonly middleware: readonly Middleware<TParams, TState, Simplify<TBaseContext & TRequiredContext>, TUserEvents>[];
+    readonly initialState?: StateOf<TContext> | (() => StateOf<TContext>);
+    readonly middleware: readonly Middleware<TContext>[];
     readonly name: string;
-    readonly nodes: readonly ErasedFlowNode<TParams, TState, TUserEvents, TBaseContext>[];
-    readonly [flowDefinitionToken]?: FlowTypeMetadata<TParams, TState, TUserEvents, TBaseContext, TRequiredContext>;
+    readonly nodes: readonly FlowNode<TContext>[];
 }
 
 // ── Run Result ───────────────────────────────────────────────────────
@@ -507,37 +354,21 @@ export type RunResult<TState extends StateShape> =
     | CompletedResult<TState>
     | FailedResult<TState>;
 
-// ── Extension ────────────────────────────────────────────────────────
+// ── ServiceFactory ──────────────────────────────────────────────────
 
-export type EmptyEventMap = {};
-
-export interface ExtensionCreateInfo<TExtensionEvents extends UserEventMap> {
-    emit<TType extends keyof TExtensionEvents & string>(type: TType, data: TExtensionEvents[TType]): void;
+export interface ServiceFactoryApi {
+    emit(type: string, data: Record<string, unknown>): void;
     readonly flow: FlowInfo;
+    readonly log: Logger;
     readonly params: unknown;
     readonly runId: string;
     readonly signal: AbortSignal;
 }
 
-export interface Extension<TContext extends object, TEvents extends UserEventMap = EmptyEventMap> {
-    create(info: ExtensionCreateInfo<TEvents>): TContext | Promise<TContext>;
-    dispose?(context: TContext): void | Promise<void>;
+export interface ServiceFactory<TExt extends object> {
+    create(api: ServiceFactoryApi): TExt | Promise<TExt>;
+    dispose?(ext: TExt, api: ServiceFactoryApi): void | Promise<void>;
 }
-
-export type AnyExtension = Extension<any, any>;
-
-export type AnyFlowDefinition = FlowDefinition<any, any, any, any, any>;
-
-export type ExtensionContext<T> = T extends Extension<infer TCtx, any> ? TCtx : never;
-export type ExtensionEvents<T> = T extends Extension<any, infer TEvt> ? TEvt : never;
-
-export type ExtensionContextMap<T extends readonly AnyExtension[]> = Simplify<
-    CollapseIntersection<ExtensionContext<T[number]>>
->;
-
-export type ExtensionEventMap<T extends readonly AnyExtension[]> = [ExtensionEvents<T[number]>] extends [never]
-    ? EmptyEventMap
-    : Simplify<CollapseIntersection<ExtensionEvents<T[number]>>> & UserEventMap;
 
 // ── FlowHandle ───────────────────────────────────────────────────────
 
@@ -553,55 +384,8 @@ export interface FlowHandle<TState extends StateShape> {
 
 // ── Engine Options ───────────────────────────────────────────────────
 
-export interface FlowEngineOptions<TUserEvents extends UserEventMap, TExtensions extends readonly AnyExtension[]> {
-    readonly extensions?: TExtensions;
+export interface FlowEngineOptions<TExt extends object = object, TUserEvents extends EventMap = {}> {
     readonly onSubscriberError?: (error: Error, type: string) => void;
-    readonly subscribers?: readonly EventSubscriber<EngineEventMap<TUserEvents, ExtensionEventMap<TExtensions>>>[];
+    readonly services?: ServiceFactory<TExt>;
+    readonly subscribers?: readonly EventSubscriber<EngineEventMap<TUserEvents>>[];
 }
-
-// ── Flow Compatibility ───────────────────────────────────────────────
-
-type FlowDefinitionMetadata<TFlow> = TFlow extends {
-    readonly [flowDefinitionToken]?: infer TMeta;
-}
-    ? TMeta
-    : never;
-
-export type FlowRequiredContext<TFlow> =
-    FlowDefinitionMetadata<TFlow> extends FlowTypeMetadata<
-        unknown,
-        StateShape,
-        UserEventMap,
-        infer TBaseCtx,
-        infer TReqCtx
-    >
-        ? Simplify<TBaseCtx & TReqCtx>
-        : never;
-
-export type FlowUserEvents<TFlow> =
-    FlowDefinitionMetadata<TFlow> extends FlowTypeMetadata<unknown, StateShape, infer TEvt, object, object>
-        ? TEvt
-        : never;
-
-export type FlowParams<TFlow> =
-    FlowDefinitionMetadata<TFlow> extends FlowTypeMetadata<infer TParams, StateShape, UserEventMap, object, object>
-        ? TParams
-        : never;
-
-export type FlowState<TFlow> =
-    FlowDefinitionMetadata<TFlow> extends FlowTypeMetadata<unknown, infer TState, UserEventMap, object, object>
-        ? TState
-        : never;
-
-type FlowCompatibilityGuard<TFlow, TUserEvents extends UserEventMap, TAvailableContext extends object> =
-    TAvailableContext extends FlowRequiredContext<TFlow>
-        ? TUserEvents extends FlowUserEvents<TFlow>
-            ? unknown
-            : never
-        : never;
-
-export type CompatibleFlow<
-    TFlow extends AnyFlowDefinition,
-    TUserEvents extends UserEventMap,
-    TAvailableContext extends object,
-> = TFlow & FlowCompatibilityGuard<TFlow, TUserEvents, TAvailableContext>;

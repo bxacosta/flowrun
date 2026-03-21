@@ -1,17 +1,11 @@
-import type { StateShape, UserEventMap } from "../core/types.ts";
 import { executeParallel } from "./execute-parallel.ts";
 import { executeTask } from "./execute-task.ts";
 import type { ExecutionContext, NodeExecutionOutcome } from "./execution-types.ts";
 import type { ResolvedNode } from "./resolver.ts";
 
-export const executeNodes = async <
-    TParams,
-    TState extends StateShape,
-    TUserEvents extends UserEventMap,
-    TBaseContext extends object,
->(
-    context: ExecutionContext<TParams, TState, TUserEvents, TBaseContext>,
-    nodes: readonly ResolvedNode<TParams, TState, TUserEvents, TBaseContext>[]
+export const executeNodes = async (
+    context: ExecutionContext,
+    nodes: readonly ResolvedNode[]
 ): Promise<NodeExecutionOutcome> => {
     for (const node of nodes) {
         await context.runController.waitForNextNode();
