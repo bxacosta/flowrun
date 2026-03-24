@@ -33,29 +33,29 @@ const normalizeExtensions = (extensions: readonly Extension<object>[] | undefine
     }
 
     return {
-        create: async (api: ExtensionApi) => {
+        create: async (extensionApi: ExtensionApi) => {
             let merged: object = {};
 
             for (const extension of extensions) {
-                const ctx = await extension.create(api);
-                merged = { ...merged, ...ctx };
+                const extensionContext = await extension.create(extensionApi);
+                merged = { ...merged, ...extensionContext };
             }
 
             return merged;
         },
-        dispose: async (ext: object, api: ExtensionApi) => {
+        dispose: async (extensionContext: object, extensionApi: ExtensionApi) => {
             for (let i = extensions.length - 1; i >= 0; i--) {
                 const extension = extensions[i];
 
                 if (extension?.dispose !== undefined) {
-                    await extension.dispose(ext, api);
+                    await extension.dispose(extensionContext, extensionApi);
                 }
             }
         },
     };
 };
 
-export class FlowEngine<TExt extends object = object, TUserEvents extends EventMap = {}> {
+export class FlowEngine<TExtension extends object = object, TUserEvents extends EventMap = {}> {
     private readonly eventBus: EventBus<EventMap>;
     private readonly extension: Extension<object> | undefined;
     private readonly registry = new Map<string, FlowDefinition<any>>();
@@ -72,7 +72,7 @@ export class FlowEngine<TExt extends object = object, TUserEvents extends EventM
         }
     }
 
-    register<TContext extends TaskContext & TExt>(flow: FlowDefinition<TContext>): void {
+    register<TContext extends TaskContext & TExtension>(flow: FlowDefinition<TContext>): void {
         if (this.registry.has(flow.id)) {
             throw new FlowEngineError(`Flow "${flow.id}" is already registered`);
         }
@@ -80,7 +80,7 @@ export class FlowEngine<TExt extends object = object, TUserEvents extends EventM
         this.registry.set(flow.id, flow);
     }
 
-    start<TContext extends TaskContext & TExt>(
+    start<TContext extends TaskContext & TExtension>(
         flow: FlowDefinition<TContext>,
         params: ParamsOf<TContext>
     ): FlowHandle<StateOf<TContext>>;
@@ -103,7 +103,7 @@ export class FlowEngine<TExt extends object = object, TUserEvents extends EventM
         return new FlowHandleImpl(flow.id, runId, runController, resultPromise);
     }
 
-    run<TContext extends TaskContext & TExt>(
+    run<TContext extends TaskContext & TExtension>(
         flow: FlowDefinition<TContext>,
         params: ParamsOf<TContext>
     ): Promise<RunResult<StateOf<TContext>>>;

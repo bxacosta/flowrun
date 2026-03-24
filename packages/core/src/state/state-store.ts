@@ -13,14 +13,14 @@ export class FlowStateStore<TState extends StateShape> implements StateStore<TSt
         return new FlowStateStore<TState>(this.values);
     }
 
-    get<TKey extends keyof TState>(key: TKey): TState[TKey] | undefined {
+    get<TStateKey extends keyof TState>(key: TStateKey): TState[TStateKey] | undefined {
         const value = this.values[key];
 
         if (value === undefined) {
             return undefined;
         }
 
-        return cloneValue(value) as TState[TKey];
+        return cloneValue(value) as TState[TStateKey];
     }
 
     getWrittenValues(): Map<keyof TState, TState[keyof TState]> {
@@ -37,7 +37,7 @@ export class FlowStateStore<TState extends StateShape> implements StateStore<TSt
         return result;
     }
 
-    has<TKey extends keyof TState>(key: TKey): boolean {
+    has<TStateKey extends keyof TState>(key: TStateKey): boolean {
         return key in this.values;
     }
 
@@ -51,7 +51,7 @@ export class FlowStateStore<TState extends StateShape> implements StateStore<TSt
         }
     }
 
-    set<TKey extends keyof TState>(key: TKey, value: TState[TKey]): void {
+    set<TStateKey extends keyof TState>(key: TStateKey, value: TState[TStateKey]): void {
         this.values[key] = cloneValue(value);
         this.writtenKeys.add(key);
     }

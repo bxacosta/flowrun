@@ -94,15 +94,15 @@ export interface LifecycleEventMap {
 }
 
 export type EngineEventMap<TUserEvents extends EventMap = {}> = {
-    [K in
+    [TEventKey in
         | keyof LifecycleEventMap
         | keyof BuiltInEventMap
-        | keyof StripIndexSignature<TUserEvents>]: K extends keyof LifecycleEventMap
-        ? LifecycleEventMap[K]
-        : K extends keyof BuiltInEventMap
-          ? BuiltInEventMap[K]
-          : K extends keyof TUserEvents
-            ? TUserEvents[K]
+        | keyof StripIndexSignature<TUserEvents>]: TEventKey extends keyof LifecycleEventMap
+        ? LifecycleEventMap[TEventKey]
+        : TEventKey extends keyof BuiltInEventMap
+          ? BuiltInEventMap[TEventKey]
+          : TEventKey extends keyof TUserEvents
+            ? TUserEvents[TEventKey]
             : never;
 } & EventMap;
 
@@ -137,10 +137,10 @@ export type EventSubscriber<TEvents extends EventMap> = (events: EventSubscriber
 // ── State ────────────────────────────────────────────────────────────
 
 export interface StateStore<TState extends StateShape> {
-    get<TKey extends keyof TState>(key: TKey): TState[TKey] | undefined;
-    has<TKey extends keyof TState>(key: TKey): boolean;
+    get<TStateKey extends keyof TState>(key: TStateKey): TState[TStateKey] | undefined;
+    has<TStateKey extends keyof TState>(key: TStateKey): boolean;
     patch(values: Partial<TState>): void;
-    set<TKey extends keyof TState>(key: TKey, value: TState[TKey]): void;
+    set<TStateKey extends keyof TState>(key: TStateKey, value: TState[TStateKey]): void;
     snapshot(): Readonly<TState>;
 }
 
@@ -165,8 +165,8 @@ export interface TaskContext<TParams = unknown, TState extends StateShape = Stat
 
 // ── Context Utility Types ────────────────────────────────────────────
 
-export type ParamsOf<T> = T extends FlowContext<infer P, any> ? P : never;
-export type StateOf<T> = T extends FlowContext<any, infer S> ? S : never;
+export type ParamsOf<TContext> = TContext extends FlowContext<infer TParams, any> ? TParams : never;
+export type StateOf<TContext> = TContext extends FlowContext<any, infer TState> ? TState : never;
 export type FlowCtxOf<TContext extends TaskContext> = FlowContext<ParamsOf<TContext>, StateOf<TContext>> &
     Omit<TContext, keyof TaskContext>;
 
@@ -205,10 +205,10 @@ export type TaskErrorResolution<TContext extends TaskContext = TaskContext> = Er
 
 // ── Parallel Options ─────────────────────────────────────────────────
 
-export type MergeResolver<TState extends StateShape> = <TKey extends keyof TState>(
-    key: TKey,
-    values: readonly TState[TKey][]
-) => TState[TKey];
+export type MergeResolver<TState extends StateShape> = <TStateKey extends keyof TState>(
+    stateKey: TStateKey,
+    values: readonly TState[TStateKey][]
+) => TState[TStateKey];
 
 export type MergeStrategy<TState extends StateShape> = "arrays" | "overwrite" | "strict" | MergeResolver<TState>;
 
@@ -365,9 +365,9 @@ export interface ExtensionApi {
     readonly signal: AbortSignal;
 }
 
-export interface Extension<TExt extends object> {
-    create(api: ExtensionApi): TExt | Promise<TExt>;
-    dispose?(ext: TExt, api: ExtensionApi): void | Promise<void>;
+export interface Extension<TExtension extends object> {
+    create(extensionApi: ExtensionApi): TExtension | Promise<TExtension>;
+    dispose?(extensionContext: TExtension, extensionApi: ExtensionApi): void | Promise<void>;
 }
 
 // ── FlowHandle ───────────────────────────────────────────────────────
@@ -384,11 +384,11 @@ export interface FlowHandle<TState extends StateShape> {
 
 // ── Engine Options ───────────────────────────────────────────────────
 
-export type MergeExtensionTypes<T extends readonly Extension<object>[]> = T extends readonly [
-    Extension<infer A extends object>,
-    ...infer Rest extends readonly Extension<object>[],
+export type MergeExtensionTypes<TExtensions extends readonly Extension<object>[]> = TExtensions extends readonly [
+    Extension<infer TFirst extends object>,
+    ...infer TRest extends readonly Extension<object>[],
 ]
-    ? A & MergeExtensionTypes<Rest>
+    ? TFirst & MergeExtensionTypes<TRest>
     : object;
 
 export interface FlowEngineOptions<TUserEvents extends EventMap = {}> {

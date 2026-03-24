@@ -1,7 +1,13 @@
-export type Simplify<T> = {
-    [K in keyof T]: T[K];
+export type Simplify<TShape> = {
+    [TKey in keyof TShape]: TShape[TKey];
 };
 
-export type StripIndexSignature<T> = {
-    [K in keyof T as string extends K ? never : number extends K ? never : symbol extends K ? never : K]: T[K];
+export type StripIndexSignature<TShape> = {
+    [TKey in keyof TShape as string extends TKey
+        ? never
+        : number extends TKey
+          ? never
+          : symbol extends TKey
+            ? never
+            : TKey]: TShape[TKey];
 };

@@ -13,29 +13,29 @@ import type {
 import { defineFlow, type FlowInput } from "./define-flow.ts";
 import { group as createGroup, parallel as createParallel, task as createTask } from "./node-factories.ts";
 
-export interface FlowKit<TExt extends object = object> {
-    defineFlow<TContext extends TaskContext & TExt>(input: FlowInput<TContext>): FlowDefinition<TContext>;
+export interface FlowKit<TExtension extends object = object> {
+    defineFlow<TContext extends TaskContext & TExtension>(input: FlowInput<TContext>): FlowDefinition<TContext>;
 
-    group<TContext extends TaskContext & TExt>(
+    group<TContext extends TaskContext & TExtension>(
         id: string,
         children: readonly FlowNode<TContext>[],
         options?: GroupOptions
     ): GroupDefinition<TContext>;
 
-    parallel<TContext extends TaskContext & TExt>(
+    parallel<TContext extends TaskContext & TExtension>(
         id: string,
         children: readonly FlowNode<TContext>[],
         options?: ParallelOptions<TContext>
     ): ParallelDefinition<TContext>;
 
-    task<TContext extends TaskContext & TExt>(
+    task<TContext extends TaskContext & TExtension>(
         id: string,
         handler: TaskHandler<TContext>,
         options?: TaskOptions<TContext>
     ): TaskDefinition<TContext>;
 }
 
-export const createFlowKit = <TExt extends object = object>(): FlowKit<TExt> =>
+export const createFlowKit = <TExtension extends object = object>(): FlowKit<TExtension> =>
     ({
         defineFlow: (input) => defineFlow(input),
 
@@ -44,4 +44,4 @@ export const createFlowKit = <TExt extends object = object>(): FlowKit<TExt> =>
         parallel: (id, children, options) => createParallel(id, children, options),
 
         task: (id, handler, options) => createTask(id, handler, options),
-    }) as FlowKit<TExt>;
+    }) as FlowKit<TExtension>;

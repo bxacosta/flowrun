@@ -24,19 +24,19 @@ const mergeBranchStates = (
     branches: readonly BranchResult[],
     merge: MergeStrategy<StateShape>
 ): void => {
-    const valuesByKey = new Map<string, { index: number; value: unknown }[]>();
+    const valuesByStateKey = new Map<string, { index: number; value: unknown }[]>();
 
     for (const branch of branches) {
         const writtenValues = branch.stateStore.getWrittenValues();
 
-        for (const [key, value] of writtenValues.entries()) {
-            const entries = valuesByKey.get(key as string) ?? [];
+        for (const [stateKey, value] of writtenValues.entries()) {
+            const entries = valuesByStateKey.get(stateKey as string) ?? [];
             entries.push({ index: branch.index, value });
-            valuesByKey.set(key as string, entries);
+            valuesByStateKey.set(stateKey as string, entries);
         }
     }
 
-    for (const [key, values] of valuesByKey) {
+    for (const [stateKey, values] of valuesByStateKey) {
         const ordered = values.sort((a, b) => a.index - b.index);
         const first = ordered[0];
 
@@ -45,7 +45,7 @@ const mergeBranchStates = (
         }
 
         if (ordered.length === 1) {
-            parentState.set(key, first.value);
+            parentState.set(stateKey, first.value);
             continue;
         }
 
@@ -53,7 +53,7 @@ const mergeBranchStates = (
             const last = ordered[ordered.length - 1];
 
             if (last !== undefined) {
-                parentState.set(key, last.value);
+                parentState.set(stateKey, last.value);
             }
 
             continue;
@@ -62,31 +62,31 @@ const mergeBranchStates = (
         if (merge === "arrays") {
             if (!ordered.every((entry) => Array.isArray(entry.value))) {
                 throw new ParallelMergeError(
-                    String(key),
-                    `Parallel merge strategy "arrays" requires all values for "${String(key)}" to be arrays`
+                    String(stateKey),
+                    `Parallel merge strategy "arrays" requires all values for "${String(stateKey)}" to be arrays`
                 );
             }
 
             const merged = ordered.flatMap((entry) => entry.value as unknown[]);
-            parentState.set(key, cloneValue(merged));
+            parentState.set(stateKey, cloneValue(merged));
             continue;
         }
 
         if (merge === "strict") {
             if (!ordered.every((entry) => isDeepStrictEqual(entry.value, first.value))) {
-                throw new ParallelMergeError(String(key));
+                throw new ParallelMergeError(String(stateKey));
             }
 
-            parentState.set(key, first.value);
+            parentState.set(stateKey, first.value);
             continue;
         }
 
         const resolver = merge as MergeResolver<StateShape>;
         const resolved = resolver(
-            key,
+            stateKey,
             ordered.map((entry) => entry.value)
         );
-        parentState.set(key, resolved);
+        parentState.set(stateKey, resolved);
     }
 };
 

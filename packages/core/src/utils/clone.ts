@@ -1,1 +1,1 @@
-export const cloneValue = <T>(value: T): T => structuredClone(value);
+export const cloneValue = <TValue>(value: TValue): TValue => structuredClone(value);

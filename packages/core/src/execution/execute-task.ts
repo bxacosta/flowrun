@@ -159,8 +159,8 @@ export const executeTask = async (
                 next: MiddlewareNext
             ) => void | Promise<void>)[];
 
-            const pipeline = composeMiddleware(allMiddleware, async (ctx) => {
-                await task.handler(ctx);
+            const pipeline = composeMiddleware(allMiddleware, async (context) => {
+                await task.handler(context);
             });
 
             await runWithTimeout(

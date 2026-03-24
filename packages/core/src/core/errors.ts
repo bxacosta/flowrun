@@ -18,12 +18,12 @@ export class TaskTimeoutError extends FlowEngineError {
 }
 
 export class ParallelMergeError extends FlowEngineError {
-    readonly key: string;
+    readonly stateKey: string;
 
-    constructor(key: string, message?: string) {
-        super(message ?? `Parallel branches wrote conflicting values for key "${key}"`);
+    constructor(stateKey: string, message?: string) {
+        super(message ?? `Parallel branches wrote conflicting values for key "${stateKey}"`);
         this.name = "ParallelMergeError";
-        this.key = key;
+        this.stateKey = stateKey;
     }
 }
 
