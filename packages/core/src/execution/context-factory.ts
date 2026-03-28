@@ -20,24 +20,15 @@ export interface SharedContextOptions {
     readonly userContext: object;
 }
 
-const emitLog = (options: SharedContextOptions, payload: LogEvent): void => {
-    options.emit("log", payload as unknown as Record<string, unknown>);
-};
-
-const createLogger = (options: SharedContextOptions, task: TaskInfo | undefined): Logger => ({
-    debug: (message, data) => {
-        emitLog(options, { data, level: "debug", message, taskId: task?.id, taskName: task?.name });
-    },
-    error: (message, data) => {
-        emitLog(options, { data, level: "error", message, taskId: task?.id, taskName: task?.name });
-    },
-    info: (message, data) => {
-        emitLog(options, { data, level: "info", message, taskId: task?.id, taskName: task?.name });
-    },
-    warn: (message, data) => {
-        emitLog(options, { data, level: "warn", message, taskId: task?.id, taskName: task?.name });
-    },
+export const buildLogger = (emit: (payload: LogEvent) => void, task?: TaskInfo): Logger => ({
+    debug: (message, data) => emit({ data, level: "debug", message, taskId: task?.id, taskName: task?.name }),
+    error: (message, data) => emit({ data, level: "error", message, taskId: task?.id, taskName: task?.name }),
+    info: (message, data) => emit({ data, level: "info", message, taskId: task?.id, taskName: task?.name }),
+    warn: (message, data) => emit({ data, level: "warn", message, taskId: task?.id, taskName: task?.name }),
 });
+
+const createLogger = (options: SharedContextOptions, task: TaskInfo | undefined): Logger =>
+    buildLogger((payload) => options.emit("log", payload as unknown as Record<string, unknown>), task);
 
 export const createFlowContext = (options: SharedContextOptions): FlowContext =>
     ({

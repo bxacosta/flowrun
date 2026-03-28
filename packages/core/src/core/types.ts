@@ -167,7 +167,7 @@ export interface TaskContext<TParams = unknown, TState extends StateShape = Stat
 
 export type ParamsOf<TContext> = TContext extends FlowContext<infer TParams, any> ? TParams : never;
 export type StateOf<TContext> = TContext extends FlowContext<any, infer TState> ? TState : never;
-export type FlowCtxOf<TContext extends TaskContext> = FlowContext<ParamsOf<TContext>, StateOf<TContext>> &
+export type FlowContextOf<TContext extends TaskContext> = FlowContext<ParamsOf<TContext>, StateOf<TContext>> &
     Omit<TContext, keyof TaskContext>;
 
 // ── Handlers & Middleware ────────────────────────────────────────────
@@ -227,12 +227,12 @@ export interface GroupOptions {
 }
 
 export interface ParallelOptions<TContext extends TaskContext = TaskContext> extends GroupOptions {
-    readonly cleanupContext?: (context: FlowCtxOf<TContext>, meta: ParallelBranchInfo) => void | Promise<void>;
+    readonly cleanupContext?: (context: FlowContextOf<TContext>, meta: ParallelBranchInfo) => void | Promise<void>;
     readonly concurrency?: number;
     readonly forkContext?: (
-        context: FlowCtxOf<TContext>,
+        context: FlowContextOf<TContext>,
         meta: ParallelBranchInfo
-    ) => FlowCtxOf<TContext> | Promise<FlowCtxOf<TContext>>;
+    ) => FlowContextOf<TContext> | Promise<FlowContextOf<TContext>>;
     readonly merge?: MergeStrategy<StateOf<TContext>>;
     readonly mode?: ParallelMode;
 }
@@ -257,12 +257,12 @@ export interface GroupDefinition<TContext extends TaskContext = TaskContext> {
 
 export interface ParallelDefinition<TContext extends TaskContext = TaskContext> {
     readonly children: readonly FlowNode<TContext>[];
-    readonly cleanupContext?: (context: FlowCtxOf<TContext>, meta: ParallelBranchInfo) => void | Promise<void>;
+    readonly cleanupContext?: (context: FlowContextOf<TContext>, meta: ParallelBranchInfo) => void | Promise<void>;
     readonly concurrency?: number;
     readonly forkContext?: (
-        context: FlowCtxOf<TContext>,
+        context: FlowContextOf<TContext>,
         meta: ParallelBranchInfo
-    ) => FlowCtxOf<TContext> | Promise<FlowCtxOf<TContext>>;
+    ) => FlowContextOf<TContext> | Promise<FlowContextOf<TContext>>;
     readonly id: string;
     readonly kind: "parallel";
     readonly merge: MergeStrategy<StateOf<TContext>>;
@@ -278,11 +278,14 @@ export type FlowNode<TContext extends TaskContext = TaskContext> =
 // ── Flow Definition ──────────────────────────────────────────────────
 
 export interface FlowHooks<TContext extends TaskContext = TaskContext> {
-    readonly onComplete?: (context: FlowCtxOf<TContext>, result: RunResult<StateOf<TContext>>) => void | Promise<void>;
-    readonly onFailure?: (context: FlowCtxOf<TContext>, error: Error) => void | Promise<void>;
-    readonly onStart?: (context: FlowCtxOf<TContext>) => void | Promise<void>;
+    readonly onComplete?: (
+        context: FlowContextOf<TContext>,
+        result: RunResult<StateOf<TContext>>
+    ) => void | Promise<void>;
+    readonly onFailure?: (context: FlowContextOf<TContext>, error: Error) => void | Promise<void>;
+    readonly onStart?: (context: FlowContextOf<TContext>) => void | Promise<void>;
     readonly onSuccess?: (
-        context: FlowCtxOf<TContext>,
+        context: FlowContextOf<TContext>,
         result: CompletedResult<StateOf<TContext>>
     ) => void | Promise<void>;
 }

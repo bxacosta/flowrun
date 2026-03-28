@@ -3,12 +3,11 @@ import { TaskTimeoutError } from "../core/errors.ts";
 import type { ErrorResolution, MiddlewareNext, TaskDefinition } from "../core/types.ts";
 import { createLinkedAbortController } from "../utils/abort.ts";
 import { waitForDelay } from "../utils/delay.ts";
+import { normalizeError } from "../utils/errors.ts";
 import { composeMiddleware } from "../utils/middleware.ts";
 import { getDurationMs } from "../utils/time.ts";
 import { createTaskContext } from "./context-factory.ts";
 import type { ExecutionContext, TaskExecutionOutcome } from "./execution-types.ts";
-
-const normalizeError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
 const getRetryDelay = (
     attempt: number,
@@ -75,6 +74,31 @@ const runWithTimeout = async (
     });
 };
 
+const makeTaskContext = (context: ExecutionContext, task: TaskDefinition<any>, attempt: number, signal: AbortSignal) =>
+    createTaskContext(
+        {
+            emit: (type, data) => context.emitUserEvent(type, data),
+            flow: context.flowInfo,
+            params: context.params,
+            runId: context.runId,
+            signal,
+            state: context.stateStore,
+            stop: (reason) => context.runController.requestStop(reason),
+            userContext: context.scopedContext,
+        },
+        { id: task.id, name: task.name },
+        attempt
+    );
+
+const dispatchTaskEvent = (context: ExecutionContext, type: string, payload: Record<string, unknown>): void => {
+    context.eventBus.dispatch({
+        flowId: context.flowInfo.id,
+        payload,
+        runId: context.runId,
+        type,
+    });
+};
+
 const resolveTaskError = async (
     error: Error,
     context: ExecutionContext,
@@ -91,22 +115,7 @@ const resolveTaskError = async (
         return task.onError;
     }
 
-    const taskContext = createTaskContext(
-        {
-            emit: (type, data) => {
-                context.emitUserEvent(type, data);
-            },
-            flow: context.flowInfo,
-            params: context.params,
-            runId: context.runId,
-            signal: attemptSignal,
-            state: context.stateStore,
-            stop: (reason) => context.runController.requestStop(reason),
-            userContext: context.scopedContext,
-        },
-        { id: task.id, name: task.name },
-        attempt
-    );
+    const taskContext = makeTaskContext(context, task, attempt, attemptSignal);
 
     try {
         return await (task.onError as Exclude<typeof task.onError, ErrorResolution>)(error, taskContext as any, {
@@ -130,28 +139,13 @@ export const executeTask = async (
         const attemptAbortController = createLinkedAbortController(context.signal);
 
         try {
-            const taskContext = createTaskContext(
-                {
-                    emit: (type, data) => {
-                        context.emitUserEvent(type, data);
-                    },
-                    flow: context.flowInfo,
-                    params: context.params,
-                    runId: context.runId,
-                    signal: attemptAbortController.signal,
-                    state: context.stateStore,
-                    stop: (reason) => context.runController.requestStop(reason),
-                    userContext: context.scopedContext,
-                },
-                { id: task.id, name: task.name },
-                attempt
-            );
+            const taskContext = makeTaskContext(context, task, attempt, attemptAbortController.signal);
 
-            context.eventBus.dispatch({
-                flowId: context.flowInfo.id,
-                payload: { attempt, attempts, taskId: task.id, taskName: task.name },
-                runId: context.runId,
-                type: "task.started",
+            dispatchTaskEvent(context, "task.started", {
+                attempt,
+                attempts,
+                taskId: task.id,
+                taskName: task.name,
             });
 
             const allMiddleware = [...context.flowMiddleware, ...task.middleware] as readonly ((
@@ -174,18 +168,13 @@ export const executeTask = async (
 
             totalDurationMs += getDurationMs(attemptStart);
 
-            context.eventBus.dispatch({
-                flowId: context.flowInfo.id,
-                payload: {
-                    attempt,
-                    attempts,
-                    durationMs: totalDurationMs,
-                    status: "completed",
-                    taskId: task.id,
-                    taskName: task.name,
-                },
-                runId: context.runId,
-                type: "task.ended",
+            dispatchTaskEvent(context, "task.ended", {
+                attempt,
+                attempts,
+                durationMs: totalDurationMs,
+                status: "completed",
+                taskId: task.id,
+                taskName: task.name,
             });
 
             context.taskResults.push({
@@ -205,18 +194,13 @@ export const executeTask = async (
             totalDurationMs += getDurationMs(attemptStart);
 
             if (taskError.name === "StopFlowError") {
-                context.eventBus.dispatch({
-                    flowId: context.flowInfo.id,
-                    payload: {
-                        attempt,
-                        attempts,
-                        durationMs: totalDurationMs,
-                        status: "completed",
-                        taskId: task.id,
-                        taskName: task.name,
-                    },
-                    runId: context.runId,
-                    type: "task.ended",
+                dispatchTaskEvent(context, "task.ended", {
+                    attempt,
+                    attempts,
+                    durationMs: totalDurationMs,
+                    status: "completed",
+                    taskId: task.id,
+                    taskName: task.name,
                 });
 
                 context.taskResults.push({
@@ -242,33 +226,23 @@ export const executeTask = async (
             if (canRetry) {
                 const delayMs = getRetryDelay(attempt, task.retry);
 
-                context.eventBus.dispatch({
-                    flowId: context.flowInfo.id,
-                    payload: {
-                        attempt,
-                        attempts,
-                        durationMs: totalDurationMs,
-                        error: taskError,
-                        status: "failed",
-                        taskId: task.id,
-                        taskName: task.name,
-                    },
-                    runId: context.runId,
-                    type: "task.ended",
+                dispatchTaskEvent(context, "task.ended", {
+                    attempt,
+                    attempts,
+                    durationMs: totalDurationMs,
+                    error: taskError,
+                    status: "failed",
+                    taskId: task.id,
+                    taskName: task.name,
                 });
 
-                context.eventBus.dispatch({
-                    flowId: context.flowInfo.id,
-                    payload: {
-                        attempt,
-                        attempts,
-                        delayMs,
-                        error: taskError,
-                        taskId: task.id,
-                        taskName: task.name,
-                    },
-                    runId: context.runId,
-                    type: "task.retrying",
+                dispatchTaskEvent(context, "task.retrying", {
+                    attempt,
+                    attempts,
+                    delayMs,
+                    error: taskError,
+                    taskId: task.id,
+                    taskName: task.name,
                 });
 
                 await waitForDelay(delayMs, context.signal);
@@ -286,19 +260,14 @@ export const executeTask = async (
 
             const status = resolution === "skip" ? ("skipped" as const) : ("failed" as const);
 
-            context.eventBus.dispatch({
-                flowId: context.flowInfo.id,
-                payload: {
-                    attempt,
-                    attempts,
-                    durationMs: totalDurationMs,
-                    error: taskError,
-                    status,
-                    taskId: task.id,
-                    taskName: task.name,
-                },
-                runId: context.runId,
-                type: "task.ended",
+            dispatchTaskEvent(context, "task.ended", {
+                attempt,
+                attempts,
+                durationMs: totalDurationMs,
+                error: taskError,
+                status,
+                taskId: task.id,
+                taskName: task.name,
             });
 
             context.taskResults.push({

@@ -4,6 +4,7 @@ import type { MergeResolver, MergeStrategy, ParallelBranchInfo, StateShape, Task
 import type { FlowStateStore } from "../state/state-store.ts";
 import { createCompositeAbortController } from "../utils/abort.ts";
 import { cloneValue } from "../utils/clone.ts";
+import { normalizeError } from "../utils/errors.ts";
 import { createFlowContext } from "./context-factory.ts";
 import { executeNodes } from "./execute-nodes.ts";
 import type { ExecutionContext, NodeExecutionOutcome } from "./execution-types.ts";
@@ -16,8 +17,6 @@ interface BranchResult {
     readonly stopReason?: string;
     readonly taskResults: readonly TaskRunResult[];
 }
-
-const normalizeError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
 const mergeBranchStates = (
     parentState: FlowStateStore<StateShape>,
@@ -121,21 +120,23 @@ export const executeParallel = async (
         const branchTaskResults: TaskRunResult[] = [];
         const branchSignal = createCompositeAbortController([context.signal, groupAbortController.signal]);
 
-        // Build a flow-level context for forkContext/cleanupContext callbacks
-        const flowCtx = createFlowContext({
-            emit: (type, data) => context.emitUserEvent(type, data),
-            flow: context.flowInfo,
-            params: context.params,
-            runId: context.runId,
-            signal: branchSignal.signal,
-            state: branchState,
-            stop: (reason) => context.runController.requestStop(reason),
-            userContext: context.scopedContext,
-        });
+        const makeBranchFlowContext = (userContext: object) =>
+            createFlowContext({
+                emit: (type, data) => context.emitUserEvent(type, data),
+                flow: context.flowInfo,
+                params: context.params,
+                runId: context.runId,
+                signal: branchSignal.signal,
+                state: branchState,
+                stop: (reason) => context.runController.requestStop(reason),
+                userContext,
+            });
+
+        const flowContext = makeBranchFlowContext(context.scopedContext);
 
         const branchScopedContext =
             node.definition.forkContext !== undefined
-                ? await (node.definition.forkContext as any)(flowCtx, meta)
+                ? await (node.definition.forkContext as any)(flowContext, meta)
                 : context.scopedContext;
 
         let branchResult: BranchResult = {
@@ -187,18 +188,8 @@ export const executeParallel = async (
 
             if (node.definition.cleanupContext !== undefined) {
                 try {
-                    // Pass the forked flow context for cleanup
-                    const cleanupCtx = createFlowContext({
-                        emit: (type, data) => context.emitUserEvent(type, data),
-                        flow: context.flowInfo,
-                        params: context.params,
-                        runId: context.runId,
-                        signal: branchSignal.signal,
-                        state: branchState,
-                        stop: (reason) => context.runController.requestStop(reason),
-                        userContext: branchScopedContext,
-                    });
-                    await (node.definition.cleanupContext as any)(cleanupCtx, meta);
+                    const cleanupContext = makeBranchFlowContext(branchScopedContext);
+                    await (node.definition.cleanupContext as any)(cleanupContext, meta);
                 } catch {
                     // Cleanup failures are silently ignored
                 }

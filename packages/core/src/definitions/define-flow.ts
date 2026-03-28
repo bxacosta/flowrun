@@ -17,17 +17,29 @@ import { group, parallel, task } from "./node-factories.ts";
 
 // ── Validation ───────────────────────────────────────────────────────
 
+const assertNonNegativeFinite = (value: number, message: string): void => {
+    if (!Number.isFinite(value) || value < 0) {
+        throw new FlowEngineError(message);
+    }
+};
+
+const assertHasChildren = (label: string, nodeId: string, childCount: number): void => {
+    if (childCount === 0) {
+        throw new FlowEngineError(`${label} "${nodeId}" must contain at least one child node`);
+    }
+};
+
 const validateRetryPolicy = (taskId: string, retry: RetryPolicy): void => {
     if (!Number.isInteger(retry.attempts) || retry.attempts < 1) {
         throw new FlowEngineError(`Task "${taskId}" retry attempts must be an integer >= 1`);
     }
 
-    if (retry.delayMs !== undefined && (!Number.isFinite(retry.delayMs) || retry.delayMs < 0)) {
-        throw new FlowEngineError(`Task "${taskId}" retry delayMs must be a non-negative number`);
+    if (retry.delayMs !== undefined) {
+        assertNonNegativeFinite(retry.delayMs, `Task "${taskId}" retry delayMs must be a non-negative number`);
     }
 
-    if (retry.maxDelayMs !== undefined && (!Number.isFinite(retry.maxDelayMs) || retry.maxDelayMs < 0)) {
-        throw new FlowEngineError(`Task "${taskId}" retry maxDelayMs must be a non-negative number`);
+    if (retry.maxDelayMs !== undefined) {
+        assertNonNegativeFinite(retry.maxDelayMs, `Task "${taskId}" retry maxDelayMs must be a non-negative number`);
     }
 };
 
@@ -51,9 +63,7 @@ const validateNode = (node: FlowNode<any>, ids: Set<string>): void => {
     }
 
     if (node.kind === "group") {
-        if (node.children.length === 0) {
-            throw new FlowEngineError(`Group "${node.id}" must contain at least one child node`);
-        }
+        assertHasChildren("Group", node.id, node.children.length);
 
         for (const child of node.children) {
             validateNode(child, ids);
@@ -62,9 +72,7 @@ const validateNode = (node: FlowNode<any>, ids: Set<string>): void => {
         return;
     }
 
-    if (node.children.length === 0) {
-        throw new FlowEngineError(`Parallel group "${node.id}" must contain at least one child node`);
-    }
+    assertHasChildren("Parallel group", node.id, node.children.length);
 
     if (node.concurrency !== undefined && (!Number.isInteger(node.concurrency) || node.concurrency < 1)) {
         throw new FlowEngineError(`Parallel group "${node.id}" concurrency must be an integer > 0`);

@@ -16,8 +16,9 @@ import type { RunController } from "../engine/run-controller.ts";
 import type { EventBus } from "../events/event-bus.ts";
 import { FlowStateStore } from "../state/state-store.ts";
 import { cloneValue } from "../utils/clone.ts";
+import { normalizeError } from "../utils/errors.ts";
 import { getDurationMs } from "../utils/time.ts";
-import { createFlowContext } from "./context-factory.ts";
+import { buildLogger, createFlowContext } from "./context-factory.ts";
 import { executeNodes } from "./execute-nodes.ts";
 import type { ExecutionContext } from "./execution-types.ts";
 import type { ResolvedFlowPlan } from "./resolver.ts";
@@ -32,8 +33,6 @@ export interface ExecuteFlowOptions {
     readonly runController: RunController;
     readonly runId: string;
 }
-
-const normalizeError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
 const createInitialState = (initialState: StateShape | (() => StateShape) | undefined): Partial<StateShape> => {
     if (initialState === undefined) {
@@ -112,12 +111,7 @@ const createExtensionApi = (
         });
     };
 
-    const log: Logger = {
-        debug: (message, data) => emitLog({ data, level: "debug", message }),
-        error: (message, data) => emitLog({ data, level: "error", message }),
-        info: (message, data) => emitLog({ data, level: "info", message }),
-        warn: (message, data) => emitLog({ data, level: "warn", message }),
-    };
+    const log: Logger = buildLogger(emitLog);
 
     return { emit, flow: flowInfo, log, params, runId, signal };
 };
@@ -147,6 +141,29 @@ const disposeExtension = async (
     } catch (error) {
         logInternal("Extension dispose failed", { error: normalizeError(error) });
     }
+};
+
+const resolveFailedStatus = (runController: RunController, error: Error): "cancelled" | "failed" =>
+    runController.isCancelled && error.name === "AbortError" ? "cancelled" : "failed";
+
+const dispatchFlowEndedEvent = (
+    options: ExecuteFlowOptions,
+    flowInfo: FlowInfo,
+    result: RunResult<StateShape>
+): void => {
+    options.eventBus.dispatch({
+        flowId: flowInfo.id,
+        payload: {
+            cancelReason: result.status === "cancelled" ? result.cancelReason : undefined,
+            durationMs: result.durationMs,
+            error: result.status === "failed" ? result.error : undefined,
+            flowName: flowInfo.name,
+            status: result.status,
+            stopReason: result.stopReason,
+        },
+        runId: options.runId,
+        type: "flow.ended",
+    });
 };
 
 // ── Main execution ──────────────────────────────────────────────────
@@ -257,8 +274,7 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
             }
         } catch (error) {
             finalError = normalizeError(error);
-            finalStatus =
-                options.runController.isCancelled && finalError.name === "AbortError" ? "cancelled" : "failed";
+            finalStatus = resolveFailedStatus(options.runController, finalError);
 
             if (finalStatus === "failed" && options.plan.flow.hooks.onFailure !== undefined) {
                 try {
@@ -283,19 +299,7 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
             options.runController.cancelReason
         );
 
-        options.eventBus.dispatch({
-            flowId: flowInfo.id,
-            payload: {
-                cancelReason: result.status === "cancelled" ? result.cancelReason : undefined,
-                durationMs: result.durationMs,
-                error: result.status === "failed" ? result.error : undefined,
-                flowName: flowInfo.name,
-                status: result.status,
-                stopReason: result.stopReason,
-            },
-            runId: options.runId,
-            type: "flow.ended",
-        });
+        dispatchFlowEndedEvent(options, flowInfo, result);
 
         if (options.plan.flow.hooks.onComplete !== undefined) {
             try {
@@ -311,7 +315,7 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
         return result;
     } catch (error) {
         finalError = normalizeError(error);
-        finalStatus = options.runController.isCancelled && finalError.name === "AbortError" ? "cancelled" : "failed";
+        finalStatus = resolveFailedStatus(options.runController, finalError);
 
         const result = createRunResult(
             flowInfo,
@@ -325,19 +329,7 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
             options.runController.cancelReason
         );
 
-        options.eventBus.dispatch({
-            flowId: flowInfo.id,
-            payload: {
-                cancelReason: result.status === "cancelled" ? result.cancelReason : undefined,
-                durationMs: result.durationMs,
-                error: result.status === "failed" ? result.error : undefined,
-                flowName: flowInfo.name,
-                status: result.status,
-                stopReason: result.stopReason,
-            },
-            runId: options.runId,
-            type: "flow.ended",
-        });
+        dispatchFlowEndedEvent(options, flowInfo, result);
 
         options.runController.setTerminalStatus(result.status);
         return result;

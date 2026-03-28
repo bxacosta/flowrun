@@ -24,7 +24,7 @@ export type {
     FlowBuilderApi,
     // Context
     FlowContext,
-    FlowCtxOf,
+    FlowContextOf,
     FlowDefinition,
     // Engine
     FlowEngineOptions,
