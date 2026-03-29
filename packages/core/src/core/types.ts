@@ -4,6 +4,7 @@ import type { Simplify, StripIndexSignature } from "../utils/type-helpers.ts";
 
 export type StateShape = Record<string, unknown>;
 export type EventMap = Record<string, Record<string, unknown>>;
+export type EmptyEventMap = Record<never, never>;
 export type LogLevel = "debug" | "error" | "info" | "warn";
 export type RunStatus = "cancelled" | "completed" | "failed" | "paused" | "running";
 export type TerminalStatus = "cancelled" | "completed" | "failed";
@@ -93,7 +94,7 @@ export interface LifecycleEventMap {
     };
 }
 
-export type EngineEventMap<TUserEvents extends EventMap = {}> = {
+export type EngineEventMap<TUserEvents extends EventMap = EmptyEventMap> = {
     [TEventKey in
         | keyof LifecycleEventMap
         | keyof BuiltInEventMap
@@ -165,8 +166,8 @@ export interface TaskContext<TParams = unknown, TState extends StateShape = Stat
 
 // ── Context Utility Types ────────────────────────────────────────────
 
-export type ParamsOf<TContext> = TContext extends FlowContext<infer TParams, any> ? TParams : never;
-export type StateOf<TContext> = TContext extends FlowContext<any, infer TState> ? TState : never;
+export type ParamsOf<TContext> = TContext extends FlowContext<infer TParams, infer _> ? TParams : never;
+export type StateOf<TContext> = TContext extends FlowContext<infer _, infer TState> ? TState : never;
 export type FlowContextOf<TContext extends TaskContext> = FlowContext<ParamsOf<TContext>, StateOf<TContext>> &
     Omit<TContext, keyof TaskContext>;
 
@@ -394,8 +395,21 @@ export type MergeExtensionTypes<TExtensions extends readonly Extension<object>[]
     ? TFirst & MergeExtensionTypes<TRest>
     : object;
 
-export interface FlowEngineOptions<TUserEvents extends EventMap = {}> {
+export interface FlowEngineOptions<TUserEvents extends EventMap = EmptyEventMap> {
     readonly extensions?: readonly Extension<object>[];
     readonly onSubscriberError?: (error: Error, type: string) => void;
     readonly subscribers?: readonly EventSubscriber<EngineEventMap<TUserEvents>>[];
 }
+
+// ── Type-erased aliases (invariant generics) ────────────────────────
+
+// biome-ignore lint/suspicious/noExplicitAny: type erasure — invariant generic requires `any` for heterogeneous storage
+export type AnyFlowDefinition = FlowDefinition<any>;
+// biome-ignore lint/suspicious/noExplicitAny: type erasure — invariant generic requires `any` for heterogeneous storage
+export type AnyFlowNode = FlowNode<any>;
+// biome-ignore lint/suspicious/noExplicitAny: type erasure — invariant generic requires `any` for heterogeneous storage
+export type AnyMiddleware = Middleware<any>;
+// biome-ignore lint/suspicious/noExplicitAny: type erasure — invariant generic requires `any` for heterogeneous storage
+export type AnyParallelDefinition = ParallelDefinition<any>;
+// biome-ignore lint/suspicious/noExplicitAny: type erasure — invariant generic requires `any` for heterogeneous storage
+export type AnyTaskDefinition = TaskDefinition<any>;

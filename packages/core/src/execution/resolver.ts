@@ -1,24 +1,24 @@
-import type { FlowDefinition, FlowNode, ParallelDefinition, TaskDefinition } from "../core/types.ts";
+import type { AnyFlowDefinition, AnyFlowNode, AnyParallelDefinition, AnyTaskDefinition } from "../core/types.ts";
 
 export interface ResolvedTaskNode {
-    readonly definition: TaskDefinition<any>;
+    readonly definition: AnyTaskDefinition;
     readonly kind: "task";
 }
 
 export interface ResolvedParallelNode {
     readonly branches: readonly ResolvedNode[][];
-    readonly definition: ParallelDefinition<any>;
+    readonly definition: AnyParallelDefinition;
     readonly kind: "parallel";
 }
 
 export type ResolvedNode = ResolvedParallelNode | ResolvedTaskNode;
 
 export interface ResolvedFlowPlan {
-    readonly flow: FlowDefinition<any>;
+    readonly flow: AnyFlowDefinition;
     readonly nodes: readonly ResolvedNode[];
 }
 
-const resolveNodes = (nodes: readonly FlowNode<any>[]): ResolvedNode[] => {
+const resolveNodes = (nodes: readonly AnyFlowNode[]): ResolvedNode[] => {
     const result: ResolvedNode[] = [];
 
     for (const node of nodes) {
@@ -42,7 +42,7 @@ const resolveNodes = (nodes: readonly FlowNode<any>[]): ResolvedNode[] => {
     return result;
 };
 
-export const resolveFlow = (flow: FlowDefinition<any>): ResolvedFlowPlan => ({
+export const resolveFlow = (flow: AnyFlowDefinition): ResolvedFlowPlan => ({
     flow,
     nodes: resolveNodes(flow.nodes),
 });

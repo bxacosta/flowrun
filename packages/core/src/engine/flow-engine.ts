@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { FlowEngineError } from "../core/errors.ts";
 import type {
+    AnyFlowDefinition,
+    EmptyEventMap,
     EngineEventMap,
     EventMap,
     EventSubscriber,
@@ -55,10 +57,10 @@ const normalizeExtensions = (extensions: readonly Extension<object>[] | undefine
     };
 };
 
-export class FlowEngine<TExtension extends object = object, TUserEvents extends EventMap = {}> {
+export class FlowEngine<TExtension extends object = object, TUserEvents extends EventMap = EmptyEventMap> {
     private readonly eventBus: EventBus<EventMap>;
     private readonly extension: Extension<object> | undefined;
-    private readonly registry = new Map<string, FlowDefinition<any>>();
+    private readonly registry = new Map<string, AnyFlowDefinition>();
 
     readonly events: EventSubscriberApi<EngineEventMap<TUserEvents>>;
 
@@ -85,7 +87,7 @@ export class FlowEngine<TExtension extends object = object, TUserEvents extends 
         params: ParamsOf<TContext>
     ): FlowHandle<StateOf<TContext>>;
     start(flowId: string, params: unknown): FlowHandle<StateShape>;
-    start(flowOrId: FlowDefinition<any> | string, params: unknown): FlowHandle<StateShape> {
+    start(flowOrId: AnyFlowDefinition | string, params: unknown): FlowHandle<StateShape> {
         const flow = this.resolveFlowDefinition(flowOrId);
         const plan = resolveFlow(flow);
         const runController = new RunController();
@@ -108,11 +110,11 @@ export class FlowEngine<TExtension extends object = object, TUserEvents extends 
         params: ParamsOf<TContext>
     ): Promise<RunResult<StateOf<TContext>>>;
     run(flowId: string, params: unknown): Promise<RunResult<StateShape>>;
-    async run(flowOrId: FlowDefinition<any> | string, params: unknown): Promise<RunResult<StateShape>> {
+    run(flowOrId: AnyFlowDefinition | string, params: unknown): Promise<RunResult<StateShape>> {
         return this.start(flowOrId as string, params).join();
     }
 
-    private resolveFlowDefinition(flowOrId: FlowDefinition<any> | string): FlowDefinition<any> {
+    private resolveFlowDefinition(flowOrId: AnyFlowDefinition | string): AnyFlowDefinition {
         if (typeof flowOrId !== "string") {
             return flowOrId;
         }
@@ -129,7 +131,7 @@ export class FlowEngine<TExtension extends object = object, TUserEvents extends 
 
 export const createFlowEngine = <
     const TExtensions extends readonly Extension<object>[] = [],
-    TUserEvents extends EventMap = {},
+    TUserEvents extends EventMap = EmptyEventMap,
 >(
     options?: FlowEngineOptions<TUserEvents> & {
         readonly extensions?: TExtensions;

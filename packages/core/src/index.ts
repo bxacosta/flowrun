@@ -81,6 +81,7 @@ export type {
 
 // ── Errors ──────────────────────────────────────────────────────────
 
+// biome-ignore lint/performance/noBarrelFile: public library entry point
 export {
     FlowEngineError,
     ParallelMergeError,

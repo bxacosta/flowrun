@@ -1,6 +1,6 @@
 import { defaultRetryDelay, defaultRetryStrategy } from "../core/constants.ts";
 import { TaskTimeoutError } from "../core/errors.ts";
-import type { ErrorResolution, MiddlewareNext, TaskDefinition } from "../core/types.ts";
+import type { AnyTaskDefinition, ErrorResolution } from "../core/types.ts";
 import { createLinkedAbortController } from "../utils/abort.ts";
 import { waitForDelay } from "../utils/delay.ts";
 import { normalizeError } from "../utils/errors.ts";
@@ -52,7 +52,7 @@ const runWithTimeout = async (
             reject(new TaskTimeoutError(taskId, timeoutMs));
         }, timeoutMs);
 
-        void execute()
+        execute()
             .then(() => {
                 if (settled) {
                     return;
@@ -74,7 +74,7 @@ const runWithTimeout = async (
     });
 };
 
-const makeTaskContext = (context: ExecutionContext, task: TaskDefinition<any>, attempt: number, signal: AbortSignal) =>
+const makeTaskContext = (context: ExecutionContext, task: AnyTaskDefinition, attempt: number, signal: AbortSignal) =>
     createTaskContext(
         {
             emit: (type, data) => context.emitUserEvent(type, data),
@@ -102,7 +102,7 @@ const dispatchTaskEvent = (context: ExecutionContext, type: string, payload: Rec
 const resolveTaskError = async (
     error: Error,
     context: ExecutionContext,
-    task: TaskDefinition<any>,
+    task: AnyTaskDefinition,
     attempt: number,
     attempts: number,
     attemptSignal: AbortSignal
@@ -118,7 +118,7 @@ const resolveTaskError = async (
     const taskContext = makeTaskContext(context, task, attempt, attemptSignal);
 
     try {
-        return await (task.onError as Exclude<typeof task.onError, ErrorResolution>)(error, taskContext as any, {
+        return await (task.onError as Exclude<typeof task.onError, ErrorResolution>)(error, taskContext, {
             attempt,
             attempts,
         });
@@ -129,7 +129,7 @@ const resolveTaskError = async (
 
 export const executeTask = async (
     context: ExecutionContext,
-    task: TaskDefinition<any>
+    task: AnyTaskDefinition
 ): Promise<TaskExecutionOutcome> => {
     const attempts = task.retry?.attempts ?? 1;
     let totalDurationMs = 0;
@@ -148,10 +148,7 @@ export const executeTask = async (
                 taskName: task.name,
             });
 
-            const allMiddleware = [...context.flowMiddleware, ...task.middleware] as readonly ((
-                context: any,
-                next: MiddlewareNext
-            ) => void | Promise<void>)[];
+            const allMiddleware = [...context.flowMiddleware, ...task.middleware];
 
             const pipeline = composeMiddleware(allMiddleware, async (context) => {
                 await task.handler(context);

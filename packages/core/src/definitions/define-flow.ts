@@ -1,5 +1,7 @@
 import { FlowEngineError } from "../core/errors.ts";
 import type {
+    AnyFlowDefinition,
+    AnyFlowNode,
     FlowBuilderApi,
     FlowDefinition,
     FlowHooks,
@@ -43,7 +45,7 @@ const validateRetryPolicy = (taskId: string, retry: RetryPolicy): void => {
     }
 };
 
-const validateNode = (node: FlowNode<any>, ids: Set<string>): void => {
+const validateNode = (node: AnyFlowNode, ids: Set<string>): void => {
     if (ids.has(node.id)) {
         throw new FlowEngineError(`Duplicate node id "${node.id}"`);
     }
@@ -83,7 +85,7 @@ const validateNode = (node: FlowNode<any>, ids: Set<string>): void => {
     }
 };
 
-const validateFlowDefinition = (flow: FlowDefinition<any>): void => {
+const validateFlowDefinition = (flow: AnyFlowDefinition): void => {
     if (flow.nodes.length === 0) {
         throw new FlowEngineError(`Flow "${flow.id}" must contain at least one node`);
     }
@@ -138,7 +140,7 @@ export const defineFlow = <TContext extends TaskContext = TaskContext>(
     input: FlowInput<TContext>
 ): FlowDefinition<TContext> => {
     const builderApi = createBuilderApi<TContext>();
-    const nodes = input.build !== undefined ? input.build(builderApi) : input.nodes;
+    const nodes = input.build === undefined ? input.nodes : input.build(builderApi);
 
     const flow: FlowDefinition<TContext> = {
         hooks: input.hooks ?? {},
