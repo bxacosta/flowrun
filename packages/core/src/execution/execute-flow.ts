@@ -166,6 +166,18 @@ const dispatchFlowEndedEvent = (
     });
 };
 
+const callHookSafely = async (
+    fn: () => void | Promise<void>,
+    logInternal: (message: string, data?: unknown) => void,
+    label: string
+): Promise<void> => {
+    try {
+        await fn();
+    } catch (error) {
+        logInternal(label, { error: normalizeError(error) });
+    }
+};
+
 // ── Main execution ──────────────────────────────────────────────────
 
 export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResult<StateShape>> => {
@@ -230,7 +242,7 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
 
         try {
             if (options.plan.flow.hooks.onStart !== undefined) {
-                await options.plan.flow.hooks.onStart(flowContext as any);
+                await options.plan.flow.hooks.onStart(flowContext);
             }
 
             if (!(options.runController.isCancelled || options.runController.isStopped)) {
@@ -270,20 +282,20 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
                     options.runController.cancelReason
                 ) as CompletedResult<StateShape>;
 
-                await options.plan.flow.hooks.onSuccess(flowContext as any, successResult);
+                await options.plan.flow.hooks.onSuccess(flowContext, successResult);
             }
         } catch (error) {
-            finalError = normalizeError(error);
-            finalStatus = resolveFailedStatus(options.runController, finalError);
+            const caughtError = normalizeError(error);
+            finalError = caughtError;
+            finalStatus = resolveFailedStatus(options.runController, caughtError);
 
-            if (finalStatus === "failed" && options.plan.flow.hooks.onFailure !== undefined) {
-                try {
-                    await options.plan.flow.hooks.onFailure(flowContext as any, finalError);
-                } catch (hookError) {
-                    logInternal("Flow failure hook failed", {
-                        error: normalizeError(hookError),
-                    });
-                }
+            const onFailure = options.plan.flow.hooks.onFailure;
+            if (finalStatus === "failed" && onFailure !== undefined) {
+                await callHookSafely(
+                    () => onFailure(flowContext, caughtError),
+                    logInternal,
+                    "Flow failure hook failed"
+                );
             }
         }
 
@@ -301,14 +313,9 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
 
         dispatchFlowEndedEvent(options, flowInfo, result);
 
-        if (options.plan.flow.hooks.onComplete !== undefined) {
-            try {
-                await options.plan.flow.hooks.onComplete(flowContext as any, result);
-            } catch (hookError) {
-                logInternal("Flow completion hook failed", {
-                    error: normalizeError(hookError),
-                });
-            }
+        const onComplete = options.plan.flow.hooks.onComplete;
+        if (onComplete !== undefined) {
+            await callHookSafely(() => onComplete(flowContext, result), logInternal, "Flow completion hook failed");
         }
 
         options.runController.setTerminalStatus(result.status);

@@ -18,6 +18,64 @@ interface BranchResult {
     readonly taskResults: readonly TaskRunResult[];
 }
 
+const resolveStateKeyMerge = (
+    parentState: FlowStateStore<StateShape>,
+    stateKey: string,
+    values: { index: number; value: unknown }[],
+    merge: MergeStrategy<StateShape>
+): void => {
+    const ordered = values.sort((a, b) => a.index - b.index);
+    const first = ordered[0];
+
+    if (ordered.length === 0 || first === undefined) {
+        return;
+    }
+
+    if (ordered.length === 1) {
+        parentState.set(stateKey, first.value);
+        return;
+    }
+
+    if (merge === "overwrite") {
+        const last = ordered.at(-1);
+
+        if (last !== undefined) {
+            parentState.set(stateKey, last.value);
+        }
+
+        return;
+    }
+
+    if (merge === "arrays") {
+        if (!ordered.every((entry) => Array.isArray(entry.value))) {
+            throw new ParallelMergeError(
+                String(stateKey),
+                `Parallel merge strategy "arrays" requires all values for "${String(stateKey)}" to be arrays`
+            );
+        }
+
+        const merged = ordered.flatMap((entry) => entry.value as unknown[]);
+        parentState.set(stateKey, cloneValue(merged));
+        return;
+    }
+
+    if (merge === "strict") {
+        if (!ordered.every((entry) => isDeepStrictEqual(entry.value, first.value))) {
+            throw new ParallelMergeError(String(stateKey));
+        }
+
+        parentState.set(stateKey, first.value);
+        return;
+    }
+
+    const resolver = merge as MergeResolver<StateShape>;
+    const resolved = resolver(
+        stateKey,
+        ordered.map((entry) => entry.value)
+    );
+    parentState.set(stateKey, resolved);
+};
+
 const mergeBranchStates = (
     parentState: FlowStateStore<StateShape>,
     branches: readonly BranchResult[],
@@ -36,56 +94,15 @@ const mergeBranchStates = (
     }
 
     for (const [stateKey, values] of valuesByStateKey) {
-        const ordered = values.sort((a, b) => a.index - b.index);
-        const first = ordered[0];
+        resolveStateKeyMerge(parentState, stateKey, values, merge);
+    }
+};
 
-        if (ordered.length === 0 || first === undefined) {
-            continue;
-        }
-
-        if (ordered.length === 1) {
-            parentState.set(stateKey, first.value);
-            continue;
-        }
-
-        if (merge === "overwrite") {
-            const last = ordered[ordered.length - 1];
-
-            if (last !== undefined) {
-                parentState.set(stateKey, last.value);
-            }
-
-            continue;
-        }
-
-        if (merge === "arrays") {
-            if (!ordered.every((entry) => Array.isArray(entry.value))) {
-                throw new ParallelMergeError(
-                    String(stateKey),
-                    `Parallel merge strategy "arrays" requires all values for "${String(stateKey)}" to be arrays`
-                );
-            }
-
-            const merged = ordered.flatMap((entry) => entry.value as unknown[]);
-            parentState.set(stateKey, cloneValue(merged));
-            continue;
-        }
-
-        if (merge === "strict") {
-            if (!ordered.every((entry) => isDeepStrictEqual(entry.value, first.value))) {
-                throw new ParallelMergeError(String(stateKey));
-            }
-
-            parentState.set(stateKey, first.value);
-            continue;
-        }
-
-        const resolver = merge as MergeResolver<StateShape>;
-        const resolved = resolver(
-            stateKey,
-            ordered.map((entry) => entry.value)
-        );
-        parentState.set(stateKey, resolved);
+const tryCleanup = async (fn: () => void | Promise<void>): Promise<void> => {
+    try {
+        await fn();
+    } catch {
+        // Cleanup failures are silently ignored
     }
 };
 
@@ -135,9 +152,9 @@ export const executeParallel = async (
         const flowContext = makeBranchFlowContext(context.scopedContext);
 
         const branchScopedContext =
-            node.definition.forkContext !== undefined
-                ? await (node.definition.forkContext as any)(flowContext, meta)
-                : context.scopedContext;
+            node.definition.forkContext === undefined
+                ? context.scopedContext
+                : await node.definition.forkContext(flowContext, meta);
 
         let branchResult: BranchResult = {
             index,
@@ -186,13 +203,9 @@ export const executeParallel = async (
         } finally {
             branchResults.push(branchResult);
 
-            if (node.definition.cleanupContext !== undefined) {
-                try {
-                    const cleanupContext = makeBranchFlowContext(branchScopedContext);
-                    await (node.definition.cleanupContext as any)(cleanupContext, meta);
-                } catch {
-                    // Cleanup failures are silently ignored
-                }
+            const cleanupFn = node.definition.cleanupContext;
+            if (cleanupFn !== undefined) {
+                await tryCleanup(() => cleanupFn(makeBranchFlowContext(branchScopedContext), meta));
             }
         }
     };
