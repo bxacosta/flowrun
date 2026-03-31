@@ -2,9 +2,9 @@ import { coreContextKeys } from "../core/constants.ts";
 import { FlowEngineError } from "../core/errors.ts";
 import type {
     CompletedResult,
-    EventMap,
     Extension,
     ExtensionApi,
+    FlowContext,
     FlowInfo,
     LogEvent,
     Logger,
@@ -13,12 +13,13 @@ import type {
     TaskRunResult,
 } from "../core/types.ts";
 import type { RunController } from "../engine/run-controller.ts";
-import type { EventBus } from "../events/event-bus.ts";
+import type { AnyEventBus } from "../events/event-bus.ts";
 import { FlowStateStore } from "../state/state-store.ts";
 import { cloneValue } from "../utils/clone.ts";
 import { normalizeError } from "../utils/errors.ts";
 import { getDurationMs } from "../utils/time.ts";
 import { buildLogger, createFlowContext } from "./context-factory.ts";
+import { dispatchEvent } from "./dispatch.ts";
 import { executeNodes } from "./execute-nodes.ts";
 import type { ExecutionContext } from "./execution-types.ts";
 import type { ResolvedFlowPlan } from "./resolver.ts";
@@ -26,7 +27,7 @@ import type { ResolvedFlowPlan } from "./resolver.ts";
 // ── Extension helpers ───────────────────────────────────────────────
 
 export interface ExecuteFlowOptions {
-    readonly eventBus: EventBus<EventMap>;
+    readonly eventBus: AnyEventBus;
     readonly extension?: Extension<object>;
     readonly params: unknown;
     readonly plan: ResolvedFlowPlan;
@@ -55,60 +56,61 @@ const validateExtensionContext = (context: object): void => {
     }
 };
 
-const createRunResult = (
-    flowInfo: FlowInfo,
-    runId: string,
-    stateStore: FlowStateStore<StateShape>,
-    taskResults: readonly TaskRunResult[],
-    durationMs: number,
-    status: "cancelled" | "completed" | "failed",
-    error: Error | undefined,
-    stopReason: string | undefined,
-    cancelReason: string | undefined
-): RunResult<StateShape> => {
+// ── Run result ─────────────────────────────────────────────────────
+
+interface CreateRunResultOptions {
+    readonly cancelReason: string | undefined;
+    readonly durationMs: number;
+    readonly error: Error | undefined;
+    readonly flowInfo: FlowInfo;
+    readonly runId: string;
+    readonly stateStore: FlowStateStore<StateShape>;
+    readonly status: "cancelled" | "completed" | "failed";
+    readonly stopReason: string | undefined;
+    readonly taskResults: readonly TaskRunResult[];
+}
+
+const createRunResult = (options: CreateRunResultOptions): RunResult<StateShape> => {
     const base = {
-        durationMs,
-        flowId: flowInfo.id,
-        flowName: flowInfo.name,
-        runId,
-        state: stateStore.snapshot(),
-        tasks: taskResults,
+        durationMs: options.durationMs,
+        flowId: options.flowInfo.id,
+        flowName: options.flowInfo.name,
+        runId: options.runId,
+        state: options.stateStore.snapshot(),
+        tasks: options.taskResults,
     };
 
-    if (status === "completed") {
-        return { ...base, status, stopReason };
+    if (options.status === "completed") {
+        return { ...base, status: options.status, stopReason: options.stopReason };
     }
 
-    if (status === "cancelled") {
-        return { ...base, cancelReason, status, stopReason };
+    if (options.status === "cancelled") {
+        return { ...base, cancelReason: options.cancelReason, status: options.status, stopReason: options.stopReason };
     }
 
     return {
         ...base,
-        error: error ?? new Error("Flow execution failed"),
-        status,
-        stopReason,
+        error: options.error ?? new Error("Flow execution failed"),
+        status: options.status,
+        stopReason: options.stopReason,
     };
 };
+
+// ── Extension lifecycle ────────────────────────────────────────────
 
 const createExtensionApi = (
     flowInfo: FlowInfo,
     params: unknown,
     runId: string,
     signal: AbortSignal,
-    eventBus: EventBus<EventMap>
+    eventBus: AnyEventBus
 ): ExtensionApi => {
-    const emit = (type: string, data: Record<string, unknown>): void => {
-        eventBus.dispatch({ flowId: flowInfo.id, payload: data, runId, type });
+    const emit = (type: string, data: object): void => {
+        dispatchEvent(eventBus, flowInfo.id, runId, type, data);
     };
 
     const emitLog = (payload: LogEvent): void => {
-        eventBus.dispatch({
-            flowId: flowInfo.id,
-            payload: payload as unknown as Record<string, unknown>,
-            runId,
-            type: "log",
-        });
+        dispatchEvent(eventBus, flowInfo.id, runId, "log", payload);
     };
 
     const log: Logger = buildLogger(emitLog);
@@ -146,26 +148,6 @@ const disposeExtension = async (
 const resolveFailedStatus = (runController: RunController, error: Error): "cancelled" | "failed" =>
     runController.isCancelled && error.name === "AbortError" ? "cancelled" : "failed";
 
-const dispatchFlowEndedEvent = (
-    options: ExecuteFlowOptions,
-    flowInfo: FlowInfo,
-    result: RunResult<StateShape>
-): void => {
-    options.eventBus.dispatch({
-        flowId: flowInfo.id,
-        payload: {
-            cancelReason: result.status === "cancelled" ? result.cancelReason : undefined,
-            durationMs: result.durationMs,
-            error: result.status === "failed" ? result.error : undefined,
-            flowName: flowInfo.name,
-            status: result.status,
-            stopReason: result.stopReason,
-        },
-        runId: options.runId,
-        type: "flow.ended",
-    });
-};
-
 const callHookSafely = async (
     fn: () => void | Promise<void>,
     logInternal: (message: string, data?: unknown) => void,
@@ -190,25 +172,16 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
     const taskResults: TaskRunResult[] = [];
 
     let extensionContext: object = {};
+    let flowContext: FlowContext | undefined;
     let finalError: Error | undefined;
     let finalStatus: "cancelled" | "completed" | "failed" = "completed";
 
-    const logInternal = (message: string, data?: unknown): void => {
-        options.eventBus.dispatch({
-            flowId: flowInfo.id,
-            payload: { data, level: "error", message } as unknown as Record<string, unknown>,
-            runId: options.runId,
-            type: "log",
-        });
+    const dispatch = (type: string, payload: object): void => {
+        dispatchEvent(options.eventBus, flowInfo.id, options.runId, type, payload);
     };
 
-    const emitUserEvent = (type: string, data: Record<string, unknown>): void => {
-        options.eventBus.dispatch({
-            flowId: flowInfo.id,
-            payload: data,
-            runId: options.runId,
-            type,
-        });
+    const logInternal = (message: string, data?: unknown): void => {
+        dispatch("log", { data, level: "error", message });
     };
 
     const extensionApi = createExtensionApi(
@@ -222,8 +195,8 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
     try {
         extensionContext = await createExtensionContext(options.extension, extensionApi);
 
-        const flowContext = createFlowContext({
-            emit: emitUserEvent,
+        const ctx = createFlowContext({
+            emit: dispatch,
             flow: flowInfo,
             params: options.params,
             runId: options.runId,
@@ -232,23 +205,19 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
             stop: (reason) => options.runController.requestStop(reason),
             userContext: extensionContext,
         });
+        flowContext = ctx;
 
-        options.eventBus.dispatch({
-            flowId: flowInfo.id,
-            payload: { flowName: flowInfo.name, params: options.params },
-            runId: options.runId,
-            type: "flow.started",
-        });
+        dispatch("flow.started", { flowName: flowInfo.name, params: options.params });
 
         try {
             if (options.plan.flow.hooks.onStart !== undefined) {
-                await options.plan.flow.hooks.onStart(flowContext);
+                await options.plan.flow.hooks.onStart(ctx);
             }
 
             if (!(options.runController.isCancelled || options.runController.isStopped)) {
                 const executionContext: ExecutionContext = {
+                    emitUserEvent: dispatch,
                     eventBus: options.eventBus,
-                    emitUserEvent,
                     flowInfo,
                     flowMiddleware: options.plan.flow.middleware,
                     params: options.params,
@@ -270,19 +239,19 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
             finalStatus = options.runController.isCancelled ? "cancelled" : "completed";
 
             if (finalStatus === "completed" && options.plan.flow.hooks.onSuccess !== undefined) {
-                const successResult = createRunResult(
+                const successResult = createRunResult({
+                    cancelReason: undefined,
+                    durationMs: getDurationMs(startTime),
+                    error: undefined,
                     flowInfo,
-                    options.runId,
+                    runId: options.runId,
                     stateStore,
+                    status: "completed",
+                    stopReason: options.runController.stopReason,
                     taskResults,
-                    getDurationMs(startTime),
-                    "completed",
-                    undefined,
-                    options.runController.stopReason,
-                    options.runController.cancelReason
-                ) as CompletedResult<StateShape>;
+                }) as CompletedResult<StateShape>;
 
-                await options.plan.flow.hooks.onSuccess(flowContext, successResult);
+                await options.plan.flow.hooks.onSuccess(ctx, successResult);
             }
         } catch (error) {
             const caughtError = normalizeError(error);
@@ -291,56 +260,45 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
 
             const onFailure = options.plan.flow.hooks.onFailure;
             if (finalStatus === "failed" && onFailure !== undefined) {
-                await callHookSafely(
-                    () => onFailure(flowContext, caughtError),
-                    logInternal,
-                    "Flow failure hook failed"
-                );
+                await callHookSafely(() => onFailure(ctx, caughtError), logInternal, "Flow failure hook failed");
             }
         }
-
-        const result = createRunResult(
-            flowInfo,
-            options.runId,
-            stateStore,
-            taskResults,
-            getDurationMs(startTime),
-            finalStatus,
-            finalStatus === "failed" ? finalError : undefined,
-            options.runController.stopReason,
-            options.runController.cancelReason
-        );
-
-        dispatchFlowEndedEvent(options, flowInfo, result);
-
-        const onComplete = options.plan.flow.hooks.onComplete;
-        if (onComplete !== undefined) {
-            await callHookSafely(() => onComplete(flowContext, result), logInternal, "Flow completion hook failed");
-        }
-
-        options.runController.setTerminalStatus(result.status);
-        return result;
     } catch (error) {
         finalError = normalizeError(error);
         finalStatus = resolveFailedStatus(options.runController, finalError);
-
-        const result = createRunResult(
-            flowInfo,
-            options.runId,
-            stateStore,
-            taskResults,
-            getDurationMs(startTime),
-            finalStatus,
-            finalStatus === "failed" ? finalError : undefined,
-            options.runController.stopReason,
-            options.runController.cancelReason
-        );
-
-        dispatchFlowEndedEvent(options, flowInfo, result);
-
-        options.runController.setTerminalStatus(result.status);
-        return result;
-    } finally {
-        await disposeExtension(options.extension, extensionContext, extensionApi, logInternal);
     }
+
+    // ── Unified finalization ────────────────────────────────────────
+
+    const result = createRunResult({
+        cancelReason: options.runController.cancelReason,
+        durationMs: getDurationMs(startTime),
+        error: finalStatus === "failed" ? finalError : undefined,
+        flowInfo,
+        runId: options.runId,
+        stateStore,
+        status: finalStatus,
+        stopReason: options.runController.stopReason,
+        taskResults,
+    });
+
+    dispatch("flow.ended", {
+        cancelReason: result.status === "cancelled" ? result.cancelReason : undefined,
+        durationMs: result.durationMs,
+        error: result.status === "failed" ? result.error : undefined,
+        flowName: flowInfo.name,
+        status: result.status,
+        stopReason: result.stopReason,
+    });
+
+    if (flowContext !== undefined && options.plan.flow.hooks.onComplete !== undefined) {
+        const ctx = flowContext;
+        const onComplete = options.plan.flow.hooks.onComplete;
+        await callHookSafely(() => onComplete(ctx, result), logInternal, "Flow completion hook failed");
+    }
+
+    options.runController.setTerminalStatus(result.status);
+    await disposeExtension(options.extension, extensionContext, extensionApi, logInternal);
+
+    return result;
 };

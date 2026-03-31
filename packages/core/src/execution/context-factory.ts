@@ -10,7 +10,7 @@ import type {
 } from "../core/types.ts";
 
 export interface SharedContextOptions {
-    readonly emit: (type: string, data: Record<string, unknown>) => void;
+    readonly emit: (type: string, data: object) => void;
     readonly flow: FlowInfo;
     readonly params: unknown;
     readonly runId: string;
@@ -28,7 +28,7 @@ export const buildLogger = (emit: (payload: LogEvent) => void, task?: TaskInfo):
 });
 
 const createLogger = (options: SharedContextOptions, task: TaskInfo | undefined): Logger =>
-    buildLogger((payload) => options.emit("log", payload as unknown as Record<string, unknown>), task);
+    buildLogger((payload) => options.emit("log", payload), task);
 
 export const createFlowContext = (options: SharedContextOptions): FlowContext =>
     ({

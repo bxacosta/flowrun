@@ -7,6 +7,7 @@ import { normalizeError } from "../utils/errors.ts";
 import { composeMiddleware } from "../utils/middleware.ts";
 import { getDurationMs } from "../utils/time.ts";
 import { createTaskContext } from "./context-factory.ts";
+import { dispatchEvent } from "./dispatch.ts";
 import type { ExecutionContext, TaskExecutionOutcome } from "./execution-types.ts";
 
 const getRetryDelay = (
@@ -90,13 +91,8 @@ const makeTaskContext = (context: ExecutionContext, task: AnyTaskDefinition, att
         attempt
     );
 
-const dispatchTaskEvent = (context: ExecutionContext, type: string, payload: Record<string, unknown>): void => {
-    context.eventBus.dispatch({
-        flowId: context.flowInfo.id,
-        payload,
-        runId: context.runId,
-        type,
-    });
+const dispatchTaskEvent = (context: ExecutionContext, type: string, payload: object): void => {
+    dispatchEvent(context.eventBus, context.flowInfo.id, context.runId, type, payload);
 };
 
 const resolveTaskError = async (

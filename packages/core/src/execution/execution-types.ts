@@ -1,6 +1,6 @@
-import type { AnyMiddleware, EventMap, FlowInfo, StateShape, TaskRunResult } from "../core/types.ts";
+import type { AnyMiddleware, FlowInfo, StateShape, TaskRunResult } from "../core/types.ts";
 import type { RunController } from "../engine/run-controller.ts";
-import type { EventBus } from "../events/event-bus.ts";
+import type { AnyEventBus } from "../events/event-bus.ts";
 import type { FlowStateStore } from "../state/state-store.ts";
 
 export interface NodeExecutionOutcome {
@@ -13,8 +13,8 @@ export interface TaskExecutionOutcome extends NodeExecutionOutcome {
 }
 
 export interface ExecutionContext {
-    emitUserEvent(type: string, data: Record<string, unknown>): void;
-    readonly eventBus: EventBus<EventMap>;
+    emitUserEvent(type: string, data: object): void;
+    readonly eventBus: AnyEventBus;
     readonly flowInfo: FlowInfo;
     readonly flowMiddleware: readonly AnyMiddleware[];
     readonly params: unknown;

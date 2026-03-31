@@ -105,7 +105,7 @@ export type EngineEventMap<TUserEvents extends EventMap = EmptyEventMap> = {
           : TEventKey extends keyof TUserEvents
             ? TUserEvents[TEventKey]
             : never;
-} & EventMap;
+} & Record<string, object>;
 
 export interface EventMetadata<TType extends string = string> {
     readonly flowId: string;
@@ -114,26 +114,26 @@ export interface EventMetadata<TType extends string = string> {
     readonly type: TType;
 }
 
-export type EventEnvelope<TType extends string, TPayload extends Record<string, unknown>> = Readonly<
+export type EventEnvelope<TType extends string, TPayload extends object> = Readonly<
     Simplify<StripIndexSignature<TPayload> & EventMetadata<TType>>
 >;
 
-export type EventHandler<TType extends string, TPayload extends Record<string, unknown>> = (
+export type EventHandler<TType extends string, TPayload extends object> = (
     event: EventEnvelope<TType, TPayload>
 ) => void | Promise<void>;
 
-export type AnyEventEnvelope<TEvents extends EventMap> = {
+export type AnyEventEnvelope<TEvents extends Record<string, object>> = {
     [TType in keyof TEvents & string]: EventEnvelope<TType, TEvents[TType]>;
 }[keyof TEvents & string];
 
-export interface EventSubscriberApi<TEvents extends EventMap> {
+export interface EventSubscriberApi<TEvents extends Record<string, object>> {
     on<TType extends keyof TEvents & string>(type: TType, handler: EventHandler<TType, TEvents[TType]>): () => void;
     onAny(
         handler: (type: keyof TEvents & string, event: AnyEventEnvelope<TEvents>) => void | Promise<void>
     ): () => void;
 }
 
-export type EventSubscriber<TEvents extends EventMap> = (events: EventSubscriberApi<TEvents>) => void;
+export type EventSubscriber<TEvents extends Record<string, object>> = (events: EventSubscriberApi<TEvents>) => void;
 
 // ── State ────────────────────────────────────────────────────────────
 
@@ -147,8 +147,12 @@ export interface StateStore<TState extends StateShape> {
 
 // ── Context ──────────────────────────────────────────────────────────
 
-export interface FlowContext<TParams = unknown, TState extends StateShape = StateShape> {
-    emit(type: string, data: Record<string, unknown>): void;
+export interface FlowContext<
+    TParams = unknown,
+    TState extends StateShape = StateShape,
+    TEvents extends Record<string, object> = EventMap,
+> {
+    emit<TType extends keyof TEvents & string>(type: TType, data: TEvents[TType]): void;
     readonly flow: FlowInfo;
     readonly log: Logger;
     readonly params: TParams;
@@ -158,17 +162,28 @@ export interface FlowContext<TParams = unknown, TState extends StateShape = Stat
     stop(reason?: string): never;
 }
 
-export interface TaskContext<TParams = unknown, TState extends StateShape = StateShape>
-    extends FlowContext<TParams, TState> {
+export interface TaskContext<
+    TParams = unknown,
+    TState extends StateShape = StateShape,
+    TEvents extends Record<string, object> = EventMap,
+> extends FlowContext<TParams, TState, TEvents> {
     readonly attempt: number;
     readonly task: TaskInfo;
 }
 
 // ── Context Utility Types ────────────────────────────────────────────
 
-export type ParamsOf<TContext> = TContext extends FlowContext<infer TParams, infer _> ? TParams : never;
-export type StateOf<TContext> = TContext extends FlowContext<infer _, infer TState> ? TState : never;
-export type FlowContextOf<TContext extends TaskContext> = FlowContext<ParamsOf<TContext>, StateOf<TContext>> &
+export type ParamsOf<TContext> =
+    TContext extends FlowContext<infer TParams, infer _TState, infer _TEvents> ? TParams : never;
+export type StateOf<TContext> =
+    TContext extends FlowContext<infer _TParams, infer TState, infer _TEvents> ? TState : never;
+export type EventsOf<TContext> =
+    TContext extends FlowContext<infer _TParams, infer _TState, infer TEvents> ? TEvents : never;
+export type FlowContextOf<TContext extends TaskContext> = FlowContext<
+    ParamsOf<TContext>,
+    StateOf<TContext>,
+    EventsOf<TContext>
+> &
     Omit<TContext, keyof TaskContext>;
 
 // ── Handlers & Middleware ────────────────────────────────────────────
@@ -361,7 +376,7 @@ export type RunResult<TState extends StateShape> =
 // ── Extension ────────────────────────────────────────────────────────
 
 export interface ExtensionApi {
-    emit(type: string, data: Record<string, unknown>): void;
+    emit(type: string, data: object): void;
     readonly flow: FlowInfo;
     readonly log: Logger;
     readonly params: unknown;

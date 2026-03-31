@@ -6,6 +6,7 @@ import { createCompositeAbortController } from "../utils/abort.ts";
 import { cloneValue } from "../utils/clone.ts";
 import { normalizeError } from "../utils/errors.ts";
 import { createFlowContext } from "./context-factory.ts";
+import { dispatchEvent } from "./dispatch.ts";
 import { executeNodes } from "./execute-nodes.ts";
 import type { ExecutionContext, NodeExecutionOutcome } from "./execution-types.ts";
 import type { ResolvedNode, ResolvedParallelNode } from "./resolver.ts";
@@ -98,11 +99,11 @@ const mergeBranchStates = (
     }
 };
 
-const tryCleanup = async (fn: () => void | Promise<void>): Promise<void> => {
+const tryCleanup = async (fn: () => void | Promise<void>, onError?: (error: Error) => void): Promise<void> => {
     try {
         await fn();
-    } catch {
-        // Cleanup failures are silently ignored
+    } catch (error) {
+        onError?.(normalizeError(error));
     }
 };
 
@@ -205,7 +206,23 @@ export const executeParallel = async (
 
             const cleanupFn = node.definition.cleanupContext;
             if (cleanupFn !== undefined) {
-                await tryCleanup(() => cleanupFn(makeBranchFlowContext(branchScopedContext), meta));
+                await tryCleanup(
+                    () => cleanupFn(makeBranchFlowContext(branchScopedContext), meta),
+                    (error) => {
+                        dispatchEvent(context.eventBus, context.flowInfo.id, context.runId, "log", {
+                            data: {
+                                branchId: meta.branchId,
+                                branchName: meta.branchName,
+                                error,
+                                groupId: meta.groupId,
+                                groupName: meta.groupName,
+                                index: meta.index,
+                            },
+                            level: "warn",
+                            message: `Cleanup failed for branch "${meta.branchName}" in parallel group "${meta.groupName}"`,
+                        });
+                    }
+                );
             }
         }
     };

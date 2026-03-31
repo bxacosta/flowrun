@@ -17,6 +17,7 @@ export type {
     EventMetadata,
     EventSubscriber,
     EventSubscriberApi,
+    EventsOf,
     Extension,
     // Extension
     ExtensionApi,
