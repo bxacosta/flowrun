@@ -6,6 +6,7 @@ import type {
     EventSubscriber,
     EventSubscriberApi,
 } from "../core/types.ts";
+import type { ObjectRecord } from "../utils/type-helpers.ts";
 
 export interface DispatchOptions<TType extends string, TPayload extends object> {
     readonly flowId: string;
@@ -14,11 +15,11 @@ export interface DispatchOptions<TType extends string, TPayload extends object> 
     readonly type: TType;
 }
 
-type AnyHandler<TEvents extends Record<string, object>> = {
+type AnyHandler<TEvents extends ObjectRecord<TEvents>> = {
     [TType in keyof TEvents & string]: EventHandler<TType, TEvents[TType]>;
 }[keyof TEvents & string];
 
-export class EventBus<TEvents extends Record<string, object>> {
+export class EventBus<TEvents extends ObjectRecord<TEvents>> {
     private readonly anyHandlers = new Set<
         (type: keyof TEvents & string, event: AnyEventEnvelope<TEvents>) => void | Promise<void>
     >();
@@ -121,6 +122,3 @@ export class EventBus<TEvents extends Record<string, object>> {
         this.onSubscriberError(error instanceof Error ? error : new Error(String(error)), type);
     }
 }
-
-// biome-ignore lint/suspicious/noExplicitAny: type erasure — invariant generic requires `any` for heterogeneous storage
-export type AnyEventBus = EventBus<any>;

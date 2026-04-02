@@ -1,7 +1,8 @@
-import type { FlowHandle, RunResult, RunStatus, StateShape } from "../core/types.ts";
+import type { FlowHandle, RunResult, RunStatus } from "../core/types.ts";
+import type { AnyRecord } from "../utils/type-helpers.ts";
 import type { RunController } from "./run-controller.ts";
 
-export class FlowHandleImpl<TState extends StateShape> implements FlowHandle<TState> {
+export class FlowHandleImpl<TState extends AnyRecord<TState>> implements FlowHandle<TState> {
     private readonly resultPromise: Promise<RunResult<TState>>;
     private readonly runController: RunController;
 

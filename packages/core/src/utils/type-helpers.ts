@@ -11,3 +11,9 @@ export type StripIndexSignature<TShape> = {
             ? never
             : TKey]: TShape[TKey];
 };
+
+// ── Self-referential constraint helpers ─────────────────────────────
+// These accept plain interfaces without requiring `extends Record<...>`
+
+export type AnyRecord<T> = { [K in keyof T]: unknown };
+export type ObjectRecord<T> = { [K in keyof T]: object };

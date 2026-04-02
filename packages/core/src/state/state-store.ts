@@ -1,7 +1,8 @@
-import type { StateShape, StateStore } from "../core/types.ts";
+import type { StateStore } from "../core/types.ts";
 import { cloneValue } from "../utils/clone.ts";
+import type { AnyRecord } from "../utils/type-helpers.ts";
 
-export class FlowStateStore<TState extends StateShape> implements StateStore<TState> {
+export class FlowStateStore<TState extends AnyRecord<TState>> implements StateStore<TState> {
     private readonly values: Partial<TState>;
     private readonly writtenKeys = new Set<keyof TState>();
 

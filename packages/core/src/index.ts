@@ -7,6 +7,8 @@ export type {
     BuiltInEventMap,
     CancelledResult,
     CompletedResult,
+    // Primitives
+    EmptyEventMap,
     EngineEventMap,
     ErrorResolution,
     ErrorResolutionMeta,
@@ -43,7 +45,6 @@ export type {
     LogEvent,
     Logger,
     LogLevel,
-    MergeExtensionTypes,
     // Parallel
     MergeResolver,
     MergeStrategy,
@@ -61,7 +62,6 @@ export type {
     RunResult,
     RunStatus,
     StateOf,
-    // Primitives
     StateShape,
     // State
     StateStore,
@@ -80,6 +80,10 @@ export type {
     TerminalStatus,
 } from "./core/types.ts";
 
+// ── Type Helpers ────────────────────────────────────────────────────
+
+export type { AnyRecord, ObjectRecord, Simplify } from "./utils/type-helpers.ts";
+
 // ── Errors ──────────────────────────────────────────────────────────
 
 // biome-ignore lint/performance/noBarrelFile: public library entry point
@@ -94,9 +98,6 @@ export {
 
 export type { FlowInput } from "./definitions/define-flow.ts";
 export { defineFlow } from "./definitions/define-flow.ts";
-export type { FlowKit } from "./definitions/flow-kit.ts";
-
-export { createFlowKit } from "./definitions/flow-kit.ts";
 export { group, parallel, task } from "./definitions/node-factories.ts";
 
 // ── Engine ──────────────────────────────────────────────────────────

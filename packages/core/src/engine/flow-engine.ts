@@ -4,25 +4,27 @@ import type {
     AnyFlowDefinition,
     EmptyEventMap,
     EngineEventMap,
-    EventMap,
     EventSubscriberApi,
     Extension,
     ExtensionApi,
     FlowDefinition,
     FlowEngineOptions,
     FlowHandle,
-    MergeExtensionTypes,
     ParamsOf,
     RunResult,
     StateOf,
     StateShape,
     TaskContext,
 } from "../core/types.ts";
+import { defineFlow, type FlowInput } from "../definitions/define-flow.ts";
 import { EventBus } from "../events/event-bus.ts";
 import { executeFlow } from "../execution/execute-flow.ts";
 import { resolveFlow } from "../execution/resolver.ts";
+import type { ObjectRecord, Simplify } from "../utils/type-helpers.ts";
 import { FlowHandleImpl } from "./flow-handle.ts";
 import { RunController } from "./run-controller.ts";
+
+// ── Extension helpers ──────────────────────────────────────────────
 
 const registerExtensionKeys = (usedKeys: Set<string>, extensionContext: object): void => {
     for (const key of Object.keys(extensionContext)) {
@@ -51,8 +53,8 @@ const rollbackExtensions = async (
     }
 };
 
-const normalizeExtensions = (extensions: readonly Extension<object>[] | undefined): Extension<object> | undefined => {
-    if (extensions === undefined || extensions.length === 0) {
+const normalizeExtensions = (extensions: readonly Extension<object>[]): Extension<object> | undefined => {
+    if (extensions.length === 0) {
         return undefined;
     }
 
@@ -102,22 +104,47 @@ const normalizeExtensions = (extensions: readonly Extension<object>[] | undefine
     };
 };
 
-export class FlowEngine<TExtension extends object = object, TUserEvents extends EventMap = EmptyEventMap> {
+// ── FlowEngine ─────────────────────────────────────────────────────
+
+export class FlowEngine<
+    TExtension extends object = object,
+    TUserEvents extends ObjectRecord<TUserEvents> = EmptyEventMap,
+> {
     private readonly eventBus: EventBus<EngineEventMap<TUserEvents>>;
-    private readonly extension: Extension<object> | undefined;
+    private readonly extensionRegistry: Extension<object>[] = [];
     private readonly registry = new Map<string, AnyFlowDefinition>();
+    private normalizedExtension: Extension<object> | undefined;
+    private extensionsDirty = false;
 
     readonly events: EventSubscriberApi<EngineEventMap<TUserEvents>>;
 
     constructor(options?: FlowEngineOptions<TUserEvents>) {
         this.eventBus = new EventBus<EngineEventMap<TUserEvents>>(options?.onSubscriberError);
         this.events = this.eventBus.createSubscriberApi();
-        this.extension = normalizeExtensions(options?.extensions);
 
         for (const subscriber of options?.subscribers ?? []) {
             this.eventBus.register(subscriber);
         }
     }
+
+    // ── Extension chaining ─────────────────────────────────────────
+
+    extend<TNewExt extends object>(
+        extension: Extension<TNewExt>
+    ): FlowEngine<Simplify<TExtension & TNewExt>, TUserEvents> {
+        this.extensionRegistry.push(extension as Extension<object>);
+        this.extensionsDirty = true;
+        // biome-ignore lint/suspicious/noExplicitAny: accumulative chaining requires type-level cast — same pattern as tRPC/Hono
+        return this as any;
+    }
+
+    // ── Flow definition ────────────────────────────────────────────
+
+    defineFlow<TContext extends TaskContext & TExtension>(input: FlowInput<TContext>): FlowDefinition<TContext> {
+        return defineFlow<TContext>(input);
+    }
+
+    // ── Registration ───────────────────────────────────────────────
 
     register<TContext extends TaskContext & TExtension>(flow: FlowDefinition<TContext>): void {
         if (this.registry.has(flow.id)) {
@@ -126,6 +153,8 @@ export class FlowEngine<TExtension extends object = object, TUserEvents extends 
 
         this.registry.set(flow.id, flow);
     }
+
+    // ── Execution ──────────────────────────────────────────────────
 
     start<TContext extends TaskContext & TExtension>(
         flow: FlowDefinition<TContext>,
@@ -140,7 +169,7 @@ export class FlowEngine<TExtension extends object = object, TUserEvents extends 
 
         const resultPromise = executeFlow({
             eventBus: this.eventBus,
-            extension: this.extension,
+            extension: this.resolveExtension(),
             params,
             plan,
             runController,
@@ -159,6 +188,17 @@ export class FlowEngine<TExtension extends object = object, TUserEvents extends 
         return this.start(flowOrId as string, params).join();
     }
 
+    // ── Private ────────────────────────────────────────────────────
+
+    private resolveExtension(): Extension<object> | undefined {
+        if (this.extensionsDirty) {
+            this.normalizedExtension = normalizeExtensions(this.extensionRegistry);
+            this.extensionsDirty = false;
+        }
+
+        return this.normalizedExtension;
+    }
+
     private resolveFlowDefinition(flowOrId: AnyFlowDefinition | string): AnyFlowDefinition {
         if (typeof flowOrId !== "string") {
             return flowOrId;
@@ -174,12 +214,8 @@ export class FlowEngine<TExtension extends object = object, TUserEvents extends 
     }
 }
 
-export const createFlowEngine = <
-    const TExtensions extends readonly Extension<object>[] = [],
-    TUserEvents extends EventMap = EmptyEventMap,
->(
-    options?: FlowEngineOptions<TUserEvents> & {
-        readonly extensions?: TExtensions;
-    }
-): FlowEngine<MergeExtensionTypes<TExtensions>, TUserEvents> =>
-    new FlowEngine<MergeExtensionTypes<TExtensions>, TUserEvents>(options);
+// ── Factory ────────────────────────────────────────────────────────
+
+export const createFlowEngine = <TUserEvents extends ObjectRecord<TUserEvents> = EmptyEventMap>(
+    options?: FlowEngineOptions<TUserEvents>
+): FlowEngine<object, TUserEvents> => new FlowEngine<object, TUserEvents>(options);

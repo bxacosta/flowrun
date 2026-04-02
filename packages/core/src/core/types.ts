@@ -1,10 +1,12 @@
-import type { Simplify, StripIndexSignature } from "../utils/type-helpers.ts";
+import type { EventBus } from "../events/event-bus.ts";
+import type { AnyRecord, ObjectRecord, Simplify, StripIndexSignature } from "../utils/type-helpers.ts";
 
 // ── Primitives ──────────────────────────────────────────────────────
 
 export type StateShape = Record<string, unknown>;
 export type EventMap = Record<string, Record<string, unknown>>;
 export type EmptyEventMap = Record<never, never>;
+
 export type LogLevel = "debug" | "error" | "info" | "warn";
 export type RunStatus = "cancelled" | "completed" | "failed" | "paused" | "running";
 export type TerminalStatus = "cancelled" | "completed" | "failed";
@@ -13,7 +15,7 @@ export type ParallelMode = "all-settled" | "fail-fast";
 export type RetryStrategy = "constant" | "exponential";
 export type ErrorResolution = "fail" | "skip";
 
-// ── Info ─────────────────────────────────────────────────────────────
+// ── Info ────────────────────────────────────────────────────────────
 
 export interface FlowInfo {
     readonly id: string;
@@ -33,7 +35,7 @@ export interface ParallelBranchInfo {
     readonly index: number;
 }
 
-// ── Logging ──────────────────────────────────────────────────────────
+// ── Logging ─────────────────────────────────────────────────────────
 
 export interface LogEvent {
     readonly data?: unknown;
@@ -50,7 +52,7 @@ export interface Logger {
     warn(message: string, data?: unknown): void;
 }
 
-// ── Events ───────────────────────────────────────────────────────────
+// ── Events ──────────────────────────────────────────────────────────
 
 export interface BuiltInEventMap {
     readonly log: LogEvent;
@@ -94,7 +96,7 @@ export interface LifecycleEventMap {
     };
 }
 
-export type EngineEventMap<TUserEvents extends EventMap = EmptyEventMap> = {
+export type EngineEventMap<TUserEvents extends ObjectRecord<TUserEvents> = EmptyEventMap> = {
     [TEventKey in
         | keyof LifecycleEventMap
         | keyof BuiltInEventMap
@@ -105,7 +107,7 @@ export type EngineEventMap<TUserEvents extends EventMap = EmptyEventMap> = {
           : TEventKey extends keyof TUserEvents
             ? TUserEvents[TEventKey]
             : never;
-} & Record<string, object>;
+};
 
 export interface EventMetadata<TType extends string = string> {
     readonly flowId: string;
@@ -122,22 +124,22 @@ export type EventHandler<TType extends string, TPayload extends object> = (
     event: EventEnvelope<TType, TPayload>
 ) => void | Promise<void>;
 
-export type AnyEventEnvelope<TEvents extends Record<string, object>> = {
+export type AnyEventEnvelope<TEvents extends ObjectRecord<TEvents>> = {
     [TType in keyof TEvents & string]: EventEnvelope<TType, TEvents[TType]>;
 }[keyof TEvents & string];
 
-export interface EventSubscriberApi<TEvents extends Record<string, object>> {
+export interface EventSubscriberApi<TEvents extends ObjectRecord<TEvents>> {
     on<TType extends keyof TEvents & string>(type: TType, handler: EventHandler<TType, TEvents[TType]>): () => void;
     onAny(
         handler: (type: keyof TEvents & string, event: AnyEventEnvelope<TEvents>) => void | Promise<void>
     ): () => void;
 }
 
-export type EventSubscriber<TEvents extends Record<string, object>> = (events: EventSubscriberApi<TEvents>) => void;
+export type EventSubscriber<TEvents extends ObjectRecord<TEvents>> = (events: EventSubscriberApi<TEvents>) => void;
 
-// ── State ────────────────────────────────────────────────────────────
+// ── State ───────────────────────────────────────────────────────────
 
-export interface StateStore<TState extends StateShape> {
+export interface StateStore<TState extends AnyRecord<TState>> {
     get<TStateKey extends keyof TState>(key: TStateKey): TState[TStateKey] | undefined;
     has<TStateKey extends keyof TState>(key: TStateKey): boolean;
     patch(values: Partial<TState>): void;
@@ -145,12 +147,14 @@ export interface StateStore<TState extends StateShape> {
     snapshot(): Readonly<TState>;
 }
 
-// ── Context ──────────────────────────────────────────────────────────
+// ── Context ─────────────────────────────────────────────────────────
 
 export interface FlowContext<
     TParams = unknown,
-    TState extends StateShape = StateShape,
-    TEvents extends Record<string, object> = EventMap,
+    // biome-ignore lint/suspicious/noExplicitAny: defaults use `any` so bare FlowContext/TaskContext constraints accept all state/event types
+    TState extends AnyRecord<TState> = any,
+    // biome-ignore lint/suspicious/noExplicitAny: defaults use `any` so bare FlowContext/TaskContext constraints accept all state/event types
+    TEvents extends ObjectRecord<TEvents> = any,
 > {
     emit<TType extends keyof TEvents & string>(type: TType, data: TEvents[TType]): void;
     readonly flow: FlowInfo;
@@ -164,14 +168,16 @@ export interface FlowContext<
 
 export interface TaskContext<
     TParams = unknown,
-    TState extends StateShape = StateShape,
-    TEvents extends Record<string, object> = EventMap,
+    // biome-ignore lint/suspicious/noExplicitAny: defaults use `any` so bare FlowContext/TaskContext constraints accept all state/event types
+    TState extends AnyRecord<TState> = any,
+    // biome-ignore lint/suspicious/noExplicitAny: defaults use `any` so bare FlowContext/TaskContext constraints accept all state/event types
+    TEvents extends ObjectRecord<TEvents> = any,
 > extends FlowContext<TParams, TState, TEvents> {
     readonly attempt: number;
     readonly task: TaskInfo;
 }
 
-// ── Context Utility Types ────────────────────────────────────────────
+// ── Context Utilities ───────────────────────────────────────────────
 
 export type ParamsOf<TContext> =
     TContext extends FlowContext<infer TParams, infer _TState, infer _TEvents> ? TParams : never;
@@ -179,14 +185,9 @@ export type StateOf<TContext> =
     TContext extends FlowContext<infer _TParams, infer TState, infer _TEvents> ? TState : never;
 export type EventsOf<TContext> =
     TContext extends FlowContext<infer _TParams, infer _TState, infer TEvents> ? TEvents : never;
-export type FlowContextOf<TContext extends TaskContext> = FlowContext<
-    ParamsOf<TContext>,
-    StateOf<TContext>,
-    EventsOf<TContext>
-> &
-    Omit<TContext, keyof TaskContext>;
+export type FlowContextOf<TContext extends TaskContext> = Omit<TContext, "attempt" | "task">;
 
-// ── Handlers & Middleware ────────────────────────────────────────────
+// ── Handlers & Middleware ───────────────────────────────────────────
 
 export type TaskHandler<TContext extends TaskContext = TaskContext> = (context: TContext) => unknown | Promise<unknown>;
 
@@ -197,7 +198,7 @@ export type Middleware<TContext extends TaskContext = TaskContext> = (
     next: MiddlewareNext
 ) => void | Promise<void>;
 
-// ── Retry & Error Resolution ─────────────────────────────────────────
+// ── Retry & Error Handling ──────────────────────────────────────────
 
 export interface RetryPolicy {
     readonly attempts: number;
@@ -219,16 +220,7 @@ export type ErrorResolver<TContext extends TaskContext = TaskContext> = (
 
 export type TaskErrorResolution<TContext extends TaskContext = TaskContext> = ErrorResolution | ErrorResolver<TContext>;
 
-// ── Parallel Options ─────────────────────────────────────────────────
-
-export type MergeResolver<TState extends StateShape> = <TStateKey extends keyof TState>(
-    stateKey: TStateKey,
-    values: readonly TState[TStateKey][]
-) => TState[TStateKey];
-
-export type MergeStrategy<TState extends StateShape> = "arrays" | "overwrite" | "strict" | MergeResolver<TState>;
-
-// ── Node Definitions ─────────────────────────────────────────────────
+// ── Node Options ────────────────────────────────────────────────────
 
 export interface TaskOptions<TContext extends TaskContext = TaskContext> {
     readonly middleware?: readonly Middleware<TContext>[];
@@ -242,6 +234,13 @@ export interface GroupOptions {
     readonly name?: string;
 }
 
+export type MergeResolver<TState extends AnyRecord<TState>> = <TStateKey extends keyof TState>(
+    stateKey: TStateKey,
+    values: readonly TState[TStateKey][]
+) => TState[TStateKey];
+
+export type MergeStrategy<TState extends AnyRecord<TState>> = "arrays" | "overwrite" | "strict" | MergeResolver<TState>;
+
 export interface ParallelOptions<TContext extends TaskContext = TaskContext> extends GroupOptions {
     readonly cleanupContext?: (context: FlowContextOf<TContext>, meta: ParallelBranchInfo) => void | Promise<void>;
     readonly concurrency?: number;
@@ -252,6 +251,8 @@ export interface ParallelOptions<TContext extends TaskContext = TaskContext> ext
     readonly merge?: MergeStrategy<StateOf<TContext>>;
     readonly mode?: ParallelMode;
 }
+
+// ── Node Definitions ────────────────────────────────────────────────
 
 export interface TaskDefinition<TContext extends TaskContext = TaskContext> {
     readonly handler: TaskHandler<TContext>;
@@ -291,7 +292,29 @@ export type FlowNode<TContext extends TaskContext = TaskContext> =
     | ParallelDefinition<TContext>
     | TaskDefinition<TContext>;
 
-// ── Flow Definition ──────────────────────────────────────────────────
+// ── Flow Builder ────────────────────────────────────────────────────
+
+export interface FlowBuilderApi<TContext extends TaskContext = TaskContext> {
+    group(
+        id: string,
+        children: readonly FlowNode<TContext>[],
+        options?: GroupOptions
+    ): GroupDefinition<TContext>;
+
+    parallel(
+        id: string,
+        children: readonly FlowNode<TContext>[],
+        options?: ParallelOptions<TContext>
+    ): ParallelDefinition<TContext>;
+
+    task(
+        id: string,
+        handler: TaskHandler<TContext>,
+        options?: TaskOptions<TContext>
+    ): TaskDefinition<TContext>;
+}
+
+// ── Flow Definition ─────────────────────────────────────────────────
 
 export interface FlowHooks<TContext extends TaskContext = TaskContext> {
     readonly onComplete?: (
@@ -306,18 +329,6 @@ export interface FlowHooks<TContext extends TaskContext = TaskContext> {
     ) => void | Promise<void>;
 }
 
-export interface FlowBuilderApi<TContext extends TaskContext = TaskContext> {
-    group(id: string, children: readonly FlowNode<TContext>[], options?: GroupOptions): GroupDefinition<TContext>;
-
-    parallel(
-        id: string,
-        children: readonly FlowNode<TContext>[],
-        options?: ParallelOptions<TContext>
-    ): ParallelDefinition<TContext>;
-
-    task(id: string, handler: TaskHandler<TContext>, options?: TaskOptions<TContext>): TaskDefinition<TContext>;
-}
-
 export interface FlowDefinition<TContext extends TaskContext = TaskContext> {
     readonly hooks: FlowHooks<TContext>;
     readonly id: string;
@@ -327,7 +338,7 @@ export interface FlowDefinition<TContext extends TaskContext = TaskContext> {
     readonly nodes: readonly FlowNode<TContext>[];
 }
 
-// ── Run Result ───────────────────────────────────────────────────────
+// ── Run Result ──────────────────────────────────────────────────────
 
 export interface TaskRunResult {
     readonly attempts: number;
@@ -338,7 +349,7 @@ export interface TaskRunResult {
     readonly taskName: string;
 }
 
-export interface BaseRunResult<TState extends StateShape> {
+export interface BaseRunResult<TState extends AnyRecord<TState>> {
     readonly durationMs: number;
     readonly flowId: string;
     readonly flowName: string;
@@ -347,33 +358,33 @@ export interface BaseRunResult<TState extends StateShape> {
     readonly tasks: readonly TaskRunResult[];
 }
 
-export interface CompletedResult<TState extends StateShape> extends BaseRunResult<TState> {
+export interface CompletedResult<TState extends AnyRecord<TState>> extends BaseRunResult<TState> {
     readonly cancelReason?: undefined;
     readonly error?: undefined;
     readonly status: "completed";
     readonly stopReason?: string;
 }
 
-export interface FailedResult<TState extends StateShape> extends BaseRunResult<TState> {
+export interface FailedResult<TState extends AnyRecord<TState>> extends BaseRunResult<TState> {
     readonly cancelReason?: undefined;
     readonly error: Error;
     readonly status: "failed";
     readonly stopReason?: string;
 }
 
-export interface CancelledResult<TState extends StateShape> extends BaseRunResult<TState> {
+export interface CancelledResult<TState extends AnyRecord<TState>> extends BaseRunResult<TState> {
     readonly cancelReason?: string;
     readonly error?: undefined;
     readonly status: "cancelled";
     readonly stopReason?: string;
 }
 
-export type RunResult<TState extends StateShape> =
+export type RunResult<TState extends AnyRecord<TState>> =
     | CancelledResult<TState>
     | CompletedResult<TState>
     | FailedResult<TState>;
 
-// ── Extension ────────────────────────────────────────────────────────
+// ── Extension ───────────────────────────────────────────────────────
 
 export interface ExtensionApi {
     emit(type: string, data: object): void;
@@ -389,9 +400,9 @@ export interface Extension<TExtension extends object> {
     dispose?(extensionContext: TExtension, extensionApi: ExtensionApi): void | Promise<void>;
 }
 
-// ── FlowHandle ───────────────────────────────────────────────────────
+// ── Flow Handle ─────────────────────────────────────────────────────
 
-export interface FlowHandle<TState extends StateShape> {
+export interface FlowHandle<TState extends AnyRecord<TState>> {
     cancel(reason?: string): void;
     readonly flowId: string;
     join(): Promise<RunResult<TState>>;
@@ -401,22 +412,14 @@ export interface FlowHandle<TState extends StateShape> {
     status(): RunStatus;
 }
 
-// ── Engine Options ───────────────────────────────────────────────────
+// ── Engine Options ──────────────────────────────────────────────────
 
-export type MergeExtensionTypes<TExtensions extends readonly Extension<object>[]> = TExtensions extends readonly [
-    Extension<infer TFirst extends object>,
-    ...infer TRest extends readonly Extension<object>[],
-]
-    ? TFirst & MergeExtensionTypes<TRest>
-    : object;
-
-export interface FlowEngineOptions<TUserEvents extends EventMap = EmptyEventMap> {
-    readonly extensions?: readonly Extension<object>[];
+export interface FlowEngineOptions<TUserEvents extends ObjectRecord<TUserEvents> = EmptyEventMap> {
     readonly onSubscriberError?: (error: Error, type: string) => void;
     readonly subscribers?: readonly EventSubscriber<EngineEventMap<TUserEvents>>[];
 }
 
-// ── Type-erased aliases (invariant generics) ────────────────────────
+// ── Type-erased aliases ─────────────────────────────────────────────
 
 // biome-ignore lint/suspicious/noExplicitAny: type erasure — invariant generic requires `any` for heterogeneous storage
 export type AnyFlowDefinition = FlowDefinition<any>;
@@ -428,3 +431,5 @@ export type AnyMiddleware = Middleware<any>;
 export type AnyParallelDefinition = ParallelDefinition<any>;
 // biome-ignore lint/suspicious/noExplicitAny: type erasure — invariant generic requires `any` for heterogeneous storage
 export type AnyTaskDefinition = TaskDefinition<any>;
+// biome-ignore lint/suspicious/noExplicitAny: type erasure — invariant generic requires `any` for heterogeneous storage
+export type AnyEventBus = EventBus<any>;

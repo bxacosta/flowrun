@@ -1,6 +1,7 @@
 import { coreContextKeys } from "../core/constants.ts";
 import { FlowEngineError } from "../core/errors.ts";
 import type {
+    AnyEventBus,
     CompletedResult,
     Extension,
     ExtensionApi,
@@ -13,7 +14,6 @@ import type {
     TaskRunResult,
 } from "../core/types.ts";
 import type { RunController } from "../engine/run-controller.ts";
-import type { AnyEventBus } from "../events/event-bus.ts";
 import { FlowStateStore } from "../state/state-store.ts";
 import { cloneValue } from "../utils/clone.ts";
 import { normalizeError } from "../utils/errors.ts";

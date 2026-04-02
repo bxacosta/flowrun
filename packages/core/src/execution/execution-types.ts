@@ -1,6 +1,5 @@
-import type { AnyMiddleware, FlowInfo, StateShape, TaskRunResult } from "../core/types.ts";
+import type { AnyEventBus, AnyMiddleware, FlowInfo, StateShape, TaskRunResult } from "../core/types.ts";
 import type { RunController } from "../engine/run-controller.ts";
-import type { AnyEventBus } from "../events/event-bus.ts";
 import type { FlowStateStore } from "../state/state-store.ts";
 
 export interface NodeExecutionOutcome {

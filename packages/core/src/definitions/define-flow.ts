@@ -97,29 +97,18 @@ const validateFlowDefinition = (flow: AnyFlowDefinition): void => {
     }
 };
 
-// ── Input types ──────────────────────────────────────────────────────
+// ── Input type ──────────────────────────────────────────────────────
 
-interface FlowInputBase<TContext extends TaskContext> {
+export interface FlowInput<TContext extends TaskContext = TaskContext> {
     readonly hooks?: FlowHooks<TContext>;
     readonly id: string;
     readonly initialState?: StateOf<TContext> | (() => StateOf<TContext>);
     readonly middleware?: readonly Middleware<TContext>[];
     readonly name?: string;
+    readonly nodes:
+        | readonly FlowNode<TContext>[]
+        | ((builder: FlowBuilderApi<TContext>) => readonly FlowNode<TContext>[]);
 }
-
-type FlowInputWithNodes<TContext extends TaskContext> = FlowInputBase<TContext> & {
-    readonly build?: never;
-    readonly nodes: readonly FlowNode<TContext>[];
-};
-
-type FlowInputWithBuilder<TContext extends TaskContext> = FlowInputBase<TContext> & {
-    readonly build: (builder: FlowBuilderApi<TContext>) => readonly FlowNode<TContext>[];
-    readonly nodes?: never;
-};
-
-export type FlowInput<TContext extends TaskContext = TaskContext> =
-    | FlowInputWithBuilder<TContext>
-    | FlowInputWithNodes<TContext>;
 
 // ── Builder API ──────────────────────────────────────────────────────
 
@@ -136,19 +125,24 @@ const createBuilderApi = <TContext extends TaskContext>(): FlowBuilderApi<TConte
 
 // ── defineFlow ───────────────────────────────────────────────────────
 
+const resolveNodes = <TContext extends TaskContext>(input: FlowInput<TContext>): readonly FlowNode<TContext>[] => {
+    if (typeof input.nodes === "function") {
+        return input.nodes(createBuilderApi<TContext>());
+    }
+
+    return input.nodes;
+};
+
 export const defineFlow = <TContext extends TaskContext = TaskContext>(
     input: FlowInput<TContext>
 ): FlowDefinition<TContext> => {
-    const builderApi = createBuilderApi<TContext>();
-    const nodes = input.build === undefined ? input.nodes : input.build(builderApi);
-
     const flow: FlowDefinition<TContext> = {
         hooks: input.hooks ?? {},
         id: input.id,
         initialState: input.initialState,
         middleware: input.middleware ?? [],
         name: input.name ?? input.id,
-        nodes,
+        nodes: resolveNodes(input),
     };
 
     validateFlowDefinition(flow);
