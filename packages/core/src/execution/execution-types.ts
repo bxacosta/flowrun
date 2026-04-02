@@ -14,12 +14,12 @@ export interface TaskExecutionOutcome extends NodeExecutionOutcome {
 export interface ExecutionContext {
     emitUserEvent(type: string, data: object): void;
     readonly eventBus: AnyEventBus;
+    readonly extensionContext: object;
     readonly flowInfo: FlowInfo;
     readonly flowMiddleware: readonly AnyMiddleware[];
     readonly params: unknown;
     readonly runController: RunController;
     readonly runId: string;
-    readonly scopedContext: object;
     readonly signal: AbortSignal;
     readonly stateStore: FlowStateStore<StateShape>;
     readonly taskResults: TaskRunResult[];

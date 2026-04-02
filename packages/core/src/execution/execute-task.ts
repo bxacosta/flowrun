@@ -85,7 +85,7 @@ const makeTaskContext = (context: ExecutionContext, task: AnyTaskDefinition, att
             signal,
             state: context.stateStore,
             stop: (reason) => context.runController.requestStop(reason),
-            userContext: context.scopedContext,
+            extensionContext: context.extensionContext,
         },
         { id: task.id, name: task.name },
         attempt

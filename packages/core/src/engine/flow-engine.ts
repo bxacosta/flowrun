@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { FlowEngineError } from "../core/errors.ts";
 import type {
+    AnyExtension,
     AnyFlowDefinition,
     EmptyEventMap,
     EngineEventMap,
     EventSubscriberApi,
     Extension,
-    ExtensionApi,
     FlowDefinition,
     FlowEngineOptions,
     FlowHandle,
@@ -24,86 +24,6 @@ import type { ObjectRecord, Simplify } from "../utils/type-helpers.ts";
 import { FlowHandleImpl } from "./flow-handle.ts";
 import { RunController } from "./run-controller.ts";
 
-// ── Extension helpers ──────────────────────────────────────────────
-
-const registerExtensionKeys = (usedKeys: Set<string>, extensionContext: object): void => {
-    for (const key of Object.keys(extensionContext)) {
-        if (usedKeys.has(key)) {
-            throw new FlowEngineError(`Extension key "${key}" collides with a key from a previously created extension`);
-        }
-        usedKeys.add(key);
-    }
-};
-
-const rollbackExtensions = async (
-    extensions: readonly Extension<object>[],
-    contexts: readonly object[],
-    extensionApi: ExtensionApi
-): Promise<void> => {
-    for (let i = contexts.length - 1; i >= 0; i--) {
-        const extension = extensions[i];
-        const ctx = contexts[i];
-        if (extension?.dispose !== undefined && ctx !== undefined) {
-            try {
-                await extension.dispose(ctx, extensionApi);
-            } catch {
-                // Swallow disposal errors during rollback
-            }
-        }
-    }
-};
-
-const normalizeExtensions = (extensions: readonly Extension<object>[]): Extension<object> | undefined => {
-    if (extensions.length === 0) {
-        return undefined;
-    }
-
-    if (extensions.length === 1) {
-        return extensions[0];
-    }
-
-    const runContexts = new Map<string, object[]>();
-
-    return {
-        create: async (extensionApi: ExtensionApi) => {
-            const contexts: object[] = [];
-            const usedKeys = new Set<string>();
-            let merged: object = {};
-
-            try {
-                for (const extension of extensions) {
-                    const extensionContext = await extension.create(extensionApi);
-                    contexts.push(extensionContext);
-                    registerExtensionKeys(usedKeys, extensionContext);
-                    merged = { ...merged, ...extensionContext };
-                }
-            } catch (error) {
-                await rollbackExtensions(extensions, contexts, extensionApi);
-                throw error;
-            }
-
-            runContexts.set(extensionApi.runId, contexts);
-            return merged;
-        },
-        dispose: async (_mergedContext: object, extensionApi: ExtensionApi) => {
-            const contexts = runContexts.get(extensionApi.runId);
-            runContexts.delete(extensionApi.runId);
-
-            if (contexts === undefined) {
-                return;
-            }
-
-            for (let i = extensions.length - 1; i >= 0; i--) {
-                const extension = extensions[i];
-                const ctx = contexts[i];
-                if (extension?.dispose !== undefined && ctx !== undefined) {
-                    await extension.dispose(ctx, extensionApi);
-                }
-            }
-        },
-    };
-};
-
 // ── FlowEngine ─────────────────────────────────────────────────────
 
 export class FlowEngine<
@@ -111,10 +31,8 @@ export class FlowEngine<
     TUserEvents extends ObjectRecord<TUserEvents> = EmptyEventMap,
 > {
     private readonly eventBus: EventBus<EngineEventMap<TUserEvents>>;
-    private readonly extensionRegistry: Extension<object>[] = [];
+    private readonly extensions: AnyExtension[] = [];
     private readonly registry = new Map<string, AnyFlowDefinition>();
-    private normalizedExtension: Extension<object> | undefined;
-    private extensionsDirty = false;
 
     readonly events: EventSubscriberApi<EngineEventMap<TUserEvents>>;
 
@@ -132,8 +50,7 @@ export class FlowEngine<
     extend<TNewExt extends object>(
         extension: Extension<TNewExt>
     ): FlowEngine<Simplify<TExtension & TNewExt>, TUserEvents> {
-        this.extensionRegistry.push(extension as Extension<object>);
-        this.extensionsDirty = true;
+        this.extensions.push(extension as AnyExtension);
         // biome-ignore lint/suspicious/noExplicitAny: accumulative chaining requires type-level cast — same pattern as tRPC/Hono
         return this as any;
     }
@@ -169,7 +86,7 @@ export class FlowEngine<
 
         const resultPromise = executeFlow({
             eventBus: this.eventBus,
-            extension: this.resolveExtension(),
+            extensions: this.extensions,
             params,
             plan,
             runController,
@@ -189,15 +106,6 @@ export class FlowEngine<
     }
 
     // ── Private ────────────────────────────────────────────────────
-
-    private resolveExtension(): Extension<object> | undefined {
-        if (this.extensionsDirty) {
-            this.normalizedExtension = normalizeExtensions(this.extensionRegistry);
-            this.extensionsDirty = false;
-        }
-
-        return this.normalizedExtension;
-    }
 
     private resolveFlowDefinition(flowOrId: AnyFlowDefinition | string): AnyFlowDefinition {
         if (typeof flowOrId !== "string") {

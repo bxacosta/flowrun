@@ -295,11 +295,7 @@ export type FlowNode<TContext extends TaskContext = TaskContext> =
 // ── Flow Builder ────────────────────────────────────────────────────
 
 export interface FlowBuilderApi<TContext extends TaskContext = TaskContext> {
-    group(
-        id: string,
-        children: readonly FlowNode<TContext>[],
-        options?: GroupOptions
-    ): GroupDefinition<TContext>;
+    group(id: string, children: readonly FlowNode<TContext>[], options?: GroupOptions): GroupDefinition<TContext>;
 
     parallel(
         id: string,
@@ -307,11 +303,7 @@ export interface FlowBuilderApi<TContext extends TaskContext = TaskContext> {
         options?: ParallelOptions<TContext>
     ): ParallelDefinition<TContext>;
 
-    task(
-        id: string,
-        handler: TaskHandler<TContext>,
-        options?: TaskOptions<TContext>
-    ): TaskDefinition<TContext>;
+    task(id: string, handler: TaskHandler<TContext>, options?: TaskOptions<TContext>): TaskDefinition<TContext>;
 }
 
 // ── Flow Definition ─────────────────────────────────────────────────
@@ -431,5 +423,7 @@ export type AnyMiddleware = Middleware<any>;
 export type AnyParallelDefinition = ParallelDefinition<any>;
 // biome-ignore lint/suspicious/noExplicitAny: type erasure — invariant generic requires `any` for heterogeneous storage
 export type AnyTaskDefinition = TaskDefinition<any>;
+// biome-ignore lint/suspicious/noExplicitAny: type erasure — invariant generic requires `any` for heterogeneous storage
+export type AnyExtension = Extension<any>;
 // biome-ignore lint/suspicious/noExplicitAny: type erasure — invariant generic requires `any` for heterogeneous storage
 export type AnyEventBus = EventBus<any>;

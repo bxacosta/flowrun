@@ -138,23 +138,23 @@ export const executeParallel = async (
         const branchTaskResults: TaskRunResult[] = [];
         const branchSignal = createCompositeAbortController([context.signal, groupAbortController.signal]);
 
-        const makeBranchFlowContext = (userContext: object) =>
+        const makeBranchFlowContext = (extensionContext: object) =>
             createFlowContext({
                 emit: (type, data) => context.emitUserEvent(type, data),
+                extensionContext,
                 flow: context.flowInfo,
                 params: context.params,
                 runId: context.runId,
                 signal: branchSignal.signal,
                 state: branchState,
                 stop: (reason) => context.runController.requestStop(reason),
-                userContext,
             });
 
-        const flowContext = makeBranchFlowContext(context.scopedContext);
+        const flowContext = makeBranchFlowContext(context.extensionContext);
 
-        const branchScopedContext =
+        const branchExtensionContext =
             node.definition.forkContext === undefined
-                ? context.scopedContext
+                ? context.extensionContext
                 : await node.definition.forkContext(flowContext, meta);
 
         let branchResult: BranchResult = {
@@ -167,7 +167,7 @@ export const executeParallel = async (
             const outcome = await executeNodes(
                 {
                     ...context,
-                    scopedContext: branchScopedContext,
+                    extensionContext: branchExtensionContext,
                     signal: branchSignal.signal,
                     stateStore: branchState,
                     taskResults: branchTaskResults,
@@ -207,7 +207,7 @@ export const executeParallel = async (
             const cleanupFn = node.definition.cleanupContext;
             if (cleanupFn !== undefined) {
                 await tryCleanup(
-                    () => cleanupFn(makeBranchFlowContext(branchScopedContext), meta),
+                    () => cleanupFn(makeBranchFlowContext(branchExtensionContext), meta),
                     (error) => {
                         dispatchEvent(context.eventBus, context.flowInfo.id, context.runId, "log", {
                             data: {

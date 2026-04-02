@@ -2,8 +2,8 @@ import { coreContextKeys } from "../core/constants.ts";
 import { FlowEngineError } from "../core/errors.ts";
 import type {
     AnyEventBus,
+    AnyExtension,
     CompletedResult,
-    Extension,
     ExtensionApi,
     FlowContext,
     FlowInfo,
@@ -28,7 +28,7 @@ import type { ResolvedFlowPlan } from "./resolver.ts";
 
 export interface ExecuteFlowOptions {
     readonly eventBus: AnyEventBus;
-    readonly extension?: Extension<object>;
+    readonly extensions: readonly AnyExtension[];
     readonly params: unknown;
     readonly plan: ResolvedFlowPlan;
     readonly runController: RunController;
@@ -50,7 +50,7 @@ const validateExtensionContext = (context: object): void => {
     }
 
     for (const key of Object.keys(context)) {
-        if (coreContextKeys.includes(key as (typeof coreContextKeys)[number])) {
+        if (coreContextKeys.includes(key)) {
             throw new FlowEngineError(`Extension context key "${key}" collides with a core context property`);
         }
     }
@@ -118,30 +118,48 @@ const createExtensionApi = (
     return { emit, flow: flowInfo, log, params, runId, signal };
 };
 
-const createExtensionContext = async (extension: Extension<object> | undefined, api: ExtensionApi): Promise<object> => {
-    if (extension === undefined) {
-        return {};
+interface ExtensionsResult {
+    readonly contexts: readonly object[];
+    readonly merged: object;
+}
+
+const createExtensionsContext = async (
+    extensions: readonly AnyExtension[],
+    api: ExtensionApi
+): Promise<ExtensionsResult> => {
+    const contexts: object[] = [];
+    let merged: object = {};
+
+    for (const extension of extensions) {
+        try {
+            const context = await extension.create(api);
+            validateExtensionContext(context);
+            contexts.push(context);
+            merged = { ...merged, ...context };
+        } catch (error) {
+            await disposeExtensions(extensions, contexts, api);
+            throw error;
+        }
     }
 
-    const context = await extension.create(api);
-    validateExtensionContext(context);
-    return context;
+    return { contexts, merged };
 };
 
-const disposeExtension = async (
-    extension: Extension<object> | undefined,
-    context: object,
+const disposeExtensions = async (
+    extensions: readonly AnyExtension[],
+    contexts: readonly object[],
     api: ExtensionApi,
-    logInternal: (message: string, data?: unknown) => void
+    onError?: (error: unknown) => void
 ): Promise<void> => {
-    if (extension === undefined || extension.dispose === undefined) {
-        return;
-    }
-
-    try {
-        await extension.dispose(context, api);
-    } catch (error) {
-        logInternal("Extension dispose failed", { error: normalizeError(error) });
+    for (let i = contexts.length - 1; i >= 0; i--) {
+        const extension = extensions[i];
+        if (extension?.dispose !== undefined) {
+            try {
+                await extension.dispose(contexts[i], api);
+            } catch (error) {
+                onError?.(error);
+            }
+        }
     }
 };
 
@@ -171,6 +189,7 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
     const stateStore = new FlowStateStore<StateShape>(createInitialState(options.plan.flow.initialState));
     const taskResults: TaskRunResult[] = [];
 
+    let extensionContexts: readonly object[] = [];
     let extensionContext: object = {};
     let flowContext: FlowContext | undefined;
     let finalError: Error | undefined;
@@ -193,7 +212,9 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
     );
 
     try {
-        extensionContext = await createExtensionContext(options.extension, extensionApi);
+        const result = await createExtensionsContext(options.extensions, extensionApi);
+        extensionContexts = result.contexts;
+        extensionContext = result.merged;
 
         const ctx = createFlowContext({
             emit: dispatch,
@@ -203,7 +224,7 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
             signal: options.runController.signal,
             state: stateStore,
             stop: (reason) => options.runController.requestStop(reason),
-            userContext: extensionContext,
+            extensionContext,
         });
         flowContext = ctx;
 
@@ -223,7 +244,7 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
                     params: options.params,
                     runController: options.runController,
                     runId: options.runId,
-                    scopedContext: extensionContext,
+                    extensionContext,
                     signal: options.runController.signal,
                     stateStore,
                     taskResults,
@@ -298,7 +319,9 @@ export const executeFlow = async (options: ExecuteFlowOptions): Promise<RunResul
     }
 
     options.runController.setTerminalStatus(result.status);
-    await disposeExtension(options.extension, extensionContext, extensionApi, logInternal);
+    await disposeExtensions(options.extensions, extensionContexts, extensionApi, (error) => {
+        logInternal("Extension dispose failed", { error: normalizeError(error) });
+    });
 
     return result;
 };

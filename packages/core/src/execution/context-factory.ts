@@ -11,13 +11,13 @@ import type {
 
 export interface SharedContextOptions {
     readonly emit: (type: string, data: object) => void;
+    readonly extensionContext: object;
     readonly flow: FlowInfo;
     readonly params: unknown;
     readonly runId: string;
     readonly signal: AbortSignal;
     readonly state: StateStore<StateShape>;
     readonly stop: (reason?: string) => never;
-    readonly userContext: object;
 }
 
 export const buildLogger = (emit: (payload: LogEvent) => void, task?: TaskInfo): Logger => ({
@@ -32,7 +32,7 @@ const createLogger = (options: SharedContextOptions, task: TaskInfo | undefined)
 
 export const createFlowContext = (options: SharedContextOptions): FlowContext =>
     ({
-        ...options.userContext,
+        ...options.extensionContext,
         emit: options.emit,
         flow: options.flow,
         log: createLogger(options, undefined),
@@ -45,7 +45,7 @@ export const createFlowContext = (options: SharedContextOptions): FlowContext =>
 
 export const createTaskContext = (options: SharedContextOptions, task: TaskInfo, attempt: number): TaskContext =>
     ({
-        ...options.userContext,
+        ...options.extensionContext,
         attempt,
         emit: options.emit,
         flow: options.flow,
