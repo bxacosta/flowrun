@@ -1,0 +1,278 @@
+import type { ExecutionContext, FlowProgress, FlowRuntime } from "./context.ts";
+import { buildFlowContext } from "./context.ts";
+import { normalizeError } from "./errors.ts";
+import type { InternalBus } from "./event-bus.ts";
+import { executeNodes } from "./execute.ts";
+import type { AnyExtension, ExtensionContext } from "./extension.ts";
+import { buildLogger } from "./logger.ts";
+import { compose } from "./middleware.ts";
+import { PauseGate } from "./signal.ts";
+import { createStateStore } from "./state.ts";
+import type {
+    AnyFlowDefinition,
+    AnyFlowHandle,
+    AnyFlowResult,
+    AnyFlowStateStore,
+    EventMap,
+    NodeDefinition,
+    PublishableBus,
+    RunStatus,
+} from "./types.ts";
+
+// ── Internal Types ────────────────────────────────────────────────────
+
+interface ExtensionInstance {
+    extension: AnyExtension;
+    provided: Record<string, unknown>;
+}
+
+interface CancellationState {
+    reason?: string;
+    requested: boolean;
+}
+
+export interface FlowRunArgs {
+    bus: InternalBus<EventMap>;
+    definition: AnyFlowDefinition;
+    extensions: readonly AnyExtension[];
+    flowId: string;
+    nodes: readonly NodeDefinition[];
+    params: Record<string, unknown>;
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
+function isTerminalStatus(status: RunStatus): boolean {
+    return status === "cancelled" || status === "completed" || status === "failed";
+}
+
+// ── Extension Lifecycle ──────────────────────────────────────────────
+
+async function disposeExtensions(instances: readonly ExtensionInstance[]): Promise<void> {
+    for (const { extension, provided } of [...instances].reverse()) {
+        await extension.dispose?.(provided);
+    }
+}
+
+async function createExtensions(
+    extensions: readonly AnyExtension[],
+    context: ExtensionContext<EventMap>
+): Promise<{ instances: ExtensionInstance[]; provided: Record<string, unknown> }> {
+    const instances: ExtensionInstance[] = [];
+    const provided: Record<string, unknown> = {};
+
+    try {
+        for (const extension of extensions) {
+            const result = extension.create(context);
+            Object.assign(provided, result);
+            instances.push({ extension, provided: result });
+        }
+    } catch (createError) {
+        await disposeExtensions(instances);
+        throw createError;
+    }
+
+    return { instances, provided };
+}
+
+// ── Pipeline ─────────────────────────────────────────────────────────
+
+interface PipelineArgs {
+    bus: InternalBus<EventMap>;
+    cancellation: CancellationState;
+    controller: AbortController;
+    definition: AnyFlowDefinition;
+    executionContext: ExecutionContext;
+    flowId: string;
+    flowStart: number;
+    nodes: readonly NodeDefinition[];
+    runId: string;
+    state: AnyFlowStateStore;
+}
+
+async function runFlowPipeline(args: PipelineArgs): Promise<AnyFlowResult> {
+    const { bus, cancellation, controller, definition, executionContext, flowId, flowStart, nodes, runId, state } =
+        args;
+    const flowMiddleware = definition.middleware ?? [];
+    const flowContext = buildFlowContext(executionContext.runtime, state, controller.signal);
+
+    const resultBase = () => ({
+        duration: Date.now() - flowStart,
+        flowId,
+        runId,
+        state: state.snapshot(),
+        tasks: executionContext.progress.taskResults,
+    });
+
+    let flowStarted = false;
+
+    try {
+        controller.signal.throwIfAborted();
+
+        await compose(flowMiddleware, flowContext, async () => {
+            flowStarted = true;
+            await bus.publish("flow:start", { flowId, runId }, { source: "system" });
+            await executeNodes(nodes, executionContext, state, controller.signal);
+        });
+
+        if (flowStarted) {
+            await bus.publish(
+                "flow:end",
+                { duration: Date.now() - flowStart, flowId, runId, status: "success" },
+                { source: "system" }
+            );
+        }
+
+        return { ...resultBase(), status: "success" } as AnyFlowResult;
+    } catch (error) {
+        if (cancellation.requested) {
+            if (flowStarted) {
+                await bus.publish(
+                    "flow:end",
+                    {
+                        duration: Date.now() - flowStart,
+                        flowId,
+                        reason: cancellation.reason,
+                        runId,
+                        status: "cancelled",
+                    },
+                    { source: "system" }
+                );
+            }
+            return { ...resultBase(), reason: cancellation.reason, status: "cancelled" } as AnyFlowResult;
+        }
+
+        controller.abort();
+        const failedError = normalizeError(error);
+        if (flowStarted) {
+            await bus.publish(
+                "flow:end",
+                { duration: Date.now() - flowStart, error: failedError, flowId, runId, status: "failed" },
+                { source: "system" }
+            );
+        }
+        return { ...resultBase(), error: failedError, status: "failed" } as AnyFlowResult;
+    }
+}
+
+// ── Start Orchestrator ──────────────────────────────────────────────
+
+export async function startFlow(args: FlowRunArgs): Promise<AnyFlowHandle> {
+    const { bus, definition, extensions, flowId, nodes, params } = args;
+
+    const frozenParams = Object.freeze(params);
+    const runId = crypto.randomUUID();
+    const flowStart = Date.now();
+    const initialState = definition.state ? definition.state(frozenParams) : {};
+    const state = createStateStore(initialState);
+    const logger = buildLogger(flowId, runId, bus);
+
+    const extensionContext: ExtensionContext<EventMap> = {
+        bus,
+        flowId,
+        log: logger,
+        runId,
+    };
+
+    const { instances, provided } = await createExtensions(extensions, extensionContext);
+
+    const publicBus: PublishableBus<EventMap, EventMap> = bus.narrow();
+    const controller = new AbortController();
+    const pauseGate = new PauseGate();
+
+    const runtime: FlowRuntime = {
+        bus,
+        flowId,
+        log: logger,
+        params: frozenParams,
+        provided,
+        publicBus,
+        runId,
+    };
+
+    const progress: FlowProgress = { taskResults: [] };
+
+    const executionContext: ExecutionContext = {
+        pauseGate,
+        pathSegments: [],
+        progress,
+        runtime,
+    };
+
+    let currentStatus: RunStatus = "running";
+    const cancellation: CancellationState = { requested: false };
+
+    const pipelinePromise = runFlowPipeline({
+        bus,
+        cancellation,
+        controller,
+        definition,
+        executionContext,
+        flowId,
+        flowStart,
+        nodes,
+        runId,
+        state,
+    })
+        .then((result) => {
+            if (!isTerminalStatus(currentStatus)) {
+                if (result.status === "cancelled") {
+                    currentStatus = "cancelled";
+                } else if (result.status === "failed") {
+                    currentStatus = "failed";
+                } else {
+                    currentStatus = "completed";
+                }
+            }
+            return result;
+        })
+        .finally(() =>
+            disposeExtensions(instances).catch(() => {
+                /* cleanup errors are non-fatal */
+            })
+        );
+
+    return {
+        flowId,
+        runId,
+        cancel(reason?: string) {
+            if (isTerminalStatus(currentStatus)) {
+                return;
+            }
+            cancellation.requested = true;
+            cancellation.reason = reason;
+            currentStatus = "cancelled";
+            pauseGate.resume();
+            controller.abort();
+        },
+        join() {
+            return pipelinePromise;
+        },
+        pause() {
+            if (currentStatus !== "running") {
+                return;
+            }
+            currentStatus = "paused";
+            pauseGate.pause();
+            bus.publish("flow:paused", { flowId, runId }, { source: "system" });
+        },
+        resume() {
+            if (currentStatus !== "paused") {
+                return;
+            }
+            currentStatus = "running";
+            pauseGate.resume();
+            bus.publish("flow:resumed", { flowId, runId }, { source: "system" });
+        },
+        status() {
+            return currentStatus;
+        },
+    };
+}
+
+// ── Run (sugar) ─────────────────────────────────────────────────────
+
+export async function runFlow(args: FlowRunArgs): Promise<AnyFlowResult> {
+    const handle = await startFlow(args);
+    return handle.join();
+}

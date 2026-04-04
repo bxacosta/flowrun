@@ -1,105 +1,92 @@
-// ── Types ────────────────────────────────────────────────────────────
-
-export type {
-    AnyEventEnvelope,
-    BaseRunResult,
-    // Events
-    BuiltInEventMap,
-    CancelledResult,
-    CompletedResult,
-    // Primitives
-    EmptyEventMap,
-    EngineEventMap,
-    ErrorResolution,
-    ErrorResolutionMeta,
-    ErrorResolver,
-    EventEnvelope,
-    EventHandler,
-    EventMap,
-    EventMetadata,
-    EventSubscriber,
-    EventSubscriberApi,
-    EventsOf,
-    Extension,
-    // Extension
-    ExtensionApi,
-    FailedResult,
-    FlowBuilderApi,
-    // Context
-    FlowContext,
-    FlowContextOf,
-    FlowDefinition,
-    // Engine
-    FlowEngineOptions,
-    // Flow Handle
-    FlowHandle,
-    // Flow Definition
-    FlowHooks,
-    // Info
-    FlowInfo,
-    FlowNode,
-    GroupDefinition,
-    GroupOptions,
-    LifecycleEventMap,
-    // Logging
-    LogEvent,
-    Logger,
-    LogLevel,
-    // Parallel
-    MergeResolver,
-    MergeStrategy,
-    Middleware,
-    MiddlewareNext,
-    ParallelBranchInfo,
-    ParallelDefinition,
-    ParallelMode,
-    ParallelOptions,
-    // Context Utility Types
-    ParamsOf,
-    // Retry & Error Resolution
-    RetryPolicy,
-    RetryStrategy,
-    RunResult,
-    RunStatus,
-    StateOf,
-    StateShape,
-    // State
-    StateStore,
-    TaskContext,
-    // Node Definitions
-    TaskDefinition,
-    TaskErrorResolution,
-    // Handlers & Middleware
-    TaskHandler,
-    TaskInfo,
-    // Node Options
-    TaskOptions,
-    // Run Results
-    TaskRunResult,
-    TaskStatus,
-    TerminalStatus,
-} from "./core/types.ts";
-
-// ── Type Helpers ────────────────────────────────────────────────────
-
-export type { AnyRecord, ObjectRecord, Simplify } from "./utils/type-helpers.ts";
-
-// ── Errors ──────────────────────────────────────────────────────────
+// ── Runtime ───────────────────────────────────────────────────────────
 
 // biome-ignore lint/performance/noBarrelFile: public library entry point
+export { createEngine } from "./engine.ts";
 export {
+    DuplicateNodeNameError,
     FlowEngineError,
-    ParallelMergeError,
-    StopFlowError,
-    TaskTimeoutError,
-} from "./core/errors.ts";
+    InvalidItemsError,
+    InvalidMergeValueError,
+    MergeConflictError,
+    normalizeError,
+} from "./errors.ts";
+export { createEventBus } from "./event-bus.ts";
+export { defineExtension, event, internal } from "./extension.ts";
 
-// ── Definitions ─────────────────────────────────────────────────────
+// ── Types: Engine & Flow ─────────────────────────────────────────────
 
-export type { FlowInput } from "./definitions/define-flow.ts";
-export { defineFlow } from "./definitions/define-flow.ts";
-export { group, parallel, task } from "./definitions/node-factories.ts";
+export type { Engine, FlowTypes, InferEngine } from "./engine.ts";
+export type { EventBusConfig, InternalBus } from "./event-bus.ts";
 
-// ── Engine ──────────────────────────────────────────────────────────
+// ── Types: Node System ───────────────────────────────────────────────
 
-export { createFlowEngine, FlowEngine } from "./engine/flow-engine.ts";
+export type {
+    BackoffStrategy,
+    ContainerErrorMode,
+    EveryNodeConfig,
+    EveryNodeDefinition,
+    Flow,
+    FlowContext,
+    FlowDefinition,
+    FlowHandle,
+    FlowMiddleware,
+    FlowStateStore,
+    ItemsContext,
+    IterationContext,
+    MergeStrategy,
+    Middleware,
+    NodeBuilder,
+    NodeDefinition,
+    ParallelNodeConfig,
+    ParallelNodeDefinition,
+    RetryOptions,
+    RunStatus,
+    TaskContext,
+    TaskErrorMode,
+    TaskMiddleware,
+    TaskNodeConfig,
+    TaskNodeDefinition,
+    TaskRunResult,
+} from "./types.ts";
+
+// ── Types: Extension System ──────────────────────────────────────────
+
+export type {
+    Event,
+    EventDefinitions,
+    EventMarker,
+    Extension,
+    ExtensionConfig,
+    ExtensionContext,
+    ExtractInternalEvents,
+    ExtractPublicEvents,
+    Internal,
+    UnwrapEvents,
+} from "./extension.ts";
+
+// ── Types: Core ──────────────────────────────────────────────────────
+
+export type {
+    AllSystemEvents,
+    AsEventMap,
+    BaseContext,
+    BaseFlowResult,
+    CancelledFlowResult,
+    EmptyObject,
+    Envelope,
+    EventMap,
+    FailedFlowResult,
+    FlowResult,
+    Handler,
+    Logger,
+    MergeAllEvents,
+    MergePublicEvents,
+    PublishableBus,
+    ReadableBus,
+    RunArgs,
+    SubscribeOptions,
+    Subscription,
+    SuccessFlowResult,
+    SystemInternalEvents,
+    SystemPublicEvents,
+} from "./types.ts";
