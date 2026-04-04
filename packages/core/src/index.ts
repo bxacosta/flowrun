@@ -1,6 +1,7 @@
 // ── Runtime ───────────────────────────────────────────────────────────
 
 // biome-ignore lint/performance/noBarrelFile: public library entry point
+export { defineEvery, defineFlow, defineParallel, defineTask } from "./define.ts";
 export { createEngine } from "./engine.ts";
 export {
     DuplicateNodeNameError,
@@ -15,36 +16,62 @@ export { defineExtension, event, internal } from "./extension.ts";
 
 // ── Types: Engine & Flow ─────────────────────────────────────────────
 
-export type { Engine, FlowTypes, InferEngine } from "./engine.ts";
-export type { EventBusConfig, InternalBus } from "./event-bus.ts";
+export type { Engine, FlowScope, InferEngine } from "./engine.ts";
+export type {
+    EventBusConfig,
+    Handler,
+    InternalBus,
+    PublishableBus,
+    ReadableBus,
+    SubscribeOptions,
+    Subscription,
+} from "./event-bus.ts";
+export type {
+    AllSystemEvents,
+    AsEventMap,
+    Envelope,
+    EventMap,
+    MergeAllEvents,
+    MergePublicEvents,
+    SystemInternalEvents,
+    SystemPublicEvents,
+} from "./events.ts";
 
-// ── Types: Node System ───────────────────────────────────────────────
+// ── Types: Scope & Nodes ─────────────────────────────────────────────
 
 export type {
+    AnyScope,
     BackoffStrategy,
+    BaseContext,
+    ChildrenSpec,
     ContainerErrorMode,
-    EveryNodeConfig,
+    EachScope,
+    EveryConfig,
+    EveryForkMeta,
     EveryNodeDefinition,
+    EveryOptions,
     Flow,
     FlowContext,
     FlowDefinition,
     FlowHandle,
-    FlowMiddleware,
     FlowStateStore,
     ItemsContext,
     IterationContext,
     MergeStrategy,
     Middleware,
+    Node,
     NodeBuilder,
     NodeDefinition,
-    ParallelNodeConfig,
+    ParallelConfig,
+    ParallelForkMeta,
     ParallelNodeDefinition,
+    ParallelOptions,
     RetryOptions,
     RunStatus,
+    Scope,
+    TaskConfig,
     TaskContext,
     TaskErrorMode,
-    TaskMiddleware,
-    TaskNodeConfig,
     TaskNodeDefinition,
     TaskRunResult,
 } from "./types.ts";
@@ -64,29 +91,18 @@ export type {
     UnwrapEvents,
 } from "./extension.ts";
 
+// ── Types: Logger ──────────────────────────────────────────────────────
+
+export type { Logger } from "./logger.ts";
+
 // ── Types: Core ──────────────────────────────────────────────────────
 
 export type {
-    AllSystemEvents,
-    AsEventMap,
-    BaseContext,
     BaseFlowResult,
     CancelledFlowResult,
     EmptyObject,
-    Envelope,
-    EventMap,
     FailedFlowResult,
     FlowResult,
-    Handler,
-    Logger,
-    MergeAllEvents,
-    MergePublicEvents,
-    PublishableBus,
-    ReadableBus,
     RunArgs,
-    SubscribeOptions,
-    Subscription,
     SuccessFlowResult,
-    SystemInternalEvents,
-    SystemPublicEvents,
 } from "./types.ts";

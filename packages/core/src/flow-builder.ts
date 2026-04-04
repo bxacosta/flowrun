@@ -1,9 +1,10 @@
 import { DuplicateNodeNameError } from "./errors.ts";
 import type { InternalBus } from "./event-bus.ts";
+import type { EventMap } from "./events.ts";
 import type { AnyExtension } from "./extension.ts";
 import { runFlow, startFlow } from "./flow-runner.ts";
-import { createNodeBuilder } from "./node-builder.ts";
-import type { AnyFlow, AnyFlowDefinition, AnyRunArgs, EventMap, NodeDefinition } from "./types.ts";
+import { createNodeBuilder, resolveChildren } from "./node-builder.ts";
+import type { AnyFlow, AnyRunArgs, AnyScope, FlowDefinition, NodeDefinition } from "./types.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -19,14 +20,13 @@ function validateTopLevelNodes(nodes: readonly NodeDefinition[], flowId: string)
 
 // ── Flow Factory ─────────────────────────────────────────────────────
 
-export function createFlow(
+export function createFlow<TScope extends AnyScope>(
     flowId: string,
-    definition: AnyFlowDefinition,
+    definition: FlowDefinition<TScope>,
     extensions: readonly AnyExtension[],
     bus: InternalBus<EventMap>
 ): AnyFlow {
-    const nodeBuilder = createNodeBuilder();
-    const nodes = definition.nodes(nodeBuilder);
+    const nodes = resolveChildren(definition.nodes, createNodeBuilder<TScope>());
     validateTopLevelNodes(nodes, flowId);
 
     const buildArgs = (args: AnyRunArgs) => ({

@@ -31,12 +31,12 @@ function buildStore<TState extends Record<string, unknown>>(
 
         get(key) {
             if (data.has(key)) {
-                return structuredClone(data.get(key)) as TState[typeof key] | undefined;
+                return structuredClone(data.get(key)) as TState[typeof key];
             }
             if (parent) {
                 return parent.get(key);
             }
-            return undefined;
+            return undefined as TState[typeof key];
         },
 
         getWrittenValues() {

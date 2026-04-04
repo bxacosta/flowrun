@@ -1,28 +1,10 @@
 import { FlowEngineError } from "./errors.ts";
-import type { EventBusConfig } from "./event-bus.ts";
+import type { EventBusConfig, ReadableBus } from "./event-bus.ts";
 import { createEventBus } from "./event-bus.ts";
+import type { AllSystemEvents, EventMap, MergeAllEvents, MergePublicEvents, SystemPublicEvents } from "./events.ts";
 import type { AnyExtension, Extension } from "./extension.ts";
 import { createFlow } from "./flow-builder.ts";
-import type {
-    AllSystemEvents,
-    AnyFlow,
-    EmptyObject,
-    EventMap,
-    Flow,
-    FlowContext,
-    FlowDefinition,
-    FlowMiddleware,
-    FlowResult,
-    MergeAllEvents,
-    MergePublicEvents,
-    NodeBuilder,
-    ParallelNodeConfig,
-    ReadableBus,
-    SystemPublicEvents,
-    TaskContext,
-    TaskMiddleware,
-    TaskNodeConfig,
-} from "./types.ts";
+import type { AnyFlow, AnyScope, EmptyObject, Flow, FlowDefinition, FlowResult, Scope } from "./types.ts";
 
 // ── Engine Interface ──────────────────────────────────────────────────
 
@@ -47,40 +29,33 @@ export interface Engine<
 
     flow<TParams extends Record<string, unknown> = EmptyObject, TState extends Record<string, unknown> = EmptyObject>(
         id: string,
-        definition: FlowDefinition<TProvided, TParams, TState, TPublicEvents, TAllEvents>
+        definition: FlowDefinition<Scope<TProvided, TParams, TState, TPublicEvents, TAllEvents>>
     ): Flow<TParams, TState>;
 
-    flows(): readonly string[];
+    flow<TFlowScope extends AnyScope>(
+        id: string,
+        definition: TProvided extends TFlowScope["_provided"] ? FlowDefinition<TFlowScope> : never
+    ): Flow<TFlowScope["_params"], TFlowScope["_state"]>;
 
-    register<TFlowParams extends Record<string, unknown>, TFlowState extends Record<string, unknown>>(
-        flow: Flow<TFlowParams, TFlowState>
-    ): Engine<TProvided, TPublicEvents, TAllEvents>;
+    flows(): readonly string[];
 
     run(id: string, params?: Record<string, unknown>): Promise<FlowResult<Record<string, unknown>>>;
 }
 
 // ── Engine Type Inference ─────────────────────────────────────────────
 
-export type InferEngine<T extends AnyEngine> =
-    T extends Engine<infer TProvided, infer TPublicEvents, infer TAllEvents>
-        ? { AllEvents: TAllEvents; Provided: TProvided; PublicEvents: TPublicEvents }
-        : never;
-
-export type FlowTypes<
+export type FlowScope<
     TEngine extends AnyEngine,
     TParams extends Record<string, unknown> = EmptyObject,
     TState extends Record<string, unknown> = EmptyObject,
 > =
     TEngine extends Engine<infer TProvided, infer TPublicEvents, infer TAllEvents>
-        ? {
-              Builder: NodeBuilder<TProvided, TParams, TState, TPublicEvents, TAllEvents>;
-              FlowContext: FlowContext<TProvided, TParams, TState, TPublicEvents, TAllEvents>;
-              FlowMiddleware: FlowMiddleware<TProvided, TParams, TState, TPublicEvents, TAllEvents>;
-              ParallelConfig: ParallelNodeConfig<TProvided, TParams, TState, TPublicEvents, TAllEvents>;
-              TaskConfig: TaskNodeConfig<TProvided, TParams, TState, TPublicEvents, TAllEvents>;
-              TaskContext: TaskContext<TProvided, TParams, TState, TPublicEvents, TAllEvents>;
-              TaskMiddleware: TaskMiddleware<TProvided, TParams, TState, TPublicEvents, TAllEvents>;
-          }
+        ? Scope<TProvided, TParams, TState, TPublicEvents, TAllEvents>
+        : never;
+
+export type InferEngine<T extends AnyEngine> =
+    T extends Engine<infer TProvided, infer TPublicEvents, infer TAllEvents>
+        ? { AllEvents: TAllEvents; Provided: TProvided; PublicEvents: TPublicEvents }
         : never;
 
 // ── Type-Erased Aliases ─────────────────────────────────────────────
@@ -106,7 +81,7 @@ export function createEngine(busConfig?: EventBusConfig): Engine<EmptyObject, Sy
             return engine;
         },
 
-        flow(id, definition) {
+        flow(id: string, definition: FlowDefinition<Scope>) {
             if (registry.has(id)) {
                 throw new FlowEngineError(`Flow "${id}" is already registered`);
             }
@@ -117,14 +92,6 @@ export function createEngine(busConfig?: EventBusConfig): Engine<EmptyObject, Sy
 
         flows() {
             return [...registry.keys()];
-        },
-
-        register(flow) {
-            if (registry.has(flow.id)) {
-                throw new FlowEngineError(`Flow "${flow.id}" is already registered`);
-            }
-            registry.set(flow.id, flow);
-            return engine;
         },
 
         run(id, params = {}) {

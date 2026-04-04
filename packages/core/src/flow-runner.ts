@@ -1,7 +1,8 @@
 import type { ExecutionContext, FlowProgress, FlowRuntime } from "./context.ts";
 import { buildFlowContext } from "./context.ts";
 import { normalizeError } from "./errors.ts";
-import type { InternalBus } from "./event-bus.ts";
+import type { InternalBus, PublishableBus } from "./event-bus.ts";
+import type { EventMap } from "./events.ts";
 import { executeNodes } from "./execute.ts";
 import type { AnyExtension, ExtensionContext } from "./extension.ts";
 import { buildLogger } from "./logger.ts";
@@ -9,13 +10,12 @@ import { compose } from "./middleware.ts";
 import { PauseGate } from "./signal.ts";
 import { createStateStore } from "./state.ts";
 import type {
-    AnyFlowDefinition,
     AnyFlowHandle,
     AnyFlowResult,
     AnyFlowStateStore,
-    EventMap,
+    AnyScope,
+    FlowDefinition,
     NodeDefinition,
-    PublishableBus,
     RunStatus,
 } from "./types.ts";
 
@@ -31,13 +31,13 @@ interface CancellationState {
     requested: boolean;
 }
 
-export interface FlowRunArgs {
+export interface FlowRunArgs<TScope extends AnyScope = AnyScope> {
     bus: InternalBus<EventMap>;
-    definition: AnyFlowDefinition;
+    definition: FlowDefinition<TScope>;
     extensions: readonly AnyExtension[];
     flowId: string;
     nodes: readonly NodeDefinition[];
-    params: Record<string, unknown>;
+    params: Readonly<TScope["_params"]>;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -77,11 +77,11 @@ async function createExtensions(
 
 // ── Pipeline ─────────────────────────────────────────────────────────
 
-interface PipelineArgs {
+interface PipelineArgs<TScope extends AnyScope = AnyScope> {
     bus: InternalBus<EventMap>;
     cancellation: CancellationState;
     controller: AbortController;
-    definition: AnyFlowDefinition;
+    definition: FlowDefinition<TScope>;
     executionContext: ExecutionContext;
     flowId: string;
     flowStart: number;
@@ -90,7 +90,7 @@ interface PipelineArgs {
     state: AnyFlowStateStore;
 }
 
-async function runFlowPipeline(args: PipelineArgs): Promise<AnyFlowResult> {
+async function runFlowPipeline<TScope extends AnyScope>(args: PipelineArgs<TScope>): Promise<AnyFlowResult> {
     const { bus, cancellation, controller, definition, executionContext, flowId, flowStart, nodes, runId, state } =
         args;
     const flowMiddleware = definition.middleware ?? [];
@@ -157,7 +157,7 @@ async function runFlowPipeline(args: PipelineArgs): Promise<AnyFlowResult> {
 
 // ── Start Orchestrator ──────────────────────────────────────────────
 
-export async function startFlow(args: FlowRunArgs): Promise<AnyFlowHandle> {
+export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScope>): Promise<AnyFlowHandle> {
     const { bus, definition, extensions, flowId, nodes, params } = args;
 
     const frozenParams = Object.freeze(params);
@@ -272,7 +272,7 @@ export async function startFlow(args: FlowRunArgs): Promise<AnyFlowHandle> {
 
 // ── Run (sugar) ─────────────────────────────────────────────────────
 
-export async function runFlow(args: FlowRunArgs): Promise<AnyFlowResult> {
+export async function runFlow<TScope extends AnyScope>(args: FlowRunArgs<TScope>): Promise<AnyFlowResult> {
     const handle = await startFlow(args);
     return handle.join();
 }

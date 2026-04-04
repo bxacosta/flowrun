@@ -1,13 +1,47 @@
-import type {
-    AnyEnvelope,
-    AnyHandler,
-    AnyPublishableBus,
-    AnySubscribeOptions,
-    Envelope,
-    EventMap,
-    PublishableBus,
-    Subscription,
-} from "./types.ts";
+import type { Envelope, EventMap } from "./events.ts";
+import type { AnyEnvelope, AnyHandler, AnyPublishableBus, AnySubscribeOptions } from "./types.ts";
+
+// ── Subscription ──────────────────────────────────────────────────────
+
+export interface Subscription {
+    subscriberId: string;
+    topic: string;
+    unsubscribe: () => void;
+}
+
+export interface SubscribeOptions<TPayload = unknown> {
+    filter?: (envelope: Envelope<TPayload>) => boolean;
+    once?: boolean;
+    priority?: number;
+    subscriberId?: string;
+}
+
+export type Handler<TPayload> = (envelope: Envelope<TPayload>) => void | Promise<void>;
+
+// ── Bus Interfaces ────────────────────────────────────────────────────
+
+export interface ReadableBus<TAllEvents extends EventMap> {
+    history(topic?: string): Envelope[];
+    on(pattern: string, handler: Handler<unknown>, options?: SubscribeOptions): Subscription;
+    subscribe<K extends keyof TAllEvents & string>(
+        topic: K,
+        handler: Handler<TAllEvents[K]>,
+        options?: SubscribeOptions<TAllEvents[K]>
+    ): Subscription;
+    waitFor<K extends keyof TAllEvents & string>(
+        topic: K,
+        options?: { filter?: (envelope: Envelope<TAllEvents[K]>) => boolean; timeout?: number }
+    ): Promise<Envelope<TAllEvents[K]>>;
+}
+
+export interface PublishableBus<TPublicEvents extends EventMap, TAllEvents extends EventMap>
+    extends ReadableBus<TAllEvents> {
+    publish<K extends keyof TPublicEvents & string>(
+        topic: K,
+        payload: TPublicEvents[K],
+        options?: { correlationId?: string; source?: string }
+    ): Promise<void>;
+}
 
 // ── Config ────────────────────────────────────────────────────────────
 

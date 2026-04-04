@@ -1,5 +1,5 @@
 import { DuplicateNodeNameError } from "./errors.ts";
-import type { AnyNodeBuilder, NodeDefinition } from "./types.ts";
+import type { AnyScope, ChildrenSpec, EachScope, EveryConfig, Node, NodeBuilder, NodeDefinition } from "./types.ts";
 
 // ── Validation ───────────────────────────────────────────────────────
 
@@ -13,12 +13,22 @@ function validateSiblingNames(children: readonly NodeDefinition[], containerName
     }
 }
 
+// ── Children Resolver ────────────────────────────────────────────────
+
+export function resolveChildren<TScope extends AnyScope>(
+    spec: ChildrenSpec<TScope>,
+    builder: NodeBuilder<TScope>
+): Node<TScope>[] {
+    const nodes = typeof spec === "function" ? spec(builder) : spec;
+    return [...nodes];
+}
+
 // ── Node Builder Factory ─────────────────────────────────────────────
 
-export function createNodeBuilder(): AnyNodeBuilder {
+export function createNodeBuilder<TScope extends AnyScope>(): NodeBuilder<TScope> {
     return {
-        every(config) {
-            const childNodes = config.children(createNodeBuilder());
+        every<TItem>(config: EveryConfig<TScope, TItem>) {
+            const childNodes = resolveChildren(config.children, createNodeBuilder<EachScope<TScope, TItem>>());
             validateSiblingNames(childNodes, config.name);
             return {
                 children: childNodes,
@@ -34,7 +44,7 @@ export function createNodeBuilder(): AnyNodeBuilder {
         },
 
         parallel(config) {
-            const childNodes = config.children(createNodeBuilder());
+            const childNodes = resolveChildren(config.children, createNodeBuilder<TScope>());
             validateSiblingNames(childNodes, config.name);
             return {
                 children: childNodes,
@@ -50,7 +60,7 @@ export function createNodeBuilder(): AnyNodeBuilder {
         task(config) {
             return {
                 handler: config.handler,
-                middleware: config.options?.middleware ?? [],
+                middleware: config.middleware ?? [],
                 name: config.name,
                 onError: config.options?.onError ?? "fail",
                 retry: config.options?.retry,

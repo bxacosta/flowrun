@@ -1,5 +1,17 @@
 import type { InternalBus } from "./event-bus.ts";
-import type { EventMap, Logger } from "./types.ts";
+import type { EventMap } from "./events.ts";
+
+// ── Logger ────────────────────────────────────────────────────────────
+
+export interface Logger {
+    debug(message: string, data?: unknown): void;
+
+    error(message: string, data?: unknown): void;
+
+    info(message: string, data?: unknown): void;
+
+    warn(message: string, data?: unknown): void;
+}
 
 export function buildLogger(flowId: string, runId: string, bus: InternalBus<EventMap>): Logger {
     return {
