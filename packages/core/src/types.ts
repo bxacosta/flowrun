@@ -236,10 +236,8 @@ export interface TaskConfig<TScope extends AnyScope> {
         >
     >[];
     name: string;
-    options?: {
-        onError?: TaskErrorMode;
-        retry?: RetryOptions;
-    };
+    onError?: TaskErrorMode;
+    retry?: RetryOptions;
 }
 
 export interface ParallelOptions<TScope extends AnyScope> {
@@ -252,11 +250,10 @@ export interface ParallelOptions<TScope extends AnyScope> {
     onError?: ContainerErrorMode;
 }
 
-export interface ParallelConfig<TScope extends AnyScope> {
+export type ParallelConfig<TScope extends AnyScope> = ParallelOptions<TScope> & {
     children: ChildrenSpec<TScope>;
     name: string;
-    options?: ParallelOptions<TScope>;
-}
+};
 
 export interface EveryOptions<TScope extends AnyScope, TItem> {
     cleanupProvided?: (provided: TScope["_provided"], meta: EveryForkMeta<TItem>) => void | Promise<void>;
@@ -269,12 +266,11 @@ export interface EveryOptions<TScope extends AnyScope, TItem> {
     onError?: ContainerErrorMode;
 }
 
-export interface EveryConfig<TScope extends AnyScope, TItem> {
+export type EveryConfig<TScope extends AnyScope, TItem> = EveryOptions<TScope, TItem> & {
     children: ChildrenSpec<EachScope<TScope, TItem>>;
     items: (context: ItemsContext<TScope>) => TItem[];
     name: string;
-    options?: EveryOptions<TScope, TItem>;
-}
+};
 
 // ── Node Builder ─────────────────────────────────────────────────────
 
@@ -286,9 +282,23 @@ export interface NodeBuilder<TScope extends AnyScope> {
 
 // ── Flow Definition ──────────────────────────────────────────────────
 
-type FlowStateField<TScope extends AnyScope> = keyof TScope["_state"] extends never
-    ? { state?: (params: Readonly<TScope["_params"]>) => TScope["_state"] }
-    : { state: (params: Readonly<TScope["_params"]>) => TScope["_state"] };
+type FlowStateFieldOf<
+    TParams extends Record<string, unknown>,
+    TState extends Record<string, unknown>,
+> = keyof TState extends never
+    ? { state?: (params: Readonly<TParams>) => TState }
+    : { state: (params: Readonly<TParams>) => TState };
+
+export type FlowDefinitionOf<
+    TProvided extends Record<string, unknown>,
+    TParams extends Record<string, unknown>,
+    TState extends Record<string, unknown>,
+    TPublicEvents extends EventMap,
+    TAllEvents extends EventMap,
+> = {
+    middleware?: NoInfer<FlowMiddlewareSlot<TProvided, TParams, TState, TPublicEvents, TAllEvents>>[];
+    nodes: NoInfer<ChildrenSpec<Scope<TProvided, TParams, TState, TPublicEvents, TAllEvents>>>;
+} & FlowStateFieldOf<TParams, TState>;
 
 export type FlowDefinition<TScope extends AnyScope> = {
     middleware?: NoInfer<
@@ -301,7 +311,7 @@ export type FlowDefinition<TScope extends AnyScope> = {
         >
     >[];
     nodes: ChildrenSpec<TScope>;
-} & FlowStateField<TScope>;
+} & FlowStateFieldOf<TScope["_params"], TScope["_state"]>;
 
 // ── Flow ─────────────────────────────────────────────────────────────
 

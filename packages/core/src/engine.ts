@@ -4,7 +4,16 @@ import { createEventBus } from "./event-bus.ts";
 import type { AllSystemEvents, EventMap, MergeAllEvents, MergePublicEvents, SystemPublicEvents } from "./events.ts";
 import type { AnyExtension, Extension } from "./extension.ts";
 import { createFlow } from "./flow-builder.ts";
-import type { AnyFlow, AnyScope, EmptyObject, Flow, FlowDefinition, FlowResult, Scope } from "./types.ts";
+import type {
+    AnyFlow,
+    AnyScope,
+    EmptyObject,
+    Flow,
+    FlowDefinition,
+    FlowDefinitionOf,
+    FlowResult,
+    Scope,
+} from "./types.ts";
 
 // ── Engine Interface ──────────────────────────────────────────────────
 
@@ -29,7 +38,7 @@ export interface Engine<
 
     flow<TParams extends Record<string, unknown> = EmptyObject, TState extends Record<string, unknown> = EmptyObject>(
         id: string,
-        definition: FlowDefinition<Scope<TProvided, TParams, TState, TPublicEvents, TAllEvents>>
+        definition: FlowDefinitionOf<TProvided, TParams, TState, TPublicEvents, TAllEvents>
     ): Flow<TParams, TState>;
 
     flow<TFlowScope extends AnyScope>(

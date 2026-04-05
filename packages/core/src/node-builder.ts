@@ -32,13 +32,13 @@ export function createNodeBuilder<TScope extends AnyScope>(): NodeBuilder<TScope
             validateSiblingNames(childNodes, config.name);
             return {
                 children: childNodes,
-                cleanupProvided: config.options?.cleanupProvided,
-                concurrency: config.options?.concurrency ?? Number.POSITIVE_INFINITY,
-                forkProvided: config.options?.forkProvided,
+                cleanupProvided: config.cleanupProvided,
+                concurrency: config.concurrency ?? Number.POSITIVE_INFINITY,
+                forkProvided: config.forkProvided,
                 items: config.items,
-                merge: config.options?.merge ?? "overwrite",
+                merge: config.merge ?? "overwrite",
                 name: config.name,
-                onError: config.options?.onError ?? "fail-fast",
+                onError: config.onError ?? "fail-fast",
                 type: "every",
             };
         },
@@ -48,11 +48,11 @@ export function createNodeBuilder<TScope extends AnyScope>(): NodeBuilder<TScope
             validateSiblingNames(childNodes, config.name);
             return {
                 children: childNodes,
-                cleanupProvided: config.options?.cleanupProvided,
-                forkProvided: config.options?.forkProvided,
-                merge: config.options?.merge ?? "overwrite",
+                cleanupProvided: config.cleanupProvided,
+                forkProvided: config.forkProvided,
+                merge: config.merge ?? "overwrite",
                 name: config.name,
-                onError: config.options?.onError ?? "fail-fast",
+                onError: config.onError ?? "fail-fast",
                 type: "parallel",
             };
         },
@@ -62,8 +62,8 @@ export function createNodeBuilder<TScope extends AnyScope>(): NodeBuilder<TScope
                 handler: config.handler,
                 middleware: config.middleware ?? [],
                 name: config.name,
-                onError: config.options?.onError ?? "fail",
-                retry: config.options?.retry,
+                onError: config.onError ?? "fail",
+                retry: config.retry,
                 type: "task",
             };
         },
