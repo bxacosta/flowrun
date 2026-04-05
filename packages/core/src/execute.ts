@@ -19,7 +19,7 @@ import type {
     ParallelNodeDefinition,
     RetryOptions,
     TaskNodeDefinition,
-    TaskRunResult,
+    TaskResult,
 } from "./types.ts";
 
 // ── Retry Helpers ────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ function recordTaskResult(
     error: Error | null,
     iteration?: { index: number; item: unknown }
 ): void {
-    const result: TaskRunResult = {
+    const result: TaskResult = {
         attempts,
         duration,
         nodeName: node.name,

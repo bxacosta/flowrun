@@ -1,7 +1,7 @@
 import { FlowEngineError } from "./errors.ts";
 import type { EventBusConfig, ReadableBus } from "./event-bus.ts";
 import { createEventBus } from "./event-bus.ts";
-import type { AllSystemEvents, EventMap, MergeAllEvents, MergePublicEvents, SystemPublicEvents } from "./events.ts";
+import type { EventMap, MergeAllEvents, MergePublicEvents, SystemEvents, SystemPublicEvents } from "./events.ts";
 import type { AnyExtension, Extension } from "./extension.ts";
 import { createFlow } from "./flow-builder.ts";
 import type {
@@ -67,6 +67,8 @@ export type InferEngine<T extends AnyEngine> =
         ? { AllEvents: TAllEvents; Provided: TProvided; PublicEvents: TPublicEvents }
         : never;
 
+export type EngineEvents<TEngine extends AnyEngine> = InferEngine<TEngine>["AllEvents"];
+
 // ── Type-Erased Aliases ─────────────────────────────────────────────
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased engine — public Engine interface provides type safety
@@ -74,7 +76,7 @@ type AnyEngine = Engine<any, any, any>;
 
 // ── Implementation ────────────────────────────────────────────────────
 
-export function createEngine(busConfig?: EventBusConfig): Engine<EmptyObject, SystemPublicEvents, AllSystemEvents> {
+export function createEngine(busConfig?: EventBusConfig): Engine<EmptyObject, SystemPublicEvents, SystemEvents> {
     const registry = new Map<string, AnyFlow>();
     const extensions: AnyExtension[] = [];
     const bus = createEventBus<EventMap>(busConfig);

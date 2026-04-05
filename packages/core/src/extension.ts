@@ -1,5 +1,5 @@
 import type { PublishableBus } from "./event-bus.ts";
-import type { AllSystemEvents, AsEventMap, EventMap, SystemPublicEvents } from "./events.ts";
+import type { AsEventMap, EventMap, SystemEvents, SystemPublicEvents } from "./events.ts";
 import type { Logger } from "./logger.ts";
 import type { EmptyObject } from "./types.ts";
 
@@ -49,7 +49,7 @@ export type UnwrapEvents<TDefinitions extends EventDefinitions> = {
 // ── Extension Context ─────────────────────────────────────────────────
 
 export interface ExtensionContext<TEvents extends EventMap> {
-    bus: PublishableBus<SystemPublicEvents & TEvents, AllSystemEvents & TEvents>;
+    bus: PublishableBus<SystemPublicEvents & TEvents, SystemEvents & TEvents>;
     flowId: string;
     log: Logger;
     runId: string;

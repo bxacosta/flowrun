@@ -88,14 +88,21 @@ export interface SystemInternalEvents {
     "node:task:start": { flowId: string; index?: number; maxAttempts: number; nodeName: string; runId: string };
 }
 
-export interface SystemPublicEvents {
-    "log:debug": { data?: unknown; flowId: string; message: string; runId: string };
-    "log:error": { data?: unknown; flowId: string; message: string; runId: string };
-    "log:info": { data?: unknown; flowId: string; message: string; runId: string };
-    "log:warn": { data?: unknown; flowId: string; message: string; runId: string };
+export type LogLevel = "debug" | "error" | "info" | "warn";
+
+export interface LogEventPayload {
+    data?: unknown;
+    flowId: string;
+    level: LogLevel;
+    message: string;
+    runId: string;
 }
 
-export type AllSystemEvents = SystemInternalEvents & SystemPublicEvents;
+export interface SystemPublicEvents {
+    log: LogEventPayload;
+}
+
+export type SystemEvents = SystemInternalEvents & SystemPublicEvents;
 
 // ── Type-Level Merge Helpers ──────────────────────────────────────────
 

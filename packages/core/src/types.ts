@@ -1,5 +1,5 @@
 import type { Handler, PublishableBus, SubscribeOptions } from "./event-bus.ts";
-import type { AllSystemEvents, Envelope, EventMap, SystemPublicEvents } from "./events.ts";
+import type { Envelope, EventMap, SystemEvents, SystemPublicEvents } from "./events.ts";
 import type { Logger } from "./logger.ts";
 
 // ── Primitives ────────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ export interface Scope<
     TParams extends Record<string, unknown> = EmptyObject,
     TState extends Record<string, unknown> = EmptyObject,
     TPublicEvents extends EventMap = SystemPublicEvents,
-    TAllEvents extends EventMap = AllSystemEvents,
+    TAllEvents extends EventMap = SystemEvents,
     TIteration = never,
 > {
     readonly _allEvents: TAllEvents;
@@ -112,7 +112,7 @@ type BaseContextOf<
     TParams extends Record<string, unknown> = EmptyObject,
     TState extends Record<string, unknown> = EmptyObject,
     TPublicEvents extends EventMap = SystemPublicEvents,
-    TAllEvents extends EventMap = AllSystemEvents,
+    TAllEvents extends EventMap = SystemEvents,
 > = {
     bus: PublishableBus<TPublicEvents, TAllEvents>;
     flowId: string;
@@ -150,7 +150,7 @@ type FlowMiddlewareOf<
     TParams extends Record<string, unknown> = EmptyObject,
     TState extends Record<string, unknown> = EmptyObject,
     TPublicEvents extends EventMap = SystemPublicEvents,
-    TAllEvents extends EventMap = AllSystemEvents,
+    TAllEvents extends EventMap = SystemEvents,
 > = Middleware<BaseContextOf<TProvided, TParams, TState, TPublicEvents, TAllEvents>>;
 
 type TaskMiddlewareOf<
@@ -158,7 +158,7 @@ type TaskMiddlewareOf<
     TParams extends Record<string, unknown> = EmptyObject,
     TState extends Record<string, unknown> = EmptyObject,
     TPublicEvents extends EventMap = SystemPublicEvents,
-    TAllEvents extends EventMap = AllSystemEvents,
+    TAllEvents extends EventMap = SystemEvents,
     TIteration = never,
 > = Middleware<BaseContextOf<TProvided, TParams, TState, TPublicEvents, TAllEvents> & TaskExtras<TIteration>>;
 

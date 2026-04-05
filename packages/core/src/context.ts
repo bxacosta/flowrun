@@ -2,7 +2,7 @@ import type { InternalBus, PublishableBus } from "./event-bus.ts";
 import type { EventMap } from "./events.ts";
 import type { Logger } from "./logger.ts";
 import type { PauseGate } from "./signal.ts";
-import type { AnyFlowStateStore, TaskRunResult } from "./types.ts";
+import type { AnyFlowStateStore, TaskResult } from "./types.ts";
 
 // ── Flow Runtime ─────────────────────────────────────────────────────
 
@@ -19,7 +19,7 @@ export interface FlowRuntime {
 // ── Flow Progress ────────────────────────────────────────────────────
 
 export interface FlowProgress {
-    taskResults: TaskRunResult[];
+    taskResults: TaskResult[];
 }
 
 // ── Execution Context ────────────────────────────────────────────────

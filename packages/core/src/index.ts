@@ -16,7 +16,7 @@ export { defineExtension, event, internal } from "./extension.ts";
 
 // ── Types: Engine & Flow ─────────────────────────────────────────────
 
-export type { Engine, FlowScope, InferEngine } from "./engine.ts";
+export type { Engine, EngineEvents, FlowScope, InferEngine } from "./engine.ts";
 export type {
     EventBusConfig,
     Handler,
@@ -27,12 +27,14 @@ export type {
     Subscription,
 } from "./event-bus.ts";
 export type {
-    AllSystemEvents,
     AsEventMap,
     Envelope,
     EventMap,
+    LogEventPayload,
+    LogLevel,
     MergeAllEvents,
     MergePublicEvents,
+    SystemEvents,
     SystemInternalEvents,
     SystemPublicEvents,
 } from "./events.ts";
@@ -54,6 +56,7 @@ export type {
     FlowDefinition,
     FlowHandle,
     FlowStateStore,
+    FlowStatus,
     ItemsContext,
     IterationContext,
     MergeStrategy,
@@ -67,13 +70,12 @@ export type {
     ParallelNodeDefinition,
     ParallelOptions,
     RetryOptions,
-    RunStatus,
     Scope,
     TaskConfig,
     TaskContext,
     TaskErrorMode,
     TaskNodeDefinition,
-    TaskRunResult,
+    TaskResult,
 } from "./types.ts";
 
 // ── Types: Extension System ──────────────────────────────────────────

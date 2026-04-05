@@ -15,8 +15,8 @@ import type {
     AnyFlowStateStore,
     AnyScope,
     FlowDefinition,
+    FlowStatus,
     NodeDefinition,
-    RunStatus,
 } from "./types.ts";
 
 // ── Internal Types ────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ export interface FlowRunArgs<TScope extends AnyScope = AnyScope> {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function isTerminalStatus(status: RunStatus): boolean {
+function isTerminalStatus(status: FlowStatus): boolean {
     return status === "cancelled" || status === "completed" || status === "failed";
 }
 
@@ -199,7 +199,7 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
         runtime,
     };
 
-    let currentStatus: RunStatus = "running";
+    let currentStatus: FlowStatus = "running";
     const cancellation: CancellationState = { requested: false };
 
     const pipelinePromise = runFlowPipeline({
