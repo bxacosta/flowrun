@@ -72,9 +72,6 @@ export interface Scope<
     readonly _state: TState;
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: type-erased scope reference
-export type AnyScope = Scope<any, any, any, any, any, any>;
-
 export type EachScope<TScope extends AnyScope, TItem> = Scope<
     TScope["_provided"],
     TScope["_params"],
@@ -146,10 +143,9 @@ export type TaskContext<TScope extends AnyScope = Scope> = BaseContext<TScope> &
 
 export type ItemsContext<TScope extends AnyScope = Scope> = BaseContext<TScope> & IterationField<TScope["_iteration"]>;
 
-// Slot-position helpers parameterized by individual scope fields so per-field
-// variance is preserved at config sites (universal Middleware<FlowContext>
-// stays assignable to a Middleware<FlowContext<OrderScope>> slot).
-type FlowMiddlewareSlot<
+// Direct-generic helpers used at config slots so per-field variance is preserved
+// (universal Middleware<FlowContext> stays assignable to scope-typed slots).
+type FlowMiddlewareOf<
     TProvided extends Record<string, unknown> = EmptyObject,
     TParams extends Record<string, unknown> = EmptyObject,
     TState extends Record<string, unknown> = EmptyObject,
@@ -157,7 +153,7 @@ type FlowMiddlewareSlot<
     TAllEvents extends EventMap = AllSystemEvents,
 > = Middleware<BaseContextOf<TProvided, TParams, TState, TPublicEvents, TAllEvents>>;
 
-type TaskMiddlewareSlot<
+type TaskMiddlewareOf<
     TProvided extends Record<string, unknown> = EmptyObject,
     TParams extends Record<string, unknown> = EmptyObject,
     TState extends Record<string, unknown> = EmptyObject,
@@ -192,32 +188,32 @@ export interface TaskNodeDefinition {
 }
 
 export interface ParallelNodeDefinition {
-    children: NodeDefinition[];
     cleanupProvided?: AnyCleanupProvided;
     forkProvided?: AnyForkProvided;
     merge: MergeStrategy;
     name: string;
+    nodes: NodeDefinition[];
     onError: ContainerErrorMode;
     type: "parallel";
 }
 
 export interface EveryNodeDefinition {
-    children: NodeDefinition[];
     cleanupProvided?: AnyCleanupProvided;
     concurrency: number;
     forkProvided?: AnyForkProvided;
     items: AnyItemsFunction;
     merge: MergeStrategy;
     name: string;
+    nodes: NodeDefinition[];
     onError: ContainerErrorMode;
     type: "every";
 }
 
 export type NodeDefinition = EveryNodeDefinition | ParallelNodeDefinition | TaskNodeDefinition;
 
-// ── ChildrenSpec ─────────────────────────────────────────────────────
+// ── NodesSpec ────────────────────────────────────────────────────────
 
-export type ChildrenSpec<TScope extends AnyScope> =
+export type NodesSpec<TScope extends AnyScope> =
     | readonly Node<TScope>[]
     | ((builder: NodeBuilder<TScope>) => readonly Node<TScope>[]);
 
@@ -226,7 +222,7 @@ export type ChildrenSpec<TScope extends AnyScope> =
 export interface TaskConfig<TScope extends AnyScope> {
     handler: (context: TaskContext<TScope>) => Promise<void> | void;
     middleware?: NoInfer<
-        TaskMiddlewareSlot<
+        TaskMiddlewareOf<
             TScope["_provided"],
             TScope["_params"],
             TScope["_state"],
@@ -251,8 +247,8 @@ export interface ParallelOptions<TScope extends AnyScope> {
 }
 
 export type ParallelConfig<TScope extends AnyScope> = ParallelOptions<TScope> & {
-    children: ChildrenSpec<TScope>;
     name: string;
+    nodes: NodesSpec<TScope>;
 };
 
 export interface EveryOptions<TScope extends AnyScope, TItem> {
@@ -267,9 +263,9 @@ export interface EveryOptions<TScope extends AnyScope, TItem> {
 }
 
 export type EveryConfig<TScope extends AnyScope, TItem> = EveryOptions<TScope, TItem> & {
-    children: ChildrenSpec<EachScope<TScope, TItem>>;
     items: (context: ItemsContext<TScope>) => TItem[];
     name: string;
+    nodes: NodesSpec<EachScope<TScope, TItem>>;
 };
 
 // ── Node Builder ─────────────────────────────────────────────────────
@@ -289,20 +285,9 @@ type FlowStateFieldOf<
     ? { state?: (params: Readonly<TParams>) => TState }
     : { state: (params: Readonly<TParams>) => TState };
 
-export type FlowDefinitionOf<
-    TProvided extends Record<string, unknown>,
-    TParams extends Record<string, unknown>,
-    TState extends Record<string, unknown>,
-    TPublicEvents extends EventMap,
-    TAllEvents extends EventMap,
-> = {
-    middleware?: NoInfer<FlowMiddlewareSlot<TProvided, TParams, TState, TPublicEvents, TAllEvents>>[];
-    nodes: NoInfer<ChildrenSpec<Scope<TProvided, TParams, TState, TPublicEvents, TAllEvents>>>;
-} & FlowStateFieldOf<TParams, TState>;
-
 export type FlowDefinition<TScope extends AnyScope> = {
     middleware?: NoInfer<
-        FlowMiddlewareSlot<
+        FlowMiddlewareOf<
             TScope["_provided"],
             TScope["_params"],
             TScope["_state"],
@@ -310,12 +295,20 @@ export type FlowDefinition<TScope extends AnyScope> = {
             TScope["_allEvents"]
         >
     >[];
-    nodes: ChildrenSpec<TScope>;
+    nodes: NodesSpec<TScope>;
 } & FlowStateFieldOf<TScope["_params"], TScope["_state"]>;
+
+export type FlowDefinitionOf<
+    TProvided extends Record<string, unknown>,
+    TParams extends Record<string, unknown>,
+    TState extends Record<string, unknown>,
+    TPublicEvents extends EventMap,
+    TAllEvents extends EventMap,
+> = FlowDefinition<Scope<TProvided, TParams, TState, TPublicEvents, TAllEvents>>;
 
 // ── Flow ─────────────────────────────────────────────────────────────
 
-export type RunStatus = "cancelled" | "completed" | "failed" | "paused" | "running";
+export type FlowStatus = "cancelled" | "completed" | "failed" | "paused" | "running";
 
 export interface FlowHandle<TState extends Record<string, unknown>> {
     cancel(reason?: string): void;
@@ -324,7 +317,7 @@ export interface FlowHandle<TState extends Record<string, unknown>> {
     pause(): void;
     resume(): void;
     readonly runId: string;
-    status(): RunStatus;
+    status(): FlowStatus;
 }
 
 export interface Flow<TParams extends Record<string, unknown>, TState extends Record<string, unknown>> {
@@ -335,7 +328,7 @@ export interface Flow<TParams extends Record<string, unknown>, TState extends Re
 
 // ── Task Result ──────────────────────────────────────────────────────
 
-export interface TaskRunResult {
+export interface TaskResult {
     attempts: number;
     duration: number;
     error?: Error;
@@ -352,7 +345,7 @@ export interface BaseFlowResult<TState extends Record<string, unknown>> {
     flowId: string;
     runId: string;
     state: Readonly<TState>;
-    tasks: readonly TaskRunResult[];
+    tasks: readonly TaskResult[];
 }
 
 export interface SuccessFlowResult<TState extends Record<string, unknown>> extends BaseFlowResult<TState> {
@@ -379,6 +372,9 @@ export type FlowResult<TState extends Record<string, unknown>> =
 export type RunArgs<TParams> = keyof TParams extends never ? [params?: TParams] : [params: TParams];
 
 // ── Type-Erased Aliases ──────────────────────────────────────────────
+
+// biome-ignore lint/suspicious/noExplicitAny: type-erased scope reference
+export type AnyScope = Scope<any, any, any, any, any, any>;
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased cleanup callback — typed at config boundary
 export type AnyCleanupProvided = (provided: any, meta: any) => void | Promise<void>;

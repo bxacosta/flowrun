@@ -3,7 +3,7 @@ import type { InternalBus } from "./event-bus.ts";
 import type { EventMap } from "./events.ts";
 import type { AnyExtension } from "./extension.ts";
 import { runFlow, startFlow } from "./flow-runner.ts";
-import { createNodeBuilder, resolveChildren } from "./node-builder.ts";
+import { createNodeBuilder, resolveNodes } from "./node-builder.ts";
 import type { AnyFlow, AnyRunArgs, AnyScope, FlowDefinition, NodeDefinition } from "./types.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ export function createFlow<TScope extends AnyScope>(
     extensions: readonly AnyExtension[],
     bus: InternalBus<EventMap>
 ): AnyFlow {
-    const nodes = resolveChildren(definition.nodes, createNodeBuilder<TScope>());
+    const nodes = resolveNodes(definition.nodes, createNodeBuilder<TScope>());
     validateTopLevelNodes(nodes, flowId);
 
     const buildArgs = (args: AnyRunArgs) => ({

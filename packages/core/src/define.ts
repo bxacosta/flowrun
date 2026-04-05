@@ -1,5 +1,5 @@
 import { DuplicateNodeNameError } from "./errors.ts";
-import { createNodeBuilder, resolveChildren } from "./node-builder.ts";
+import { createNodeBuilder, resolveNodes } from "./node-builder.ts";
 import type {
     AnyScope,
     EachScope,
@@ -13,13 +13,13 @@ import type {
 
 // ── Validation ───────────────────────────────────────────────────────
 
-function validateSiblingNames(children: readonly NodeDefinition[], containerName: string): void {
+function validateSiblingNames(nodes: readonly NodeDefinition[], containerName: string): void {
     const seen = new Set<string>();
-    for (const child of children) {
-        if (seen.has(child.name)) {
-            throw new DuplicateNodeNameError(child.name, containerName);
+    for (const node of nodes) {
+        if (seen.has(node.name)) {
+            throw new DuplicateNodeNameError(node.name, containerName);
         }
-        seen.add(child.name);
+        seen.add(node.name);
     }
 }
 
@@ -39,14 +39,14 @@ export function defineTask<TScope extends AnyScope>(config: TaskConfig<TScope>):
 // ── defineParallel ───────────────────────────────────────────────────
 
 export function defineParallel<TScope extends AnyScope>(config: ParallelConfig<TScope>): Node<TScope> {
-    const childNodes = resolveChildren(config.children, createNodeBuilder<TScope>());
+    const childNodes = resolveNodes(config.nodes, createNodeBuilder<TScope>());
     validateSiblingNames(childNodes, config.name);
     return {
-        children: childNodes,
         cleanupProvided: config.cleanupProvided,
         forkProvided: config.forkProvided,
         merge: config.merge ?? "overwrite",
         name: config.name,
+        nodes: childNodes,
         onError: config.onError ?? "fail-fast",
         type: "parallel",
     };
@@ -55,16 +55,16 @@ export function defineParallel<TScope extends AnyScope>(config: ParallelConfig<T
 // ── defineEvery ──────────────────────────────────────────────────────
 
 export function defineEvery<TScope extends AnyScope, TItem>(config: EveryConfig<TScope, TItem>): Node<TScope> {
-    const childNodes = resolveChildren(config.children, createNodeBuilder<EachScope<TScope, TItem>>());
+    const childNodes = resolveNodes(config.nodes, createNodeBuilder<EachScope<TScope, TItem>>());
     validateSiblingNames(childNodes, config.name);
     return {
-        children: childNodes,
         cleanupProvided: config.cleanupProvided,
         concurrency: config.concurrency ?? Number.POSITIVE_INFINITY,
         forkProvided: config.forkProvided,
         items: config.items,
         merge: config.merge ?? "overwrite",
         name: config.name,
+        nodes: childNodes,
         onError: config.onError ?? "fail-fast",
         type: "every",
     };

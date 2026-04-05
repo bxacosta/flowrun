@@ -294,7 +294,7 @@ async function executeParallel(
     try {
         const plan: BranchPlan = { branches: [], branchProgresses: [], forks: [] };
 
-        for (const [branchIndex, child] of node.children.entries()) {
+        for (const [branchIndex, child] of node.nodes.entries()) {
             const forkedStore = state.fork(child.name);
             plan.forks.push({ label: child.name, store: forkedStore });
             const branchProgress: FlowProgress = { taskResults: [] };
@@ -348,7 +348,7 @@ async function executeParallel(
             }
             throw new AggregateError(
                 outcome.errors,
-                `${outcome.errors.length} of ${node.children.length} branches failed`
+                `${outcome.errors.length} of ${node.nodes.length} branches failed`
             );
         }
 
@@ -411,7 +411,7 @@ async function executeEvery(
                             progress: branchProgress,
                             runtime: branchRuntime,
                         };
-                        await executeNodes(node.children, branchExecutionContext, forkedStore, controller.signal, {
+                        await executeNodes(node.nodes, branchExecutionContext, forkedStore, controller.signal, {
                             index: itemIndex,
                             item: everyItem,
                         });
