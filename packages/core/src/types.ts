@@ -16,7 +16,7 @@ export type MergeStrategy = "append" | "overwrite" | "strict";
 
 export type BackoffStrategy = "constant" | "exponential";
 
-export type RetryOptions =
+export type RetryConfig =
     | {
           attempts: number;
           backoff: "constant";
@@ -72,7 +72,7 @@ export interface Scope<
     readonly _state: TState;
 }
 
-export type EachScope<TScope extends AnyScope, TItem> = Scope<
+export type IterationScope<TScope extends AnyScope, TItem> = Scope<
     TScope["_provided"],
     TScope["_params"],
     TScope["_state"],
@@ -183,7 +183,7 @@ export interface TaskNodeDefinition {
     middleware: AnyMiddleware[];
     name: string;
     onError: TaskErrorMode;
-    retry?: RetryOptions;
+    retry?: RetryConfig;
     type: "task";
 }
 
@@ -233,7 +233,7 @@ export interface TaskConfig<TScope extends AnyScope> {
     >[];
     name: string;
     onError?: TaskErrorMode;
-    retry?: RetryOptions;
+    retry?: RetryConfig;
 }
 
 export interface ParallelOptions<TScope extends AnyScope> {
@@ -265,7 +265,7 @@ export interface EveryOptions<TScope extends AnyScope, TItem> {
 export type EveryConfig<TScope extends AnyScope, TItem> = EveryOptions<TScope, TItem> & {
     items: (context: ItemsContext<TScope>) => TItem[];
     name: string;
-    nodes: NodesSpec<EachScope<TScope, TItem>>;
+    nodes: NodesSpec<IterationScope<TScope, TItem>>;
 };
 
 // ── Node Builder ─────────────────────────────────────────────────────

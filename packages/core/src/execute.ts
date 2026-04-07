@@ -17,14 +17,14 @@ import type {
     NodeDefinition,
     ParallelForkMeta,
     ParallelNodeDefinition,
-    RetryOptions,
+    RetryConfig,
     TaskNodeDefinition,
     TaskResult,
 } from "./types.ts";
 
 // ── Retry Helpers ────────────────────────────────────────────────────
 
-function computeRetryDelay(options: RetryOptions, attempt: number): number {
+function computeRetryDelay(options: RetryConfig, attempt: number): number {
     const base =
         options.backoff === "exponential" ? options.delayMs * (options.factor ?? 2) ** (attempt - 1) : options.delayMs;
     const capped = options.maxDelayMs === undefined ? base : Math.min(base, options.maxDelayMs);

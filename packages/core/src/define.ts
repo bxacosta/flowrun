@@ -2,9 +2,9 @@ import { DuplicateNodeNameError } from "./errors.ts";
 import { createNodeBuilder, resolveNodes } from "./node-builder.ts";
 import type {
     AnyScope,
-    EachScope,
     EveryConfig,
     FlowDefinition,
+    IterationScope,
     Node,
     NodeDefinition,
     ParallelConfig,
@@ -55,7 +55,7 @@ export function defineParallel<TScope extends AnyScope>(config: ParallelConfig<T
 // ── defineEvery ──────────────────────────────────────────────────────
 
 export function defineEvery<TScope extends AnyScope, TItem>(config: EveryConfig<TScope, TItem>): Node<TScope> {
-    const childNodes = resolveNodes(config.nodes, createNodeBuilder<EachScope<TScope, TItem>>());
+    const childNodes = resolveNodes(config.nodes, createNodeBuilder<IterationScope<TScope, TItem>>());
     validateSiblingNames(childNodes, config.name);
     return {
         cleanupProvided: config.cleanupProvided,

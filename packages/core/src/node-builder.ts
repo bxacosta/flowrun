@@ -1,5 +1,5 @@
 import { DuplicateNodeNameError } from "./errors.ts";
-import type { AnyScope, EachScope, EveryConfig, Node, NodeBuilder, NodeDefinition, NodesSpec } from "./types.ts";
+import type { AnyScope, EveryConfig, IterationScope, Node, NodeBuilder, NodeDefinition, NodesSpec } from "./types.ts";
 
 // ── Validation ───────────────────────────────────────────────────────
 
@@ -28,7 +28,7 @@ export function resolveNodes<TScope extends AnyScope>(
 export function createNodeBuilder<TScope extends AnyScope>(): NodeBuilder<TScope> {
     return {
         every<TItem>(config: EveryConfig<TScope, TItem>) {
-            const childNodes = resolveNodes(config.nodes, createNodeBuilder<EachScope<TScope, TItem>>());
+            const childNodes = resolveNodes(config.nodes, createNodeBuilder<IterationScope<TScope, TItem>>());
             validateSiblingNames(childNodes, config.name);
             return {
                 cleanupProvided: config.cleanupProvided,
