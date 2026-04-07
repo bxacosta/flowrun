@@ -1,17 +1,5 @@
-import { DuplicateNodeNameError } from "./errors.ts";
-import type { AnyScope, EveryConfig, IterationScope, Node, NodeBuilder, NodeDefinition, NodesSpec } from "./types.ts";
-
-// ── Validation ───────────────────────────────────────────────────────
-
-function validateSiblingNames(nodes: readonly NodeDefinition[], containerName: string): void {
-    const seen = new Set<string>();
-    for (const node of nodes) {
-        if (seen.has(node.name)) {
-            throw new DuplicateNodeNameError(node.name, containerName);
-        }
-        seen.add(node.name);
-    }
-}
+import type { AnyScope, EveryConfig, IterationScope, Node, NodeBuilder, NodesSpec } from "./types.ts";
+import { assertUniqueNodeNames } from "./validation.ts";
 
 // ── Nodes Resolver ───────────────────────────────────────────────────
 
@@ -29,7 +17,7 @@ export function createNodeBuilder<TScope extends AnyScope>(): NodeBuilder<TScope
     return {
         every<TItem>(config: EveryConfig<TScope, TItem>) {
             const childNodes = resolveNodes(config.nodes, createNodeBuilder<IterationScope<TScope, TItem>>());
-            validateSiblingNames(childNodes, config.name);
+            assertUniqueNodeNames(childNodes, config.name);
             return {
                 cleanupProvided: config.cleanupProvided,
                 concurrency: config.concurrency ?? Number.POSITIVE_INFINITY,
@@ -45,7 +33,7 @@ export function createNodeBuilder<TScope extends AnyScope>(): NodeBuilder<TScope
 
         parallel(config) {
             const childNodes = resolveNodes(config.nodes, createNodeBuilder<TScope>());
-            validateSiblingNames(childNodes, config.name);
+            assertUniqueNodeNames(childNodes, config.name);
             return {
                 cleanupProvided: config.cleanupProvided,
                 forkProvided: config.forkProvided,

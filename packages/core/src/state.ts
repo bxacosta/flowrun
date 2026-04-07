@@ -1,5 +1,6 @@
 import { InvalidMergeValueError, MergeConflictError } from "./errors.ts";
 import type { AnyFlowStateStore, FlowStateStore, MergeStrategy } from "./types.ts";
+import { assertPlainObject } from "./validation.ts";
 
 // ── Internal Types ────────────────────────────────────────────────────
 
@@ -10,7 +11,8 @@ export interface ForkEntry {
 
 // ── State Store Factory ──────────────────────────────────────────────
 
-export function createStateStore<TState extends Record<string, unknown>>(initial: TState): FlowStateStore<TState> {
+export function createStateStore<TState extends object>(initial: TState): FlowStateStore<TState> {
+    assertPlainObject(initial, "Flow state must be a plain object, not an array or function");
     const rootData = new Map<string, unknown>();
     for (const [key, value] of Object.entries(initial)) {
         rootData.set(key, structuredClone(value));
@@ -18,7 +20,7 @@ export function createStateStore<TState extends Record<string, unknown>>(initial
     return buildStore<TState>(rootData, null);
 }
 
-function buildStore<TState extends Record<string, unknown>>(
+function buildStore<TState extends object>(
     data: Map<string, unknown>,
     parent: FlowStateStore<TState> | null
 ): FlowStateStore<TState> {

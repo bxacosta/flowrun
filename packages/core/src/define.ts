@@ -1,4 +1,3 @@
-import { DuplicateNodeNameError } from "./errors.ts";
 import { createNodeBuilder, resolveNodes } from "./node-builder.ts";
 import type {
     AnyScope,
@@ -6,22 +5,10 @@ import type {
     FlowDefinition,
     IterationScope,
     Node,
-    NodeDefinition,
     ParallelConfig,
     TaskConfig,
 } from "./types.ts";
-
-// ── Validation ───────────────────────────────────────────────────────
-
-function validateSiblingNames(nodes: readonly NodeDefinition[], containerName: string): void {
-    const seen = new Set<string>();
-    for (const node of nodes) {
-        if (seen.has(node.name)) {
-            throw new DuplicateNodeNameError(node.name, containerName);
-        }
-        seen.add(node.name);
-    }
-}
+import { assertUniqueNodeNames } from "./validation.ts";
 
 // ── defineTask ───────────────────────────────────────────────────────
 
@@ -40,7 +27,7 @@ export function defineTask<TScope extends AnyScope>(config: TaskConfig<TScope>):
 
 export function defineParallel<TScope extends AnyScope>(config: ParallelConfig<TScope>): Node<TScope> {
     const childNodes = resolveNodes(config.nodes, createNodeBuilder<TScope>());
-    validateSiblingNames(childNodes, config.name);
+    assertUniqueNodeNames(childNodes, config.name);
     return {
         cleanupProvided: config.cleanupProvided,
         forkProvided: config.forkProvided,
@@ -56,7 +43,7 @@ export function defineParallel<TScope extends AnyScope>(config: ParallelConfig<T
 
 export function defineEvery<TScope extends AnyScope, TItem>(config: EveryConfig<TScope, TItem>): Node<TScope> {
     const childNodes = resolveNodes(config.nodes, createNodeBuilder<IterationScope<TScope, TItem>>());
-    validateSiblingNames(childNodes, config.name);
+    assertUniqueNodeNames(childNodes, config.name);
     return {
         cleanupProvided: config.cleanupProvided,
         concurrency: config.concurrency ?? Number.POSITIVE_INFINITY,

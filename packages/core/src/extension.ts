@@ -57,7 +57,7 @@ export interface ExtensionContext<TEvents extends EventMap> {
 
 // ── Extension Types ───────────────────────────────────────────────────
 
-export interface ExtensionConfig<TDefinitions extends EventDefinitions, TProvided extends Record<string, unknown>> {
+export interface ExtensionConfig<TDefinitions extends EventDefinitions, TProvided extends object> {
     create: (context: ExtensionContext<UnwrapEvents<TDefinitions>>) => TProvided;
     dispose?: (provided: TProvided) => Promise<void> | void;
     events: TDefinitions;
@@ -65,7 +65,7 @@ export interface ExtensionConfig<TDefinitions extends EventDefinitions, TProvide
 }
 
 export interface Extension<
-    TProvided extends Record<string, unknown> = EmptyObject,
+    TProvided extends object = EmptyObject,
     TInternalEvents extends object = EmptyObject,
     TPublicEvents extends object = EmptyObject,
 > {
@@ -81,7 +81,7 @@ export type AnyExtension = Extension<any, any, any>;
 
 // ── defineExtension ───────────────────────────────────────────────────
 
-export function defineExtension<TDefinitions extends EventDefinitions, TProvided extends Record<string, unknown>>(
+export function defineExtension<TDefinitions extends EventDefinitions, TProvided extends object>(
     config: ExtensionConfig<TDefinitions, TProvided>
 ): Extension<TProvided, ExtractInternalEvents<TDefinitions>, ExtractPublicEvents<TDefinitions>> {
     return {

@@ -4,28 +4,26 @@ import { createEventBus } from "./event-bus.ts";
 import type { EventMap, MergeAllEvents, MergePublicEvents, SystemEvents, SystemPublicEvents } from "./events.ts";
 import type { AnyExtension, Extension } from "./extension.ts";
 import { createFlow } from "./flow-builder.ts";
-import type {
-    AnyFlow,
-    AnyScope,
-    EmptyObject,
-    Flow,
-    FlowDefinition,
-    FlowDefinitionOf,
-    FlowResult,
-    Scope,
-} from "./types.ts";
+import type { AnyFlow, AnyScope, EmptyObject, Flow, FlowDefinition, FlowResult, Scope } from "./types.ts";
+
+// ── Internal Types ────────────────────────────────────────────────────
+
+// Direct-generic alias used at engine.flow's inline overload so TS can infer TParams/TState from the state callback.
+type FlowDefinitionOf<
+    TProvided extends object,
+    TParams extends object,
+    TState extends object,
+    TPublicEvents extends EventMap,
+    TAllEvents extends EventMap,
+> = FlowDefinition<Scope<TProvided, TParams, TState, TPublicEvents, TAllEvents>>;
 
 // ── Engine Interface ──────────────────────────────────────────────────
 
-export interface Engine<
-    TProvided extends Record<string, unknown>,
-    TPublicEvents extends EventMap,
-    TAllEvents extends EventMap,
-> {
+export interface Engine<TProvided extends object, TPublicEvents extends EventMap, TAllEvents extends EventMap> {
     bus: ReadableBus<TAllEvents>;
 
     extend<
-        TExtensionProvided extends Record<string, unknown>,
+        TExtensionProvided extends object,
         TExtensionInternal extends object = EmptyObject,
         TExtensionPublic extends object = EmptyObject,
     >(
@@ -36,7 +34,7 @@ export interface Engine<
         MergeAllEvents<TAllEvents, TExtensionInternal, TExtensionPublic>
     >;
 
-    flow<TParams extends Record<string, unknown> = EmptyObject, TState extends Record<string, unknown> = EmptyObject>(
+    flow<TParams extends object = EmptyObject, TState extends object = EmptyObject>(
         id: string,
         definition: FlowDefinitionOf<TProvided, TParams, TState, TPublicEvents, TAllEvents>
     ): Flow<TParams, TState>;
@@ -55,8 +53,8 @@ export interface Engine<
 
 export type FlowScope<
     TEngine extends AnyEngine,
-    TParams extends Record<string, unknown> = EmptyObject,
-    TState extends Record<string, unknown> = EmptyObject,
+    TParams extends object = EmptyObject,
+    TState extends object = EmptyObject,
 > =
     TEngine extends Engine<infer TProvided, infer TPublicEvents, infer TAllEvents>
         ? Scope<TProvided, TParams, TState, TPublicEvents, TAllEvents>

@@ -37,7 +37,7 @@ export type RetryConfig =
 
 // ── State Store ──────────────────────────────────────────────────────
 
-export interface FlowStateStore<TState extends Record<string, unknown>> {
+export interface FlowStateStore<TState extends object> {
     fork(label: number | string): FlowStateStore<TState>;
     get<K extends keyof TState & string>(key: K): TState[K];
     getWrittenValues(): Map<string, unknown>;
@@ -57,9 +57,9 @@ export interface IterationContext<TItem> {
 // ── Scope ────────────────────────────────────────────────────────────
 
 export interface Scope<
-    TProvided extends Record<string, unknown> = EmptyObject,
-    TParams extends Record<string, unknown> = EmptyObject,
-    TState extends Record<string, unknown> = EmptyObject,
+    TProvided extends object = EmptyObject,
+    TParams extends object = EmptyObject,
+    TState extends object = EmptyObject,
     TPublicEvents extends EventMap = SystemPublicEvents,
     TAllEvents extends EventMap = SystemEvents,
     TIteration = never,
@@ -108,9 +108,9 @@ type IterationField<TIteration> = [TIteration] extends [never] ? EmptyObject : {
 // Structural source of truth. Takes individual scope fields as generic params
 // so per-field variance is preserved when used in slot positions.
 type BaseContextOf<
-    TProvided extends Record<string, unknown> = EmptyObject,
-    TParams extends Record<string, unknown> = EmptyObject,
-    TState extends Record<string, unknown> = EmptyObject,
+    TProvided extends object = EmptyObject,
+    TParams extends object = EmptyObject,
+    TState extends object = EmptyObject,
     TPublicEvents extends EventMap = SystemPublicEvents,
     TAllEvents extends EventMap = SystemEvents,
 > = {
@@ -146,17 +146,17 @@ export type ItemsContext<TScope extends AnyScope = Scope> = BaseContext<TScope> 
 // Direct-generic helpers used at config slots so per-field variance is preserved
 // (universal Middleware<FlowContext> stays assignable to scope-typed slots).
 type FlowMiddlewareOf<
-    TProvided extends Record<string, unknown> = EmptyObject,
-    TParams extends Record<string, unknown> = EmptyObject,
-    TState extends Record<string, unknown> = EmptyObject,
+    TProvided extends object = EmptyObject,
+    TParams extends object = EmptyObject,
+    TState extends object = EmptyObject,
     TPublicEvents extends EventMap = SystemPublicEvents,
     TAllEvents extends EventMap = SystemEvents,
 > = Middleware<BaseContextOf<TProvided, TParams, TState, TPublicEvents, TAllEvents>>;
 
 type TaskMiddlewareOf<
-    TProvided extends Record<string, unknown> = EmptyObject,
-    TParams extends Record<string, unknown> = EmptyObject,
-    TState extends Record<string, unknown> = EmptyObject,
+    TProvided extends object = EmptyObject,
+    TParams extends object = EmptyObject,
+    TState extends object = EmptyObject,
     TPublicEvents extends EventMap = SystemPublicEvents,
     TAllEvents extends EventMap = SystemEvents,
     TIteration = never,
@@ -278,10 +278,7 @@ export interface NodeBuilder<TScope extends AnyScope> {
 
 // ── Flow Definition ──────────────────────────────────────────────────
 
-type FlowStateFieldOf<
-    TParams extends Record<string, unknown>,
-    TState extends Record<string, unknown>,
-> = keyof TState extends never
+type FlowStateFieldOf<TParams extends object, TState extends object> = keyof TState extends never
     ? { state?: (params: Readonly<TParams>) => TState }
     : { state: (params: Readonly<TParams>) => TState };
 
@@ -298,19 +295,11 @@ export type FlowDefinition<TScope extends AnyScope> = {
     nodes: NodesSpec<TScope>;
 } & FlowStateFieldOf<TScope["_params"], TScope["_state"]>;
 
-export type FlowDefinitionOf<
-    TProvided extends Record<string, unknown>,
-    TParams extends Record<string, unknown>,
-    TState extends Record<string, unknown>,
-    TPublicEvents extends EventMap,
-    TAllEvents extends EventMap,
-> = FlowDefinition<Scope<TProvided, TParams, TState, TPublicEvents, TAllEvents>>;
-
 // ── Flow ─────────────────────────────────────────────────────────────
 
 export type FlowStatus = "cancelled" | "completed" | "failed" | "paused" | "running";
 
-export interface FlowHandle<TState extends Record<string, unknown>> {
+export interface FlowHandle<TState extends object> {
     cancel(reason?: string): void;
     readonly flowId: string;
     join(): Promise<FlowResult<TState>>;
@@ -320,7 +309,7 @@ export interface FlowHandle<TState extends Record<string, unknown>> {
     status(): FlowStatus;
 }
 
-export interface Flow<TParams extends Record<string, unknown>, TState extends Record<string, unknown>> {
+export interface Flow<TParams extends object, TState extends object> {
     id: string;
     run(...args: RunArgs<TParams>): Promise<FlowResult<TState>>;
     start(...args: RunArgs<TParams>): Promise<FlowHandle<TState>>;
@@ -340,7 +329,7 @@ export interface TaskResult {
 
 // ── Flow Result ───────────────────────────────────────────────────────
 
-export interface BaseFlowResult<TState extends Record<string, unknown>> {
+export interface BaseFlowResult<TState extends object> {
     duration: number;
     flowId: string;
     runId: string;
@@ -348,21 +337,21 @@ export interface BaseFlowResult<TState extends Record<string, unknown>> {
     tasks: readonly TaskResult[];
 }
 
-export interface SuccessFlowResult<TState extends Record<string, unknown>> extends BaseFlowResult<TState> {
+export interface SuccessFlowResult<TState extends object> extends BaseFlowResult<TState> {
     status: "success";
 }
 
-export interface FailedFlowResult<TState extends Record<string, unknown>> extends BaseFlowResult<TState> {
+export interface FailedFlowResult<TState extends object> extends BaseFlowResult<TState> {
     error: Error;
     status: "failed";
 }
 
-export interface CancelledFlowResult<TState extends Record<string, unknown>> extends BaseFlowResult<TState> {
+export interface CancelledFlowResult<TState extends object> extends BaseFlowResult<TState> {
     reason?: string;
     status: "cancelled";
 }
 
-export type FlowResult<TState extends Record<string, unknown>> =
+export type FlowResult<TState extends object> =
     | CancelledFlowResult<TState>
     | FailedFlowResult<TState>
     | SuccessFlowResult<TState>;

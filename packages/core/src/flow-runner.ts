@@ -18,12 +18,13 @@ import type {
     FlowStatus,
     NodeDefinition,
 } from "./types.ts";
+import { assertPlainObject } from "./validation.ts";
 
 // ── Internal Types ────────────────────────────────────────────────────
 
 interface ExtensionInstance {
     extension: AnyExtension;
-    provided: Record<string, unknown>;
+    provided: object;
 }
 
 interface CancellationState {
@@ -64,6 +65,10 @@ async function createExtensions(
     try {
         for (const extension of extensions) {
             const result = extension.create(context);
+            assertPlainObject(
+                result,
+                `Extension "${extension.name}" must return a plain object from create(), not an array or function`
+            );
             Object.assign(provided, result);
             instances.push({ extension, provided: result });
         }
@@ -160,6 +165,7 @@ async function runFlowPipeline<TScope extends AnyScope>(args: PipelineArgs<TScop
 export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScope>): Promise<AnyFlowHandle> {
     const { bus, definition, extensions, flowId, nodes, params } = args;
 
+    assertPlainObject(params, "Flow params must be a plain object, not an array or function");
     const frozenParams = Object.freeze(params);
     const runId = crypto.randomUUID();
     const flowStart = Date.now();
