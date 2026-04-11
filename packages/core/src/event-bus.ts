@@ -1,5 +1,5 @@
 import type { Envelope, EventMap } from "./events.ts";
-import type { AnyEnvelope, AnyHandler, AnyPublishableBus, AnySubscribeOptions } from "./types.ts";
+import type { AnyEnvelope, AnyHandler, AnyPublishableBus, AnySubscribeOptions, MaybePromise } from "./types.ts";
 
 // ── Subscription ──────────────────────────────────────────────────────
 
@@ -16,7 +16,7 @@ export interface SubscribeOptions<TPayload = unknown> {
     subscriberId?: string;
 }
 
-export type Handler<TPayload> = (envelope: Envelope<TPayload>) => void | Promise<void>;
+export type Handler<TPayload> = (envelope: Envelope<TPayload>) => MaybePromise<void>;
 
 // ── Bus Interfaces ────────────────────────────────────────────────────
 

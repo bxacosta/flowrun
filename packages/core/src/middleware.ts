@@ -1,11 +1,11 @@
-import type { AnyMiddleware } from "./types.ts";
+import type { AnyMiddleware, MaybePromise } from "./types.ts";
 
 // ── Compose ───────────────────────────────────────────────────────────
 
 export async function compose(
     middlewares: readonly AnyMiddleware[],
     context: Record<string, unknown>,
-    handler: () => Promise<void> | void
+    handler: () => MaybePromise<void>
 ): Promise<void> {
     if (middlewares.length === 0) {
         await handler();

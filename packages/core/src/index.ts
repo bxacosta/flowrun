@@ -105,6 +105,7 @@ export type {
     EmptyObject,
     FailedFlowResult,
     FlowResult,
+    MaybePromise,
     RunArgs,
     SuccessFlowResult,
 } from "./types.ts";

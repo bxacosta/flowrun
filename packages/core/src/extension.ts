@@ -1,7 +1,7 @@
 import type { PublishableBus } from "./event-bus.ts";
 import type { AsEventMap, EventMap, SystemEvents, SystemPublicEvents } from "./events.ts";
 import type { Logger } from "./logger.ts";
-import type { EmptyObject } from "./types.ts";
+import type { EmptyObject, MaybePromise } from "./types.ts";
 
 // ── Visibility Markers ────────────────────────────────────────────────
 
@@ -58,8 +58,8 @@ export interface ExtensionContext<TEvents extends EventMap> {
 // ── Extension Types ───────────────────────────────────────────────────
 
 export interface ExtensionConfig<TDefinitions extends EventDefinitions, TProvided extends object> {
-    create: (context: ExtensionContext<UnwrapEvents<TDefinitions>>) => TProvided;
-    dispose?: (provided: TProvided) => Promise<void> | void;
+    create: (context: ExtensionContext<UnwrapEvents<TDefinitions>>) => MaybePromise<TProvided>;
+    dispose?: (provided: TProvided) => MaybePromise<void>;
     events: TDefinitions;
     name: string;
 }
@@ -69,8 +69,8 @@ export interface Extension<
     TInternalEvents extends object = EmptyObject,
     TPublicEvents extends object = EmptyObject,
 > {
-    create: (context: ExtensionContext<AsEventMap<TInternalEvents & TPublicEvents>>) => TProvided;
-    dispose?: (provided: TProvided) => Promise<void> | void;
+    create: (context: ExtensionContext<AsEventMap<TInternalEvents & TPublicEvents>>) => MaybePromise<TProvided>;
+    dispose?: (provided: TProvided) => MaybePromise<void>;
     name: string;
 }
 

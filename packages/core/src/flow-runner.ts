@@ -64,7 +64,7 @@ async function createExtensions(
 
     try {
         for (const extension of extensions) {
-            const result = extension.create(context);
+            const result = await extension.create(context);
             assertPlainObject(
                 result,
                 `Extension "${extension.name}" must return a plain object from create(), not an array or function`

@@ -6,6 +6,8 @@ import type { Logger } from "./logger.ts";
 
 export type EmptyObject = Record<never, never>;
 
+export type MaybePromise<T> = T | Promise<T>;
+
 // ── Execution Modes ──────────────────────────────────────────────────
 
 export type TaskErrorMode = "fail" | "skip";
@@ -89,7 +91,7 @@ export type Node<TScope extends AnyScope = AnyScope> = NodeDefinition & {
 
 // ── Middleware ───────────────────────────────────────────────────────
 
-export type Middleware<TContext> = (context: TContext, next: () => Promise<void>) => Promise<void> | void;
+export type Middleware<TContext> = (context: TContext, next: () => Promise<void>) => MaybePromise<void>;
 
 // ── Context Publish (filters out system events) ──────────────────────
 
@@ -220,7 +222,7 @@ export type NodesSpec<TScope extends AnyScope> =
 // ── Configs ──────────────────────────────────────────────────────────
 
 export interface TaskConfig<TScope extends AnyScope> {
-    handler: (context: TaskContext<TScope>) => Promise<void> | void;
+    handler: (context: TaskContext<TScope>) => MaybePromise<void>;
     middleware?: NoInfer<
         TaskMiddlewareOf<
             TScope["_provided"],
@@ -237,11 +239,8 @@ export interface TaskConfig<TScope extends AnyScope> {
 }
 
 export interface ParallelOptions<TScope extends AnyScope> {
-    cleanupProvided?: (provided: TScope["_provided"], meta: ParallelForkMeta) => void | Promise<void>;
-    forkProvided?: (
-        provided: TScope["_provided"],
-        meta: ParallelForkMeta
-    ) => TScope["_provided"] | Promise<TScope["_provided"]>;
+    cleanupProvided?: (provided: TScope["_provided"], meta: ParallelForkMeta) => MaybePromise<void>;
+    forkProvided?: (provided: TScope["_provided"], meta: ParallelForkMeta) => MaybePromise<TScope["_provided"]>;
     merge?: MergeStrategy;
     onError?: ContainerErrorMode;
 }
@@ -252,12 +251,9 @@ export type ParallelConfig<TScope extends AnyScope> = ParallelOptions<TScope> & 
 };
 
 export interface EveryOptions<TScope extends AnyScope, TItem> {
-    cleanupProvided?: (provided: TScope["_provided"], meta: EveryForkMeta<TItem>) => void | Promise<void>;
+    cleanupProvided?: (provided: TScope["_provided"], meta: EveryForkMeta<TItem>) => MaybePromise<void>;
     concurrency?: number;
-    forkProvided?: (
-        provided: TScope["_provided"],
-        meta: EveryForkMeta<TItem>
-    ) => TScope["_provided"] | Promise<TScope["_provided"]>;
+    forkProvided?: (provided: TScope["_provided"], meta: EveryForkMeta<TItem>) => MaybePromise<TScope["_provided"]>;
     merge?: MergeStrategy;
     onError?: ContainerErrorMode;
 }
@@ -366,7 +362,7 @@ export type RunArgs<TParams> = keyof TParams extends never ? [params?: TParams] 
 export type AnyScope = Scope<any, any, any, any, any, any>;
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased cleanup callback — typed at config boundary
-export type AnyCleanupProvided = (provided: any, meta: any) => void | Promise<void>;
+export type AnyCleanupProvided = (provided: any, meta: any) => MaybePromise<void>;
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased envelope for untyped dispatch contexts
 export type AnyEnvelope = Envelope<any>;
@@ -405,4 +401,4 @@ export type AnyRunArgs = [params?: any];
 export type AnySubscribeOptions = SubscribeOptions<any>;
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased task handler for heterogeneous node storage
-export type AnyTaskHandler = (context: any) => Promise<void> | void;
+export type AnyTaskHandler = (context: any) => MaybePromise<void>;
