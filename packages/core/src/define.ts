@@ -1,13 +1,5 @@
 import { createNodeBuilder, resolveNodes } from "./node-builder.ts";
-import type {
-    AnyScope,
-    EveryConfig,
-    FlowDefinition,
-    IterationScope,
-    Node,
-    ParallelConfig,
-    TaskConfig,
-} from "./types.ts";
+import type { AnyScope, EveryConfig, FlowConfig, IterationScope, Node, ParallelConfig, TaskConfig } from "./types.ts";
 import { assertUniqueNodeNames } from "./validation.ts";
 
 // ── defineTask ───────────────────────────────────────────────────────
@@ -59,6 +51,6 @@ export function defineEvery<TScope extends AnyScope, TItem>(config: EveryConfig<
 
 // ── defineFlow ───────────────────────────────────────────────────────
 
-export function defineFlow<TScope extends AnyScope>(definition: FlowDefinition<TScope>): FlowDefinition<TScope> {
-    return definition;
+export function defineFlow<TScope extends AnyScope>(config: FlowConfig<TScope>): FlowConfig<TScope> {
+    return config;
 }

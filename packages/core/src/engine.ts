@@ -4,18 +4,18 @@ import { createEventBus } from "./event-bus.ts";
 import type { EventMap, MergeAllEvents, MergePublicEvents, SystemEvents, SystemPublicEvents } from "./events.ts";
 import type { AnyExtension, Extension } from "./extension.ts";
 import { createFlow } from "./flow-builder.ts";
-import type { AnyFlow, AnyScope, EmptyObject, Flow, FlowDefinition, FlowResult, Scope } from "./types.ts";
+import type { AnyFlow, AnyScope, EmptyObject, Flow, FlowConfig, FlowResult, Scope } from "./types.ts";
 
 // ── Internal Types ────────────────────────────────────────────────────
 
 // Direct-generic alias used at engine.flow's inline overload so TS can infer TParams/TState from the state callback.
-type FlowDefinitionOf<
+type FlowConfigOf<
     TProvided extends object,
     TParams extends object,
     TState extends object,
     TPublicEvents extends EventMap,
     TAllEvents extends EventMap,
-> = FlowDefinition<Scope<TProvided, TParams, TState, TPublicEvents, TAllEvents>>;
+> = FlowConfig<Scope<TProvided, TParams, TState, TPublicEvents, TAllEvents>>;
 
 // ── Engine Interface ──────────────────────────────────────────────────
 
@@ -35,11 +35,11 @@ export interface Engine<TProvided extends object, TPublicEvents extends EventMap
     >;
 
     flow<TParams extends object = EmptyObject, TState extends object = EmptyObject>(
-        config: FlowDefinitionOf<TProvided, TParams, TState, TPublicEvents, TAllEvents> & { name: string }
+        config: FlowConfigOf<TProvided, TParams, TState, TPublicEvents, TAllEvents>
     ): Flow<TParams, TState>;
 
     flow<TFlowScope extends AnyScope>(
-        config: TProvided extends TFlowScope["_provided"] ? FlowDefinition<TFlowScope> & { name: string } : never
+        config: TProvided extends TFlowScope["_provided"] ? FlowConfig<TFlowScope> : never
     ): Flow<TFlowScope["_params"], TFlowScope["_state"]>;
 
     flows(): readonly string[];
@@ -88,13 +88,12 @@ export function createEngine(busConfig?: EventBusConfig): Engine<EmptyObject, Sy
             return engine;
         },
 
-        flow(config: FlowDefinition<Scope> & { name: string }) {
-            const { name, ...definition } = config;
-            if (registry.has(name)) {
-                throw new FlowEngineError(`Flow "${name}" is already registered`);
+        flow(config: FlowConfig<Scope>) {
+            if (registry.has(config.name)) {
+                throw new FlowEngineError(`Flow "${config.name}" is already registered`);
             }
-            const createdFlow = createFlow(name, definition, extensions, bus);
-            registry.set(name, createdFlow);
+            const createdFlow = createFlow(config, extensions, bus);
+            registry.set(config.name, createdFlow);
             return createdFlow;
         },
 

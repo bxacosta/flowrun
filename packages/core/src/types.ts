@@ -278,7 +278,7 @@ type FlowStateFieldOf<TParams extends object, TState extends object> = keyof TSt
     ? { state?: (params: Readonly<TParams>) => TState }
     : { state: (params: Readonly<TParams>) => TState };
 
-export type FlowDefinition<TScope extends AnyScope> = {
+export type FlowConfig<TScope extends AnyScope> = {
     middleware?: NoInfer<
         FlowMiddlewareOf<
             TScope["_provided"],
@@ -288,6 +288,7 @@ export type FlowDefinition<TScope extends AnyScope> = {
             TScope["_allEvents"]
         >
     >[];
+    name: string;
     nodes: NodesSpec<TScope>;
 } & FlowStateFieldOf<TScope["_params"], TScope["_state"]>;
 

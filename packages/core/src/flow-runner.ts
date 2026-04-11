@@ -14,7 +14,7 @@ import type {
     AnyFlowResult,
     AnyFlowStateStore,
     AnyScope,
-    FlowDefinition,
+    FlowConfig,
     FlowStatus,
     NodeDefinition,
 } from "./types.ts";
@@ -34,9 +34,8 @@ interface CancellationState {
 
 export interface FlowRunArgs<TScope extends AnyScope = AnyScope> {
     bus: InternalBus<EventMap>;
-    definition: FlowDefinition<TScope>;
+    config: FlowConfig<TScope>;
     extensions: readonly AnyExtension[];
-    flowName: string;
     nodes: readonly NodeDefinition[];
     params: Readonly<TScope["_params"]>;
 }
@@ -85,10 +84,9 @@ async function createExtensions(
 interface PipelineArgs<TScope extends AnyScope = AnyScope> {
     bus: InternalBus<EventMap>;
     cancellation: CancellationState;
+    config: FlowConfig<TScope>;
     controller: AbortController;
-    definition: FlowDefinition<TScope>;
     executionContext: ExecutionContext;
-    flowName: string;
     flowStart: number;
     nodes: readonly NodeDefinition[];
     runId: string;
@@ -96,9 +94,9 @@ interface PipelineArgs<TScope extends AnyScope = AnyScope> {
 }
 
 async function runFlowPipeline<TScope extends AnyScope>(args: PipelineArgs<TScope>): Promise<AnyFlowResult> {
-    const { bus, cancellation, controller, definition, executionContext, flowName, flowStart, nodes, runId, state } =
-        args;
-    const flowMiddleware = definition.middleware ?? [];
+    const { bus, cancellation, config, controller, executionContext, flowStart, nodes, runId, state } = args;
+    const flowName = config.name;
+    const flowMiddleware = config.middleware ?? [];
     const flowContext = buildFlowContext(executionContext.runtime, state, controller.signal);
 
     const resultBase = () => ({
@@ -163,13 +161,14 @@ async function runFlowPipeline<TScope extends AnyScope>(args: PipelineArgs<TScop
 // ── Start Orchestrator ──────────────────────────────────────────────
 
 export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScope>): Promise<AnyFlowHandle> {
-    const { bus, definition, extensions, flowName, nodes, params } = args;
+    const { bus, config, extensions, nodes, params } = args;
+    const flowName = config.name;
 
     assertPlainObject(params, "Flow params must be a plain object, not an array or function");
     const frozenParams = Object.freeze(params);
     const runId = crypto.randomUUID();
     const flowStart = Date.now();
-    const initialState = definition.state ? definition.state(frozenParams) : {};
+    const initialState = config.state ? config.state(frozenParams) : {};
     const state = createStateStore(initialState);
     const logger = buildLogger(flowName, runId, bus);
 
@@ -211,10 +210,9 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
     const pipelinePromise = runFlowPipeline({
         bus,
         cancellation,
+        config,
         controller,
-        definition,
         executionContext,
-        flowName,
         flowStart,
         nodes,
         runId,
