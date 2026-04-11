@@ -9,25 +9,25 @@ import { assertUniqueNodeNames } from "./validation.ts";
 // ── Flow Factory ─────────────────────────────────────────────────────
 
 export function createFlow<TScope extends AnyScope>(
-    flowId: string,
+    flowName: string,
     definition: FlowDefinition<TScope>,
     extensions: readonly AnyExtension[],
     bus: InternalBus<EventMap>
 ): AnyFlow {
     const nodes = resolveNodes(definition.nodes, createNodeBuilder<TScope>());
-    assertUniqueNodeNames(nodes, flowId);
+    assertUniqueNodeNames(nodes, flowName);
 
     const buildArgs = (args: AnyRunArgs) => ({
         bus,
         definition,
         extensions,
-        flowId,
+        flowName,
         nodes,
         params: args[0] ?? {},
     });
 
     return {
-        id: flowId,
+        name: flowName,
         run: (...args: AnyRunArgs) => runFlow(buildArgs(args)),
         start: (...args: AnyRunArgs) => startFlow(buildArgs(args)),
     };

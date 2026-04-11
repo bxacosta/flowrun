@@ -21,39 +21,39 @@ export interface SystemInternalEvents {
     "flow:end": {
         duration: number;
         error?: Error;
-        flowId: string;
+        flowName: string;
         reason?: string;
         runId: string;
         status: "cancelled" | "failed" | "success";
     };
-    "flow:paused": { flowId: string; runId: string };
-    "flow:resumed": { flowId: string; runId: string };
-    "flow:start": { flowId: string; runId: string };
+    "flow:paused": { flowName: string; runId: string };
+    "flow:resumed": { flowName: string; runId: string };
+    "flow:start": { flowName: string; runId: string };
     "node:every:end": {
         duration: number;
         errors?: Error[];
         failedIndexes?: number[];
-        flowId: string;
+        flowName: string;
         nodeName: string;
         runId: string;
         status: "failed" | "success";
         totalItems: number;
     };
-    "node:every:start": { flowId: string; nodeName: string; runId: string; totalItems: number };
+    "node:every:start": { flowName: string; nodeName: string; runId: string; totalItems: number };
     "node:parallel:end": {
         duration: number;
         errors?: Error[];
-        flowId: string;
+        flowName: string;
         nodeName: string;
         runId: string;
         status: "failed" | "success";
     };
-    "node:parallel:start": { flowId: string; nodeName: string; runId: string };
+    "node:parallel:start": { flowName: string; nodeName: string; runId: string };
     "node:task:attempt:end": {
         attempt: number;
         duration: number;
         error?: Error;
-        flowId: string;
+        flowName: string;
         index?: number;
         nodeName: string;
         runId: string;
@@ -61,7 +61,7 @@ export interface SystemInternalEvents {
     };
     "node:task:attempt:start": {
         attempt: number;
-        flowId: string;
+        flowName: string;
         index?: number;
         nodeName: string;
         runId: string;
@@ -70,7 +70,7 @@ export interface SystemInternalEvents {
         attempts: number;
         duration: number;
         error?: Error;
-        flowId: string;
+        flowName: string;
         index?: number;
         nodeName: string;
         runId: string;
@@ -79,20 +79,20 @@ export interface SystemInternalEvents {
     "node:task:retry": {
         attempt: number;
         error: Error;
-        flowId: string;
+        flowName: string;
         index?: number;
         nextDelayMs: number;
         nodeName: string;
         runId: string;
     };
-    "node:task:start": { flowId: string; index?: number; maxAttempts: number; nodeName: string; runId: string };
+    "node:task:start": { flowName: string; index?: number; maxAttempts: number; nodeName: string; runId: string };
 }
 
 export type LogLevel = "debug" | "error" | "info" | "warn";
 
 export interface LogEventPayload {
     data?: unknown;
-    flowId: string;
+    flowName: string;
     level: LogLevel;
     message: string;
     runId: string;

@@ -36,7 +36,7 @@ export interface FlowRunArgs<TScope extends AnyScope = AnyScope> {
     bus: InternalBus<EventMap>;
     definition: FlowDefinition<TScope>;
     extensions: readonly AnyExtension[];
-    flowId: string;
+    flowName: string;
     nodes: readonly NodeDefinition[];
     params: Readonly<TScope["_params"]>;
 }
@@ -88,7 +88,7 @@ interface PipelineArgs<TScope extends AnyScope = AnyScope> {
     controller: AbortController;
     definition: FlowDefinition<TScope>;
     executionContext: ExecutionContext;
-    flowId: string;
+    flowName: string;
     flowStart: number;
     nodes: readonly NodeDefinition[];
     runId: string;
@@ -96,14 +96,14 @@ interface PipelineArgs<TScope extends AnyScope = AnyScope> {
 }
 
 async function runFlowPipeline<TScope extends AnyScope>(args: PipelineArgs<TScope>): Promise<AnyFlowResult> {
-    const { bus, cancellation, controller, definition, executionContext, flowId, flowStart, nodes, runId, state } =
+    const { bus, cancellation, controller, definition, executionContext, flowName, flowStart, nodes, runId, state } =
         args;
     const flowMiddleware = definition.middleware ?? [];
     const flowContext = buildFlowContext(executionContext.runtime, state, controller.signal);
 
     const resultBase = () => ({
         duration: Date.now() - flowStart,
-        flowId,
+        flowName,
         runId,
         state: state.snapshot(),
         tasks: executionContext.progress.taskResults,
@@ -116,14 +116,14 @@ async function runFlowPipeline<TScope extends AnyScope>(args: PipelineArgs<TScop
 
         await compose(flowMiddleware, flowContext, async () => {
             flowStarted = true;
-            await bus.publish("flow:start", { flowId, runId }, { source: "system" });
+            await bus.publish("flow:start", { flowName, runId }, { source: "system" });
             await executeNodes(nodes, executionContext, state, controller.signal);
         });
 
         if (flowStarted) {
             await bus.publish(
                 "flow:end",
-                { duration: Date.now() - flowStart, flowId, runId, status: "success" },
+                { duration: Date.now() - flowStart, flowName, runId, status: "success" },
                 { source: "system" }
             );
         }
@@ -136,7 +136,7 @@ async function runFlowPipeline<TScope extends AnyScope>(args: PipelineArgs<TScop
                     "flow:end",
                     {
                         duration: Date.now() - flowStart,
-                        flowId,
+                        flowName,
                         reason: cancellation.reason,
                         runId,
                         status: "cancelled",
@@ -152,7 +152,7 @@ async function runFlowPipeline<TScope extends AnyScope>(args: PipelineArgs<TScop
         if (flowStarted) {
             await bus.publish(
                 "flow:end",
-                { duration: Date.now() - flowStart, error: failedError, flowId, runId, status: "failed" },
+                { duration: Date.now() - flowStart, error: failedError, flowName, runId, status: "failed" },
                 { source: "system" }
             );
         }
@@ -163,7 +163,7 @@ async function runFlowPipeline<TScope extends AnyScope>(args: PipelineArgs<TScop
 // ── Start Orchestrator ──────────────────────────────────────────────
 
 export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScope>): Promise<AnyFlowHandle> {
-    const { bus, definition, extensions, flowId, nodes, params } = args;
+    const { bus, definition, extensions, flowName, nodes, params } = args;
 
     assertPlainObject(params, "Flow params must be a plain object, not an array or function");
     const frozenParams = Object.freeze(params);
@@ -171,11 +171,11 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
     const flowStart = Date.now();
     const initialState = definition.state ? definition.state(frozenParams) : {};
     const state = createStateStore(initialState);
-    const logger = buildLogger(flowId, runId, bus);
+    const logger = buildLogger(flowName, runId, bus);
 
     const extensionContext: ExtensionContext<EventMap> = {
         bus,
-        flowId,
+        flowName,
         log: logger,
         runId,
     };
@@ -188,7 +188,7 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
 
     const runtime: FlowRuntime = {
         bus,
-        flowId,
+        flowName,
         log: logger,
         params: frozenParams,
         provided,
@@ -214,7 +214,7 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
         controller,
         definition,
         executionContext,
-        flowId,
+        flowName,
         flowStart,
         nodes,
         runId,
@@ -239,7 +239,7 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
         );
 
     return {
-        flowId,
+        flowName,
         runId,
         cancel(reason?: string) {
             if (isTerminalStatus(currentStatus)) {
@@ -260,7 +260,7 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
             }
             currentStatus = "paused";
             pauseGate.pause();
-            bus.publish("flow:paused", { flowId, runId }, { source: "system" });
+            bus.publish("flow:paused", { flowName, runId }, { source: "system" });
         },
         resume() {
             if (currentStatus !== "paused") {
@@ -268,7 +268,7 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
             }
             currentStatus = "running";
             pauseGate.resume();
-            bus.publish("flow:resumed", { flowId, runId }, { source: "system" });
+            bus.publish("flow:resumed", { flowName, runId }, { source: "system" });
         },
         status() {
             return currentStatus;

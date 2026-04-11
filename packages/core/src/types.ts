@@ -117,7 +117,7 @@ type BaseContextOf<
     TAllEvents extends EventMap = SystemEvents,
 > = {
     bus: PublishableBus<TPublicEvents, TAllEvents>;
-    flowId: string;
+    flowName: string;
     log: Logger;
     params: Readonly<TParams>;
     publish: ContextPublish<TPublicEvents>;
@@ -297,7 +297,7 @@ export type FlowStatus = "cancelled" | "completed" | "failed" | "paused" | "runn
 
 export interface FlowHandle<TState extends object> {
     cancel(reason?: string): void;
-    readonly flowId: string;
+    readonly flowName: string;
     join(): Promise<FlowResult<TState>>;
     pause(): void;
     resume(): void;
@@ -306,7 +306,7 @@ export interface FlowHandle<TState extends object> {
 }
 
 export interface Flow<TParams extends object, TState extends object> {
-    id: string;
+    name: string;
     run(...args: RunArgs<TParams>): Promise<FlowResult<TState>>;
     start(...args: RunArgs<TParams>): Promise<FlowHandle<TState>>;
 }
@@ -327,7 +327,7 @@ export interface TaskResult {
 
 export interface BaseFlowResult<TState extends object> {
     duration: number;
-    flowId: string;
+    flowName: string;
     runId: string;
     state: Readonly<TState>;
     tasks: readonly TaskResult[];

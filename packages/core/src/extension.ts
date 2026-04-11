@@ -50,7 +50,7 @@ export type UnwrapEvents<TDefinitions extends EventDefinitions> = {
 
 export interface ExtensionContext<TEvents extends EventMap> {
     bus: PublishableBus<SystemPublicEvents & TEvents, SystemEvents & TEvents>;
-    flowId: string;
+    flowName: string;
     log: Logger;
     runId: string;
 }

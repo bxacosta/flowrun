@@ -8,7 +8,7 @@ import type { AnyFlowStateStore, TaskResult } from "./types.ts";
 
 export interface FlowRuntime {
     bus: InternalBus<EventMap>;
-    flowId: string;
+    flowName: string;
     log: Logger;
     params: Readonly<Record<string, unknown>>;
     provided: Record<string, unknown>;
@@ -42,7 +42,7 @@ function buildBaseContext(
     return {
         ...runtime.provided,
         bus: runtime.publicBus,
-        flowId: runtime.flowId,
+        flowName: runtime.flowName,
         log: runtime.log,
         params: runtime.params,
         publish: (topic: string, payload: unknown, options?: { correlationId?: string; source?: string }) => {

@@ -35,18 +35,16 @@ export interface Engine<TProvided extends object, TPublicEvents extends EventMap
     >;
 
     flow<TParams extends object = EmptyObject, TState extends object = EmptyObject>(
-        id: string,
-        definition: FlowDefinitionOf<TProvided, TParams, TState, TPublicEvents, TAllEvents>
+        config: FlowDefinitionOf<TProvided, TParams, TState, TPublicEvents, TAllEvents> & { name: string }
     ): Flow<TParams, TState>;
 
     flow<TFlowScope extends AnyScope>(
-        id: string,
-        definition: TProvided extends TFlowScope["_provided"] ? FlowDefinition<TFlowScope> : never
+        config: TProvided extends TFlowScope["_provided"] ? FlowDefinition<TFlowScope> & { name: string } : never
     ): Flow<TFlowScope["_params"], TFlowScope["_state"]>;
 
     flows(): readonly string[];
 
-    run(id: string, params?: Record<string, unknown>): Promise<FlowResult<Record<string, unknown>>>;
+    run(name: string, params?: Record<string, unknown>): Promise<FlowResult<Record<string, unknown>>>;
 }
 
 // ── Engine Type Inference ─────────────────────────────────────────────
@@ -90,12 +88,13 @@ export function createEngine(busConfig?: EventBusConfig): Engine<EmptyObject, Sy
             return engine;
         },
 
-        flow(id: string, definition: FlowDefinition<Scope>) {
-            if (registry.has(id)) {
-                throw new FlowEngineError(`Flow "${id}" is already registered`);
+        flow(config: FlowDefinition<Scope> & { name: string }) {
+            const { name, ...definition } = config;
+            if (registry.has(name)) {
+                throw new FlowEngineError(`Flow "${name}" is already registered`);
             }
-            const createdFlow = createFlow(id, definition, extensions, bus);
-            registry.set(id, createdFlow);
+            const createdFlow = createFlow(name, definition, extensions, bus);
+            registry.set(name, createdFlow);
             return createdFlow;
         },
 
@@ -103,10 +102,10 @@ export function createEngine(busConfig?: EventBusConfig): Engine<EmptyObject, Sy
             return [...registry.keys()];
         },
 
-        run(id, params = {}) {
-            const flow = registry.get(id);
+        run(name, params = {}) {
+            const flow = registry.get(name);
             if (flow === undefined) {
-                throw new FlowEngineError(`Flow "${id}" is not registered`);
+                throw new FlowEngineError(`Flow "${name}" is not registered`);
             }
             return flow.run(params);
         },

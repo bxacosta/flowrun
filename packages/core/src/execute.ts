@@ -71,8 +71,8 @@ async function runSingleAttempt(
 ): Promise<Error | null> {
     signal.throwIfAborted();
 
-    const { bus, flowId, runId } = executionContext.runtime;
-    const attemptBase = { attempt, flowId, index: iteration?.index, nodeName: node.name, runId };
+    const { bus, flowName, runId } = executionContext.runtime;
+    const attemptBase = { attempt, flowName, index: iteration?.index, nodeName: node.name, runId };
 
     await bus.publish("node:task:attempt:start", attemptBase, { source: "system" });
     const attemptStart = Date.now();
@@ -109,8 +109,8 @@ async function executeTask(
     signal: AbortSignal,
     iteration?: { index: number; item: unknown }
 ): Promise<void> {
-    const { bus, flowId, runId } = executionContext.runtime;
-    const nodeBase = { flowId, index: iteration?.index, nodeName: node.name, runId };
+    const { bus, flowName, runId } = executionContext.runtime;
+    const nodeBase = { flowName, index: iteration?.index, nodeName: node.name, runId };
     const maxAttempts = node.retry?.attempts ?? 1;
     const taskStart = Date.now();
     const path = [...executionContext.pathSegments, node.name].join("/");
@@ -283,10 +283,10 @@ async function executeParallel(
     signal: AbortSignal,
     iteration?: { index: number; item: unknown }
 ): Promise<void> {
-    const { bus, flowId, runId } = executionContext.runtime;
+    const { bus, flowName, runId } = executionContext.runtime;
     const parallelStart = Date.now();
 
-    await bus.publish("node:parallel:start", { flowId, nodeName: node.name, runId }, { source: "system" });
+    await bus.publish("node:parallel:start", { flowName, nodeName: node.name, runId }, { source: "system" });
 
     const { cleanup, controller } = createChildController(signal);
     const childPathSegments = [...executionContext.pathSegments, node.name];
@@ -336,7 +336,7 @@ async function executeParallel(
                 {
                     duration: Date.now() - parallelStart,
                     errors: outcome.errors,
-                    flowId,
+                    flowName,
                     nodeName: node.name,
                     runId,
                     status: "failed",
@@ -354,7 +354,7 @@ async function executeParallel(
 
         await bus.publish(
             "node:parallel:end",
-            { duration: Date.now() - parallelStart, flowId, nodeName: node.name, runId, status: "success" },
+            { duration: Date.now() - parallelStart, flowName, nodeName: node.name, runId, status: "success" },
             { source: "system" }
         );
     } finally {
@@ -369,7 +369,7 @@ async function executeEvery(
     signal: AbortSignal,
     iteration?: { index: number; item: unknown }
 ): Promise<void> {
-    const { bus, flowId, runId } = executionContext.runtime;
+    const { bus, flowName, runId } = executionContext.runtime;
 
     const itemsContext = buildItemsContext(executionContext.runtime, state, signal, iteration);
     const items = node.items(itemsContext);
@@ -382,7 +382,7 @@ async function executeEvery(
 
     await bus.publish(
         "node:every:start",
-        { flowId, nodeName: node.name, runId, totalItems: items.length },
+        { flowName, nodeName: node.name, runId, totalItems: items.length },
         { source: "system" }
     );
 
@@ -439,7 +439,7 @@ async function executeEvery(
             const endPayload = {
                 duration: Date.now() - everyStart,
                 errors: outcome.errors,
-                flowId,
+                flowName,
                 nodeName: node.name,
                 runId,
                 status: "failed" as const,
@@ -457,7 +457,7 @@ async function executeEvery(
             "node:every:end",
             {
                 duration: Date.now() - everyStart,
-                flowId,
+                flowName,
                 nodeName: node.name,
                 runId,
                 status: "success",
