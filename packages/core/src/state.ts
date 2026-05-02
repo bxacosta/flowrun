@@ -1,34 +1,44 @@
 import { InvalidMergeValueError, MergeConflictError } from "./errors.ts";
-import type { AnyFlowStateStore, FlowStateStore, MergeStrategy } from "./types.ts";
 import { assertPlainObject } from "./validation.ts";
 
-// ── Internal Types ────────────────────────────────────────────────────
+export type MergeStrategy = "append" | "overwrite" | "strict";
+
+export interface FlowStateStore<TState extends object> {
+    fork(): FlowStateStore<TState>;
+    get<K extends keyof TState & string>(key: K): TState[K];
+    getWrittenValues(): Map<string, unknown>;
+    has<K extends keyof TState & string>(key: K): boolean;
+    patch(values: Partial<TState>): void;
+    set<K extends keyof TState & string>(key: K, value: TState[K]): void;
+    snapshot(): Readonly<TState>;
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: type-erased state store for runtime orchestration
+export type AnyFlowStateStore = FlowStateStore<any>;
 
 export interface ForkEntry {
     label: number | string;
     store: AnyFlowStateStore;
 }
 
-// ── State Store Factory ──────────────────────────────────────────────
-
 export function createStateStore<TState extends object>(initial: TState): FlowStateStore<TState> {
-    assertPlainObject(initial, "Flow state must be a plain object, not an array or function");
-    const rootData = new Map<string, unknown>();
+    assertPlainObject(initial, "Flow state must be a plain object");
+    const root = new Map<string, unknown>();
     for (const [key, value] of Object.entries(initial)) {
-        rootData.set(key, structuredClone(value));
+        root.set(key, structuredClone(value));
     }
-    return buildStore<TState>(rootData, null);
+    return createStore(root, null);
 }
 
-function buildStore<TState extends object>(
+function createStore<TState extends object>(
     data: Map<string, unknown>,
     parent: FlowStateStore<TState> | null
 ): FlowStateStore<TState> {
     const writtenKeys = new Set<string>();
 
     const store: FlowStateStore<TState> = {
-        fork(_label) {
-            return buildStore<TState>(new Map(), store);
+        fork() {
+            return createStore<TState>(new Map(), store);
         },
 
         get(key) {
@@ -53,10 +63,7 @@ function buildStore<TState extends object>(
             if (data.has(key)) {
                 return true;
             }
-            if (parent) {
-                return parent.has(key);
-            }
-            return false;
+            return parent ? parent.has(key) : false;
         },
 
         patch(values) {
@@ -83,16 +90,35 @@ function buildStore<TState extends object>(
     return store;
 }
 
-// ── Merge Helpers ────────────────────────────────────────────────────
-
 function collectWrittenEntries(
     forks: readonly ForkEntry[]
 ): { label: number | string; values: Map<string, unknown> }[] {
-    const entries: { label: number | string; values: Map<string, unknown> }[] = [];
-    for (const fork of forks) {
-        entries.push({ label: fork.label, values: fork.store.getWrittenValues() });
+    return forks.map((fork) => ({ label: fork.label, values: fork.store.getWrittenValues() }));
+}
+
+function applyAppend(
+    parent: AnyFlowStateStore,
+    entries: readonly { label: number | string; values: Map<string, unknown> }[]
+): void {
+    const arraysByKey = new Map<string, unknown[][]>();
+
+    for (const { label, values } of entries) {
+        for (const [key, value] of values) {
+            if (!Array.isArray(value)) {
+                throw new InvalidMergeValueError(key, label);
+            }
+            const arrays = arraysByKey.get(key);
+            if (arrays) {
+                arrays.push(value);
+            } else {
+                arraysByKey.set(key, [value]);
+            }
+        }
     }
-    return entries;
+
+    for (const [key, arrays] of arraysByKey) {
+        parent.set(key, arrays.flat());
+    }
 }
 
 function applyOverwrite(parent: AnyFlowStateStore, entries: readonly { values: Map<string, unknown> }[]): void {
@@ -107,58 +133,31 @@ function applyStrict(
     parent: AnyFlowStateStore,
     entries: readonly { label: number | string; values: Map<string, unknown> }[]
 ): void {
-    const keyWriters = new Map<string, (number | string)[]>();
-    const keyValues = new Map<string, unknown>();
+    const writersByKey = new Map<string, (number | string)[]>();
+    const valuesByKey = new Map<string, unknown>();
 
     for (const { label, values } of entries) {
         for (const [key, value] of values) {
-            const writers = keyWriters.get(key);
+            const writers = writersByKey.get(key);
             if (writers) {
                 writers.push(label);
             } else {
-                keyWriters.set(key, [label]);
+                writersByKey.set(key, [label]);
             }
-            keyValues.set(key, value);
+            valuesByKey.set(key, value);
         }
     }
 
-    for (const [key, writers] of keyWriters) {
+    for (const [key, writers] of writersByKey) {
         if (writers.length > 1) {
             throw new MergeConflictError(key, writers);
         }
     }
 
-    for (const [key, value] of keyValues) {
+    for (const [key, value] of valuesByKey) {
         parent.set(key, value);
     }
 }
-
-function applyAppend(
-    parent: AnyFlowStateStore,
-    entries: readonly { label: number | string; values: Map<string, unknown> }[]
-): void {
-    const keyArrays = new Map<string, unknown[][]>();
-
-    for (const { label, values } of entries) {
-        for (const [key, value] of values) {
-            if (!Array.isArray(value)) {
-                throw new InvalidMergeValueError(key, label);
-            }
-            const existing = keyArrays.get(key);
-            if (existing) {
-                existing.push(value);
-            } else {
-                keyArrays.set(key, [value]);
-            }
-        }
-    }
-
-    for (const [key, arrays] of keyArrays) {
-        parent.set(key, arrays.flat());
-    }
-}
-
-// ── Public Merge Function ────────────────────────────────────────────
 
 export function mergeForkedStores(
     parent: AnyFlowStateStore,
@@ -168,20 +167,16 @@ export function mergeForkedStores(
     const entries = collectWrittenEntries(forks);
 
     switch (strategy) {
-        case "append": {
+        case "append":
             applyAppend(parent, entries);
-            break;
-        }
-        case "overwrite": {
+            return;
+        case "overwrite":
             applyOverwrite(parent, entries);
-            break;
-        }
-        case "strict": {
+            return;
+        case "strict":
             applyStrict(parent, entries);
-            break;
-        }
-        default: {
+            return;
+        default:
             throw new Error(`Unknown merge strategy: ${strategy}`);
-        }
     }
 }

@@ -1,7 +1,5 @@
 import { normalizeError } from "./errors.ts";
 
-// ── Concurrency Helper ───────────────────────────────────────────────
-
 export async function runWithConcurrency(
     tasks: readonly (() => Promise<void>)[],
     maxConcurrency: number
@@ -10,12 +8,12 @@ export async function runWithConcurrency(
         return;
     }
 
-    let taskIndex = 0;
+    let nextIndex = 0;
 
     async function worker(): Promise<void> {
-        while (taskIndex < tasks.length) {
-            const currentIndex = taskIndex;
-            taskIndex++;
+        while (nextIndex < tasks.length) {
+            const currentIndex = nextIndex;
+            nextIndex++;
             const task = tasks[currentIndex];
             if (task) {
                 await task();
@@ -24,15 +22,8 @@ export async function runWithConcurrency(
     }
 
     const workerCount = Math.min(maxConcurrency, tasks.length);
-    const workers: Promise<void>[] = [];
-    for (let workerIndex = 0; workerIndex < workerCount; workerIndex++) {
-        workers.push(worker());
-    }
-
-    await Promise.allSettled(workers);
+    await Promise.allSettled(Array.from({ length: workerCount }, () => worker()));
 }
-
-// ── Branch Execution Helpers ─────────────────────────────────────────
 
 export async function executeFailFastBranches(
     branches: readonly (() => Promise<void>)[],
@@ -47,7 +38,7 @@ export async function executeFailFastBranches(
                 const normalized = normalizeError(error);
                 if (!firstError) {
                     firstError = normalized;
-                    controller.abort();
+                    controller.abort(normalized);
                 }
                 throw normalized;
             })
@@ -65,18 +56,19 @@ export async function executeContinueBranches(
     const successfulIndexes: number[] = [];
 
     const wrapped = branches.map(
-        (branch, branchIndex) => () =>
+        (branch, index) => () =>
             branch()
                 .then(() => {
-                    successfulIndexes.push(branchIndex);
+                    successfulIndexes.push(index);
                 })
                 .catch((error: unknown) => {
-                    errors.push({ error: normalizeError(error), index: branchIndex });
+                    errors.push({ error: normalizeError(error), index });
                 })
     );
 
     await runWithConcurrency(wrapped, concurrency);
-    successfulIndexes.sort((a, b) => a - b);
-    errors.sort((a, b) => a.index - b.index);
+    errors.sort((left, right) => left.index - right.index);
+    successfulIndexes.sort((left, right) => left - right);
+
     return { errors, successfulIndexes };
 }

@@ -4,27 +4,91 @@ import { normalizeError } from "./errors.ts";
 import type { InternalBus, PublishableBus } from "./event-bus.ts";
 import type { EventMap } from "./events.ts";
 import { executeNodes } from "./execute.ts";
-import type { AnyExtension, ExtensionContext } from "./extension.ts";
-import { buildLogger } from "./logger.ts";
+import type { AnyExtensionDefinition } from "./extension.ts";
+import { createLogger } from "./logger.ts";
+import type { AnyMiddleware } from "./middleware.ts";
 import { compose } from "./middleware.ts";
+import type { AnyStateFactory, NodeDefinition, TaskResult } from "./node.ts";
+import type { AnyScope } from "./scope.ts";
 import { PauseGate } from "./signal.ts";
+import type { AnyFlowStateStore } from "./state.ts";
 import { createStateStore } from "./state.ts";
-import type {
-    AnyFlowHandle,
-    AnyFlowResult,
-    AnyFlowStateStore,
-    AnyScope,
-    FlowConfig,
-    FlowStatus,
-    NodeDefinition,
-} from "./types.ts";
 import { assertPlainObject } from "./validation.ts";
 
-// ── Internal Types ────────────────────────────────────────────────────
+export interface FlowDefinition<TScope extends AnyScope = AnyScope> {
+    readonly _scope?: TScope;
+    readonly kind: "flow";
+    readonly middleware: readonly AnyMiddleware[];
+    readonly name: string;
+    readonly nodes: readonly NodeDefinition[];
+    readonly state?: AnyStateFactory;
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: type-erased flow definition for registries
+export type AnyFlowDefinition = FlowDefinition<any>;
+
+export type FlowStatus = "cancelled" | "completed" | "failed" | "paused" | "running";
+
+export interface FlowHandle<TState extends object> {
+    cancel(reason?: string): void;
+    readonly flowName: string;
+    join(): Promise<FlowResult<TState>>;
+    pause(): void;
+    resume(): void;
+    readonly runId: string;
+    status(): FlowStatus;
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: type-erased flow handle for runtime orchestration
+export type AnyFlowHandle = FlowHandle<any>;
+
+export type RunArgs<TParams> = keyof TParams extends never ? [params?: TParams] : [params: TParams];
+
+// biome-ignore lint/suspicious/noExplicitAny: type-erased run arguments, typed at public call boundary
+export type AnyRunArgs = [params?: any];
+
+export interface Flow<TParams extends object, TState extends object> {
+    name: string;
+    run(...args: RunArgs<TParams>): Promise<FlowResult<TState>>;
+    start(...args: RunArgs<TParams>): Promise<FlowHandle<TState>>;
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: type-erased flow for registries
+export type AnyFlow = Flow<any, any>;
+
+export interface BaseFlowResult<TState extends object> {
+    duration: number;
+    flowName: string;
+    runId: string;
+    state: Readonly<TState>;
+    tasks: readonly TaskResult[];
+}
+
+export interface SuccessFlowResult<TState extends object> extends BaseFlowResult<TState> {
+    status: "success";
+}
+
+export interface FailedFlowResult<TState extends object> extends BaseFlowResult<TState> {
+    error: Error;
+    status: "failed";
+}
+
+export interface CancelledFlowResult<TState extends object> extends BaseFlowResult<TState> {
+    reason?: string;
+    status: "cancelled";
+}
+
+export type FlowResult<TState extends object> =
+    | CancelledFlowResult<TState>
+    | FailedFlowResult<TState>
+    | SuccessFlowResult<TState>;
+
+// biome-ignore lint/suspicious/noExplicitAny: type-erased flow result for runtime orchestration
+export type AnyFlowResult = FlowResult<any>;
 
 interface ExtensionInstance {
-    extension: AnyExtension;
-    provided: object;
+    extension: AnyExtensionDefinition;
+    provided: Record<string, unknown>;
 }
 
 interface CancellationState {
@@ -34,70 +98,65 @@ interface CancellationState {
 
 export interface FlowRunArgs<TScope extends AnyScope = AnyScope> {
     bus: InternalBus<EventMap>;
-    config: FlowConfig<TScope>;
-    extensions: readonly AnyExtension[];
-    nodes: readonly NodeDefinition[];
+    extensions: readonly AnyExtensionDefinition[];
+    flow: FlowDefinition<TScope>;
     params: Readonly<TScope["_params"]>;
 }
-
-// ── Helpers ──────────────────────────────────────────────────────────
 
 function isTerminalStatus(status: FlowStatus): boolean {
     return status === "cancelled" || status === "completed" || status === "failed";
 }
 
-// ── Extension Lifecycle ──────────────────────────────────────────────
-
-async function disposeExtensions(instances: readonly ExtensionInstance[]): Promise<void> {
+async function cleanupExtensions(
+    instances: readonly ExtensionInstance[],
+    baseContext: { bus: InternalBus<EventMap>; flowName: string; log: ReturnType<typeof createLogger>; runId: string }
+): Promise<void> {
     for (const { extension, provided } of [...instances].reverse()) {
-        await extension.dispose?.(provided);
+        if (!extension.cleanup) {
+            continue;
+        }
+        await extension.cleanup({ ...provided, ...baseContext });
     }
 }
 
-async function createExtensions(
-    extensions: readonly AnyExtension[],
-    context: ExtensionContext<EventMap>
+async function provideExtensions(
+    extensions: readonly AnyExtensionDefinition[],
+    baseContext: { bus: InternalBus<EventMap>; flowName: string; log: ReturnType<typeof createLogger>; runId: string }
 ): Promise<{ instances: ExtensionInstance[]; provided: Record<string, unknown> }> {
     const instances: ExtensionInstance[] = [];
     const provided: Record<string, unknown> = {};
 
     try {
         for (const extension of extensions) {
-            const result = await extension.create(context);
-            assertPlainObject(
-                result,
-                `Extension "${extension.name}" must return a plain object from create(), not an array or function`
-            );
+            const result = await extension.provide(baseContext);
+            assertPlainObject(result, `Extension "${extension.name}" provide() must return a plain object`);
             Object.assign(provided, result);
             instances.push({ extension, provided: result });
         }
-    } catch (createError) {
-        await disposeExtensions(instances);
-        throw createError;
+    } catch (error) {
+        await cleanupExtensions(instances, baseContext);
+        throw error;
     }
 
     return { instances, provided };
 }
 
-// ── Pipeline ─────────────────────────────────────────────────────────
-
-interface PipelineArgs<TScope extends AnyScope = AnyScope> {
+interface PipelineArgs {
     bus: InternalBus<EventMap>;
     cancellation: CancellationState;
-    config: FlowConfig<TScope>;
     controller: AbortController;
     executionContext: ExecutionContext;
+    flow: AnyFlowDefinition;
     flowStart: number;
-    nodes: readonly NodeDefinition[];
     runId: string;
     state: AnyFlowStateStore;
 }
 
-async function runFlowPipeline<TScope extends AnyScope>(args: PipelineArgs<TScope>): Promise<AnyFlowResult> {
-    const { bus, cancellation, config, controller, executionContext, flowStart, nodes, runId, state } = args;
-    const flowName = config.name;
-    const flowMiddleware = config.middleware ?? [];
+async function runPipeline(args: PipelineArgs): Promise<AnyFlowResult> {
+    const { bus, cancellation, controller, executionContext, flow, flowStart, runId, state } = args;
+    const flowName = flow.name;
     const flowContext = buildFlowContext(executionContext.runtime, state, controller.signal);
+    let flowStarted = false;
 
     const resultBase = () => ({
         duration: Date.now() - flowStart,
@@ -107,31 +166,28 @@ async function runFlowPipeline<TScope extends AnyScope>(args: PipelineArgs<TScop
         tasks: executionContext.progress.taskResults,
     });
 
-    let flowStarted = false;
-
     try {
         controller.signal.throwIfAborted();
-
-        await compose(flowMiddleware, flowContext, async () => {
+        await compose(flow.middleware, flowContext, async () => {
             flowStarted = true;
-            await bus.publish("flow:start", { flowName, runId }, { source: "system" });
-            await executeNodes(nodes, executionContext, state, controller.signal);
+            await bus.publish("flow:started", { flowName, runId }, { source: "system" });
+            await executeNodes(flow.nodes, executionContext, state, controller.signal);
         });
 
         if (flowStarted) {
             await bus.publish(
-                "flow:end",
+                "flow:ended",
                 { duration: Date.now() - flowStart, flowName, runId, status: "success" },
                 { source: "system" }
             );
         }
 
-        return { ...resultBase(), status: "success" } as AnyFlowResult;
+        return { ...resultBase(), status: "success" };
     } catch (error) {
         if (cancellation.requested) {
             if (flowStarted) {
                 await bus.publish(
-                    "flow:end",
+                    "flow:ended",
                     {
                         duration: Date.now() - flowStart,
                         flowName,
@@ -142,48 +198,40 @@ async function runFlowPipeline<TScope extends AnyScope>(args: PipelineArgs<TScop
                     { source: "system" }
                 );
             }
-            return { ...resultBase(), reason: cancellation.reason, status: "cancelled" } as AnyFlowResult;
+            return { ...resultBase(), reason: cancellation.reason, status: "cancelled" };
         }
 
-        controller.abort();
-        const failedError = normalizeError(error);
+        controller.abort(error);
+        const normalized = normalizeError(error);
         if (flowStarted) {
             await bus.publish(
-                "flow:end",
-                { duration: Date.now() - flowStart, error: failedError, flowName, runId, status: "failed" },
+                "flow:ended",
+                { duration: Date.now() - flowStart, error: normalized, flowName, runId, status: "failed" },
                 { source: "system" }
             );
         }
-        return { ...resultBase(), error: failedError, status: "failed" } as AnyFlowResult;
+        return { ...resultBase(), error: normalized, status: "failed" };
     }
 }
 
-// ── Start Orchestrator ──────────────────────────────────────────────
-
 export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScope>): Promise<AnyFlowHandle> {
-    const { bus, config, extensions, nodes, params } = args;
-    const flowName = config.name;
+    const { bus, extensions, flow, params } = args;
+    const flowName = flow.name;
 
-    assertPlainObject(params, "Flow params must be a plain object, not an array or function");
+    assertPlainObject(params, "Flow params must be a plain object");
+
     const frozenParams = Object.freeze(params);
     const runId = crypto.randomUUID();
     const flowStart = Date.now();
-    const initialState = config.state ? config.state(frozenParams) : {};
+    const logger = createLogger(flowName, runId, bus);
+    const extensionContext = { bus, flowName, log: logger, runId };
+    const { instances, provided } = await provideExtensions(extensions, extensionContext);
+    const initialState = flow.state ? flow.state(frozenParams) : {};
     const state = createStateStore(initialState);
-    const logger = buildLogger(flowName, runId, bus);
-
-    const extensionContext: ExtensionContext<EventMap> = {
-        bus,
-        flowName,
-        log: logger,
-        runId,
-    };
-
-    const { instances, provided } = await createExtensions(extensions, extensionContext);
-
     const publicBus: PublishableBus<EventMap, EventMap> = bus.narrow();
     const controller = new AbortController();
     const pauseGate = new PauseGate();
+    const progress: FlowProgress = { taskResults: [] };
 
     const runtime: FlowRuntime = {
         bus,
@@ -195,11 +243,9 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
         runId,
     };
 
-    const progress: FlowProgress = { taskResults: [] };
-
     const executionContext: ExecutionContext = {
-        pauseGate,
         pathSegments: [],
+        pauseGate,
         progress,
         runtime,
     };
@@ -207,14 +253,13 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
     let currentStatus: FlowStatus = "running";
     const cancellation: CancellationState = { requested: false };
 
-    const pipelinePromise = runFlowPipeline({
+    const pipelinePromise = runPipeline({
         bus,
         cancellation,
-        config,
         controller,
         executionContext,
+        flow,
         flowStart,
-        nodes,
         runId,
         state,
     })
@@ -231,14 +276,12 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
             return result;
         })
         .finally(() =>
-            disposeExtensions(instances).catch(() => {
-                /* cleanup errors are non-fatal */
+            cleanupExtensions(instances, extensionContext).catch((error: unknown) => {
+                logger.error("extension cleanup failed", { error });
             })
         );
 
     return {
-        flowName,
-        runId,
         cancel(reason?: string) {
             if (isTerminalStatus(currentStatus)) {
                 return;
@@ -247,8 +290,9 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
             cancellation.reason = reason;
             currentStatus = "cancelled";
             pauseGate.resume();
-            controller.abort();
+            controller.abort(reason ? new Error(reason) : undefined);
         },
+        flowName,
         join() {
             return pipelinePromise;
         },
@@ -268,13 +312,12 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
             pauseGate.resume();
             bus.publish("flow:resumed", { flowName, runId }, { source: "system" });
         },
+        runId,
         status() {
             return currentStatus;
         },
     };
 }
-
-// ── Run (sugar) ─────────────────────────────────────────────────────
 
 export async function runFlow<TScope extends AnyScope>(args: FlowRunArgs<TScope>): Promise<AnyFlowResult> {
     const handle = await startFlow(args);

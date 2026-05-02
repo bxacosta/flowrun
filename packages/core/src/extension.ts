@@ -1,37 +1,38 @@
 import type { PublishableBus } from "./event-bus.ts";
 import type { AsEventMap, EventMap, SystemEvents, SystemPublicEvents } from "./events.ts";
 import type { Logger } from "./logger.ts";
-import type { EmptyObject, MaybePromise } from "./types.ts";
+import type { EmptyObject, MaybePromise } from "./utils.ts";
 
-// ── Visibility Markers ────────────────────────────────────────────────
-
-declare const __visibility: unique symbol;
+declare const visibility: unique symbol;
 
 export interface Internal<TPayload> {
     readonly _type: TPayload;
-    readonly [__visibility]: "internal";
+    readonly [visibility]: "internal";
 }
 
-export interface Event<TPayload> {
+export interface Public<TPayload> {
     readonly _type: TPayload;
-    readonly [__visibility]: "event";
+    readonly [visibility]: "public";
 }
 
-export type EventMarker = Event<unknown> | Internal<unknown>;
+export type EventMarker = Internal<unknown> | Public<unknown>;
 export type EventDefinitions = Record<string, EventMarker>;
 
-export function internal<TPayload>(): Internal<TPayload> {
+function publicEvent<TPayload>(): Public<TPayload> {
+    return undefined as unknown as Public<TPayload>;
+}
+
+function internalEvent<TPayload>(): Internal<TPayload> {
     return undefined as unknown as Internal<TPayload>;
 }
 
-export function event<TPayload>(): Event<TPayload> {
-    return undefined as unknown as Event<TPayload>;
-}
-
-// ── Visibility Extraction ─────────────────────────────────────────────
+export const event = {
+    internal: internalEvent,
+    public: publicEvent,
+} as const;
 
 type ExtractByVisibility<TDefinitions extends EventDefinitions, TVisibility extends string> = {
-    [K in keyof TDefinitions as TDefinitions[K] extends { [__visibility]: TVisibility }
+    [K in keyof TDefinitions as TDefinitions[K] extends { [visibility]: TVisibility }
         ? K
         : never]: TDefinitions[K] extends { _type: infer TPayload } ? TPayload : never;
 };
@@ -40,53 +41,57 @@ export type ExtractInternalEvents<TDefinitions extends EventDefinitions> = Extra
     TDefinitions,
     "internal"
 >;
-export type ExtractPublicEvents<TDefinitions extends EventDefinitions> = ExtractByVisibility<TDefinitions, "event">;
+export type ExtractPublicEvents<TDefinitions extends EventDefinitions> = ExtractByVisibility<TDefinitions, "public">;
 
 export type UnwrapEvents<TDefinitions extends EventDefinitions> = {
     [K in keyof TDefinitions & string]: TDefinitions[K] extends { _type: infer TPayload } ? TPayload : never;
 };
 
-// ── Extension Context ─────────────────────────────────────────────────
-
-export interface ExtensionContext<TEvents extends EventMap> {
+export interface ExtensionSetupContext<TEvents extends EventMap> {
     bus: PublishableBus<SystemPublicEvents & TEvents, SystemEvents & TEvents>;
     flowName: string;
     log: Logger;
     runId: string;
 }
 
-// ── Extension Types ───────────────────────────────────────────────────
+export type ExtensionCleanupContext<TProvided extends object, TEvents extends EventMap> = TProvided &
+    ExtensionSetupContext<TEvents>;
 
 export interface ExtensionConfig<TDefinitions extends EventDefinitions, TProvided extends object> {
-    create: (context: ExtensionContext<UnwrapEvents<TDefinitions>>) => MaybePromise<TProvided>;
-    dispose?: (provided: TProvided) => MaybePromise<void>;
-    events: TDefinitions;
+    cleanup?: (context: ExtensionCleanupContext<TProvided, UnwrapEvents<TDefinitions>>) => MaybePromise<void>;
+    events?: TDefinitions;
     name: string;
+    provide: (context: ExtensionSetupContext<UnwrapEvents<TDefinitions>>) => MaybePromise<TProvided>;
 }
 
-export interface Extension<
+export interface ExtensionDefinition<
     TProvided extends object = EmptyObject,
     TInternalEvents extends object = EmptyObject,
     TPublicEvents extends object = EmptyObject,
 > {
-    create: (context: ExtensionContext<AsEventMap<TInternalEvents & TPublicEvents>>) => MaybePromise<TProvided>;
-    dispose?: (provided: TProvided) => MaybePromise<void>;
-    name: string;
+    readonly _internalEvents?: TInternalEvents;
+    readonly _provided?: TProvided;
+    readonly _publicEvents?: TPublicEvents;
+    readonly cleanup?: AnyExtensionCleanup;
+    readonly kind: "extension";
+    readonly name: string;
+    readonly provide: AnyExtensionProvide;
 }
 
-// ── Type-Erased Aliases ─────────────────────────────────────────────
+// biome-ignore lint/suspicious/noExplicitAny: type-erased extension for runtime registries
+export type AnyExtensionDefinition = ExtensionDefinition<any, any, any>;
 
-// biome-ignore lint/suspicious/noExplicitAny: type-erased extension reference — typed at Engine.extend() boundary
-export type AnyExtension = Extension<any, any, any>;
+// biome-ignore lint/suspicious/noExplicitAny: typed at define.extension boundary
+export type AnyExtensionCleanup = (context: any) => MaybePromise<void>;
 
-// ── defineExtension ───────────────────────────────────────────────────
+// biome-ignore lint/suspicious/noExplicitAny: typed at define.extension boundary
+export type AnyExtensionProvide = (context: any) => MaybePromise<object>;
 
-export function defineExtension<TDefinitions extends EventDefinitions, TProvided extends object>(
-    config: ExtensionConfig<TDefinitions, TProvided>
-): Extension<TProvided, ExtractInternalEvents<TDefinitions>, ExtractPublicEvents<TDefinitions>> {
-    return {
-        create: config.create as unknown as AnyExtension["create"],
-        dispose: config.dispose,
-        name: config.name,
-    };
-}
+export type ExtensionProvided<TDefinition> =
+    TDefinition extends ExtensionDefinition<infer TProvided, object, object> ? TProvided : EmptyObject;
+
+export type ExtensionInternalEvents<TDefinition> =
+    TDefinition extends ExtensionDefinition<object, infer TInternal, object> ? AsEventMap<TInternal> : EmptyObject;
+
+export type ExtensionPublicEvents<TDefinition> =
+    TDefinition extends ExtensionDefinition<object, object, infer TPublic> ? AsEventMap<TPublic> : EmptyObject;

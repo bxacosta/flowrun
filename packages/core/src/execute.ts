@@ -1,28 +1,25 @@
 import { executeContinueBranches, executeFailFastBranches } from "./concurrency.ts";
-import type { ExecutionContext, FlowProgress } from "./context.ts";
+import type { ExecutionContext, FlowProgress, FlowRuntime } from "./context.ts";
 import { buildItemsContext, buildTaskContext } from "./context.ts";
 import { InvalidItemsError, normalizeError } from "./errors.ts";
 import { compose } from "./middleware.ts";
-import { createChildController, sleepWithSignal } from "./signal.ts";
-import type { ForkEntry } from "./state.ts";
-import { mergeForkedStores } from "./state.ts";
 import type {
-    AnyCleanupProvided,
-    AnyFlowStateStore,
-    AnyForkProvided,
+    AnyCleanup,
+    AnyProvide,
     ContainerErrorMode,
-    EveryForkMeta,
+    EveryMeta,
     EveryNodeDefinition,
-    MergeStrategy,
     NodeDefinition,
-    ParallelForkMeta,
+    ParallelMeta,
     ParallelNodeDefinition,
     RetryConfig,
     TaskNodeDefinition,
     TaskResult,
-} from "./types.ts";
-
-// ── Retry Helpers ────────────────────────────────────────────────────
+} from "./node.ts";
+import { createChildController, sleepWithSignal } from "./signal.ts";
+import type { AnyFlowStateStore, ForkEntry, MergeStrategy } from "./state.ts";
+import { mergeForkedStores } from "./state.ts";
+import { assertPlainObject } from "./validation.ts";
 
 function computeRetryDelay(options: RetryConfig, attempt: number): number {
     const base =
@@ -30,8 +27,6 @@ function computeRetryDelay(options: RetryConfig, attempt: number): number {
     const capped = options.maxDelayMs === undefined ? base : Math.min(base, options.maxDelayMs);
     return options.jitter ? capped / 2 + Math.random() * (capped / 2) : capped;
 }
-
-// ── Task Result Recorder ─────────────────────────────────────────────
 
 function recordTaskResult(
     progress: FlowProgress,
@@ -59,8 +54,6 @@ function recordTaskResult(
     progress.taskResults.push(result);
 }
 
-// ── Task Executors ───────────────────────────────────────────────────
-
 async function runSingleAttempt(
     node: TaskNodeDefinition,
     executionContext: ExecutionContext,
@@ -73,15 +66,15 @@ async function runSingleAttempt(
 
     const { bus, flowName, runId } = executionContext.runtime;
     const attemptBase = { attempt, flowName, index: iteration?.index, nodeName: node.name, runId };
-
-    await bus.publish("node:task:attempt:start", attemptBase, { source: "system" });
     const attemptStart = Date.now();
+
+    await bus.publish("node:task:attempt:started", attemptBase, { source: "system" });
 
     try {
         const context = buildTaskContext(executionContext.runtime, state, signal, node.name, attempt, iteration);
-        await compose(node.middleware, context, () => node.handler(context));
+        await compose(node.middleware, context, () => node.run(context));
         await bus.publish(
-            "node:task:attempt:end",
+            "node:task:attempt:ended",
             { ...attemptBase, duration: Date.now() - attemptStart, status: "success" },
             { source: "system" }
         );
@@ -89,13 +82,8 @@ async function runSingleAttempt(
     } catch (error) {
         const normalized = normalizeError(error);
         await bus.publish(
-            "node:task:attempt:end",
-            {
-                ...attemptBase,
-                duration: Date.now() - attemptStart,
-                error: normalized,
-                status: "failed",
-            },
+            "node:task:attempt:ended",
+            { ...attemptBase, duration: Date.now() - attemptStart, error: normalized, status: "failed" },
             { source: "system" }
         );
         return normalized;
@@ -112,13 +100,13 @@ async function executeTask(
     const { bus, flowName, runId } = executionContext.runtime;
     const nodeBase = { flowName, index: iteration?.index, nodeName: node.name, runId };
     const maxAttempts = node.retry?.attempts ?? 1;
-    const taskStart = Date.now();
     const path = [...executionContext.pathSegments, node.name].join("/");
+    const taskStart = Date.now();
 
-    await bus.publish("node:task:start", { ...nodeBase, maxAttempts }, { source: "system" });
+    await bus.publish("node:task:started", { ...nodeBase, maxAttempts }, { source: "system" });
 
-    let lastError: Error | null = null;
     let attempts = 0;
+    let lastError: Error | null = null;
 
     try {
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -131,20 +119,18 @@ async function executeTask(
             }
 
             lastError = error;
-
             if (signal.aborted) {
                 break;
             }
 
             const isLastAttempt = attempt === maxAttempts;
             const shouldRetry = node.retry?.retryOn ? node.retry.retryOn(error, attempt) : true;
-
             if (isLastAttempt || !shouldRetry || !node.retry) {
                 break;
             }
 
             const nextDelayMs = computeRetryDelay(node.retry, attempt);
-            await bus.publish("node:task:retry", { ...nodeBase, attempt, error, nextDelayMs }, { source: "system" });
+            await bus.publish("node:task:retried", { ...nodeBase, attempt, error, nextDelayMs }, { source: "system" });
             await sleepWithSignal(nextDelayMs, signal);
             await executionContext.pauseGate.waitIfPaused();
         }
@@ -154,19 +140,9 @@ async function executeTask(
 
     const duration = Date.now() - taskStart;
 
-    if (signal.aborted && lastError) {
-        await bus.publish(
-            "node:task:end",
-            { ...nodeBase, attempts, duration, error: lastError, status: "failed" },
-            { source: "system" }
-        );
-        recordTaskResult(executionContext.progress, node, path, attempts, duration, "failed", lastError, iteration);
-        throw lastError;
-    }
-
     if (!lastError) {
         await bus.publish(
-            "node:task:end",
+            "node:task:ended",
             { ...nodeBase, attempts, duration, status: "success" },
             { source: "system" }
         );
@@ -174,9 +150,9 @@ async function executeTask(
         return;
     }
 
-    if (node.onError === "skip") {
+    if (!signal.aborted && node.onError === "skip") {
         await bus.publish(
-            "node:task:end",
+            "node:task:ended",
             { ...nodeBase, attempts, duration, error: lastError, status: "skipped" },
             { source: "system" }
         );
@@ -185,7 +161,7 @@ async function executeTask(
     }
 
     await bus.publish(
-        "node:task:end",
+        "node:task:ended",
         { ...nodeBase, attempts, duration, error: lastError, status: "failed" },
         { source: "system" }
     );
@@ -193,36 +169,43 @@ async function executeTask(
     throw lastError;
 }
 
-// ── Container Helpers ────────────────────────────────────────────────
-
-function mergeBranchProgresses(parent: FlowProgress, branchProgresses: readonly FlowProgress[]): void {
-    for (const branchProgress of branchProgresses) {
-        parent.taskResults.push(...branchProgress.taskResults);
+function mergeBranchProgresses(parent: FlowProgress, branches: readonly FlowProgress[]): void {
+    for (const branch of branches) {
+        parent.taskResults.push(...branch.taskResults);
     }
 }
 
-async function withForkedProvided(
+async function withLocalProvided(
     executionContext: ExecutionContext,
-    forkProvided: AnyForkProvided | undefined,
-    cleanupProvided: AnyCleanupProvided | undefined,
+    state: AnyFlowStateStore,
+    signal: AbortSignal,
+    provide: AnyProvide | undefined,
+    cleanup: AnyCleanup | undefined,
     meta: unknown,
-    execute: (branchRuntime: ExecutionContext["runtime"]) => Promise<void>
+    iteration: { index: number; item: unknown } | undefined,
+    execute: (runtime: FlowRuntime) => Promise<void>
 ): Promise<void> {
-    const branchProvided = forkProvided
-        ? await forkProvided(executionContext.runtime.provided, meta)
-        : executionContext.runtime.provided;
-    const branchRuntime = forkProvided
-        ? { ...executionContext.runtime, provided: branchProvided }
-        : executionContext.runtime;
+    let branchRuntime = executionContext.runtime;
+
+    if (provide) {
+        const provideContext = buildItemsContext(branchRuntime, state, signal, iteration, "provide");
+        const localProvided = await provide(provideContext, meta);
+        assertPlainObject(localProvided, "Container provide() must return a plain object");
+        branchRuntime = {
+            ...branchRuntime,
+            provided: { ...branchRuntime.provided, ...localProvided },
+        };
+    }
 
     try {
         await execute(branchRuntime);
     } finally {
-        if (forkProvided && cleanupProvided) {
+        if (cleanup) {
             try {
-                await cleanupProvided(branchProvided, meta);
+                const cleanupContext = buildItemsContext(branchRuntime, state, signal, iteration, "cleanup");
+                await cleanup(cleanupContext, meta);
             } catch (cleanupError) {
-                executionContext.runtime.log.error("cleanupProvided failed", { error: cleanupError });
+                executionContext.runtime.log.error("cleanup failed", { error: cleanupError });
             }
         }
     }
@@ -248,33 +231,29 @@ async function resolveBranches(
     merge: MergeStrategy,
     concurrency: number
 ): Promise<BranchOutcome> {
-    const { branches, branchProgresses, forks } = plan;
-
-    if (onError === "fail-fast") {
-        const firstError = await executeFailFastBranches(branches, controller, concurrency);
-        mergeBranchProgresses(parentProgress, branchProgresses);
+    if (onError === "fail") {
+        const firstError = await executeFailFastBranches(plan.branches, controller, concurrency);
+        mergeBranchProgresses(parentProgress, plan.branchProgresses);
         if (firstError) {
             return { errors: [firstError], failedIndexes: [] };
         }
-        mergeForkedStores(state, forks, merge);
+        mergeForkedStores(state, plan.forks, merge);
         return { errors: [], failedIndexes: [] };
     }
 
-    const { errors: branchErrors, successfulIndexes } = await executeContinueBranches(branches, concurrency);
-    mergeBranchProgresses(parentProgress, branchProgresses);
+    const { errors: branchErrors, successfulIndexes } = await executeContinueBranches(plan.branches, concurrency);
+    mergeBranchProgresses(parentProgress, plan.branchProgresses);
+
     const successfulForks = successfulIndexes
-        .map((index) => forks[index])
+        .map((index) => plan.forks[index])
         .filter((fork): fork is ForkEntry => fork !== undefined);
-    if (successfulForks.length > 0) {
-        mergeForkedStores(state, successfulForks, merge);
-    }
+    mergeForkedStores(state, successfulForks, merge);
+
     return {
         errors: branchErrors.map((entry) => entry.error),
         failedIndexes: branchErrors.map((entry) => entry.index),
     };
 }
-
-// ── Container Executors ──────────────────────────────────────────────
 
 async function executeParallel(
     node: ParallelNodeDefinition,
@@ -286,35 +265,42 @@ async function executeParallel(
     const { bus, flowName, runId } = executionContext.runtime;
     const parallelStart = Date.now();
 
-    await bus.publish("node:parallel:start", { flowName, nodeName: node.name, runId }, { source: "system" });
+    await bus.publish("node:parallel:started", { flowName, nodeName: node.name, runId }, { source: "system" });
 
     const { cleanup, controller } = createChildController(signal);
-    const childPathSegments = [...executionContext.pathSegments, node.name];
 
     try {
         const plan: BranchPlan = { branches: [], branchProgresses: [], forks: [] };
+        const childPathSegments = [...executionContext.pathSegments, node.name];
 
         for (const [branchIndex, child] of node.nodes.entries()) {
-            const forkedStore = state.fork(child.name);
-            plan.forks.push({ label: child.name, store: forkedStore });
+            const forkedStore = state.fork();
             const branchProgress: FlowProgress = { taskResults: [] };
+            plan.forks.push({ label: child.name, store: forkedStore });
             plan.branchProgresses.push(branchProgress);
-
             plan.branches.push(async () => {
-                const meta: ParallelForkMeta = { branchIndex, branchName: child.name, nodeName: node.name };
-                await withForkedProvided(
+                const meta: ParallelMeta = { branchIndex, branchName: child.name, nodeName: node.name };
+                await withLocalProvided(
                     executionContext,
-                    node.forkProvided,
-                    node.cleanupProvided,
+                    forkedStore,
+                    controller.signal,
+                    node.provide,
+                    node.cleanup,
                     meta,
-                    async (branchRuntime) => {
-                        const branchExecutionContext: ExecutionContext = {
-                            pauseGate: executionContext.pauseGate,
-                            pathSegments: childPathSegments,
-                            progress: branchProgress,
-                            runtime: branchRuntime,
-                        };
-                        await executeNode(child, branchExecutionContext, forkedStore, controller.signal, iteration);
+                    iteration,
+                    async (runtime) => {
+                        await executeNode(
+                            child,
+                            {
+                                pathSegments: childPathSegments,
+                                pauseGate: executionContext.pauseGate,
+                                progress: branchProgress,
+                                runtime,
+                            },
+                            forkedStore,
+                            controller.signal,
+                            iteration
+                        );
                     }
                 );
             });
@@ -331,8 +317,24 @@ async function executeParallel(
         );
 
         if (outcome.errors.length > 0) {
+            if (node.onError === "continue") {
+                await bus.publish(
+                    "node:parallel:ended",
+                    {
+                        duration: Date.now() - parallelStart,
+                        errors: outcome.errors,
+                        flowName,
+                        nodeName: node.name,
+                        runId,
+                        status: "success",
+                    },
+                    { source: "system" }
+                );
+                return;
+            }
+
             await bus.publish(
-                "node:parallel:end",
+                "node:parallel:ended",
                 {
                     duration: Date.now() - parallelStart,
                     errors: outcome.errors,
@@ -343,17 +345,11 @@ async function executeParallel(
                 },
                 { source: "system" }
             );
-            if (node.onError === "fail-fast") {
-                throw outcome.errors[0];
-            }
-            throw new AggregateError(
-                outcome.errors,
-                `${outcome.errors.length} of ${node.nodes.length} branches failed`
-            );
+            throw outcome.errors[0];
         }
 
         await bus.publish(
-            "node:parallel:end",
+            "node:parallel:ended",
             { duration: Date.now() - parallelStart, flowName, nodeName: node.name, runId, status: "success" },
             { source: "system" }
         );
@@ -370,8 +366,7 @@ async function executeEvery(
     iteration?: { index: number; item: unknown }
 ): Promise<void> {
     const { bus, flowName, runId } = executionContext.runtime;
-
-    const itemsContext = buildItemsContext(executionContext.runtime, state, signal, iteration);
+    const itemsContext = buildItemsContext(executionContext.runtime, state, signal, iteration, "items");
     const items = node.items(itemsContext);
 
     if (!Array.isArray(items)) {
@@ -379,9 +374,8 @@ async function executeEvery(
     }
 
     const everyStart = Date.now();
-
     await bus.publish(
-        "node:every:start",
+        "node:every:started",
         { flowName, nodeName: node.name, runId, totalItems: items.length },
         { source: "system" }
     );
@@ -391,30 +385,36 @@ async function executeEvery(
     try {
         const plan: BranchPlan = { branches: [], branchProgresses: [], forks: [] };
 
-        for (const [itemIndex, everyItem] of (items as unknown[]).entries()) {
-            const forkedStore = state.fork(itemIndex);
-            plan.forks.push({ label: itemIndex, store: forkedStore });
+        for (const [itemIndex, item] of items.entries()) {
+            const forkedStore = state.fork();
             const branchProgress: FlowProgress = { taskResults: [] };
-            plan.branchProgresses.push(branchProgress);
+            const itemIteration = { index: itemIndex, item };
 
+            plan.forks.push({ label: itemIndex, store: forkedStore });
+            plan.branchProgresses.push(branchProgress);
             plan.branches.push(async () => {
-                const meta: EveryForkMeta = { index: itemIndex, item: everyItem, nodeName: node.name };
-                await withForkedProvided(
+                const meta: EveryMeta = { index: itemIndex, item, nodeName: node.name };
+                await withLocalProvided(
                     executionContext,
-                    node.forkProvided,
-                    node.cleanupProvided,
+                    forkedStore,
+                    controller.signal,
+                    node.provide,
+                    node.cleanup,
                     meta,
-                    async (branchRuntime) => {
-                        const branchExecutionContext: ExecutionContext = {
-                            pauseGate: executionContext.pauseGate,
-                            pathSegments: [...executionContext.pathSegments, node.name, String(itemIndex)],
-                            progress: branchProgress,
-                            runtime: branchRuntime,
-                        };
-                        await executeNodes(node.nodes, branchExecutionContext, forkedStore, controller.signal, {
-                            index: itemIndex,
-                            item: everyItem,
-                        });
+                    itemIteration,
+                    async (runtime) => {
+                        await executeNodes(
+                            node.nodes,
+                            {
+                                pathSegments: [...executionContext.pathSegments, node.name, String(itemIndex)],
+                                pauseGate: executionContext.pauseGate,
+                                progress: branchProgress,
+                                runtime,
+                            },
+                            forkedStore,
+                            controller.signal,
+                            itemIteration
+                        );
                     }
                 );
             });
@@ -436,25 +436,42 @@ async function executeEvery(
         );
 
         if (outcome.errors.length > 0) {
-            const endPayload = {
-                duration: Date.now() - everyStart,
-                errors: outcome.errors,
-                flowName,
-                nodeName: node.name,
-                runId,
-                status: "failed" as const,
-                totalItems: items.length,
-                ...(node.onError === "continue" ? { failedIndexes: outcome.failedIndexes } : {}),
-            };
-            await bus.publish("node:every:end", endPayload, { source: "system" });
-            if (node.onError === "fail-fast") {
-                throw outcome.errors[0];
+            if (node.onError === "continue") {
+                await bus.publish(
+                    "node:every:ended",
+                    {
+                        duration: Date.now() - everyStart,
+                        errors: outcome.errors,
+                        failedIndexes: outcome.failedIndexes,
+                        flowName,
+                        nodeName: node.name,
+                        runId,
+                        status: "success",
+                        totalItems: items.length,
+                    },
+                    { source: "system" }
+                );
+                return;
             }
-            throw new AggregateError(outcome.errors, `${outcome.errors.length} of ${items.length} iterations failed`);
+
+            await bus.publish(
+                "node:every:ended",
+                {
+                    duration: Date.now() - everyStart,
+                    errors: outcome.errors,
+                    flowName,
+                    nodeName: node.name,
+                    runId,
+                    status: "failed",
+                    totalItems: items.length,
+                },
+                { source: "system" }
+            );
+            throw outcome.errors[0];
         }
 
         await bus.publish(
-            "node:every:end",
+            "node:every:ended",
             {
                 duration: Date.now() - everyStart,
                 flowName,
@@ -470,8 +487,6 @@ async function executeEvery(
     }
 }
 
-// ── Public Entry Points ──────────────────────────────────────────────
-
 async function executeNode(
     node: NodeDefinition,
     executionContext: ExecutionContext,
@@ -482,21 +497,17 @@ async function executeNode(
     signal.throwIfAborted();
 
     switch (node.type) {
-        case "every": {
+        case "every":
             await executeEvery(node, executionContext, state, signal, iteration);
-            break;
-        }
-        case "parallel": {
+            return;
+        case "parallel":
             await executeParallel(node, executionContext, state, signal, iteration);
-            break;
-        }
-        case "task": {
+            return;
+        case "task":
             await executeTask(node, executionContext, state, signal, iteration);
-            break;
-        }
-        default: {
+            return;
+        default:
             throw new Error(`Unknown node type: ${(node as NodeDefinition).type}`);
-        }
     }
 }
 

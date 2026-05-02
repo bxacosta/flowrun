@@ -1,111 +1,103 @@
-// ── Runtime ───────────────────────────────────────────────────────────
-
+export type {
+    BaseContext,
+    ContextPublish,
+    FlowContext,
+    ItemsContext,
+    TaskContext,
+} from "./context.ts";
+export type {
+    EveryConfigWithoutProvide,
+    EveryConfigWithProvide,
+    EveryOptions,
+    FlowConfig,
+    NodeFactory,
+    ParallelConfigWithoutProvide,
+    ParallelConfigWithProvide,
+    ParallelOptions,
+    TaskConfig,
+} from "./define.ts";
 // biome-ignore lint/performance/noBarrelFile: public library entry point
-export { defineEvery, defineFlow, defineParallel, defineTask } from "./define.ts";
+export { define } from "./define.ts";
+export type { Engine, EngineConfig, EngineEvents, InferEngine } from "./engine.ts";
 export { createEngine } from "./engine.ts";
 export {
+    DuplicateExtensionError,
+    DuplicateFlowError,
     DuplicateNodeNameError,
     FlowEngineError,
+    FlowNotRegisteredError,
     InvalidItemsError,
     InvalidMergeValueError,
+    InvalidPlainObjectError,
     MergeConflictError,
     normalizeError,
 } from "./errors.ts";
-export { createEventBus } from "./event-bus.ts";
-export { defineExtension, event, internal } from "./extension.ts";
-
-// ── Types: Engine & Flow ─────────────────────────────────────────────
-
-export type { Engine, EngineEvents, FlowScope, InferEngine } from "./engine.ts";
 export type {
     EventBusConfig,
+    EventBusErrorContext,
+    EventBusErrorHandler,
+    EventBusReportedErrorContext,
     Handler,
-    InternalBus,
     PublishableBus,
     ReadableBus,
     SubscribeOptions,
     Subscription,
 } from "./event-bus.ts";
+export { createEventBus } from "./event-bus.ts";
 export type {
-    AsEventMap,
     Envelope,
     EventMap,
+    EventSource,
     LogEventPayload,
     LogLevel,
-    MergeAllEvents,
-    MergePublicEvents,
     SystemEvents,
     SystemInternalEvents,
     SystemPublicEvents,
 } from "./events.ts";
-
-// ── Types: Scope & Nodes ─────────────────────────────────────────────
-
 export type {
-    AnyScope,
-    BackoffStrategy,
-    BaseContext,
-    ContainerErrorMode,
-    EveryConfig,
-    EveryForkMeta,
-    EveryNodeDefinition,
-    EveryOptions,
-    Flow,
-    FlowConfig,
-    FlowContext,
-    FlowHandle,
-    FlowStateStore,
-    FlowStatus,
-    ItemsContext,
-    IterationContext,
-    IterationScope,
-    MergeStrategy,
-    Middleware,
-    Node,
-    NodeBuilder,
-    NodeDefinition,
-    NodesSpec,
-    ParallelConfig,
-    ParallelForkMeta,
-    ParallelNodeDefinition,
-    ParallelOptions,
-    RetryConfig,
-    Scope,
-    TaskConfig,
-    TaskContext,
-    TaskErrorMode,
-    TaskNodeDefinition,
-    TaskResult,
-} from "./types.ts";
-
-// ── Types: Extension System ──────────────────────────────────────────
-
-export type {
-    Event,
     EventDefinitions,
     EventMarker,
-    Extension,
+    ExtensionCleanupContext,
     ExtensionConfig,
-    ExtensionContext,
-    ExtractInternalEvents,
-    ExtractPublicEvents,
+    ExtensionDefinition,
+    ExtensionSetupContext,
     Internal,
-    UnwrapEvents,
+    Public,
 } from "./extension.ts";
-
-// ── Types: Logger ──────────────────────────────────────────────────────
-
-export type { Logger } from "./logger.ts";
-
-// ── Types: Core ──────────────────────────────────────────────────────
-
+export { event } from "./extension.ts";
 export type {
     BaseFlowResult,
     CancelledFlowResult,
-    EmptyObject,
     FailedFlowResult,
+    Flow,
+    FlowDefinition,
+    FlowHandle,
     FlowResult,
-    MaybePromise,
+    FlowStatus,
     RunArgs,
     SuccessFlowResult,
-} from "./types.ts";
+} from "./flow-runner.ts";
+export type { Logger } from "./logger.ts";
+export type { Middleware } from "./middleware.ts";
+export type { ModuleConfig, ModuleDefinition } from "./module.ts";
+export type {
+    BackoffStrategy,
+    ContainerErrorMode,
+    EveryMeta,
+    Node,
+    ParallelMeta,
+    RetryConfig,
+    TaskErrorMode,
+    TaskResult,
+} from "./node.ts";
+export type {
+    AnyScope,
+    IterationContext,
+    IterationScope,
+    Scope,
+    ScopeContract,
+    ScopeFromContract,
+    WithProvided,
+} from "./scope.ts";
+export type { FlowStateStore, MergeStrategy } from "./state.ts";
+export type { EmptyObject, MaybePromise } from "./utils.ts";

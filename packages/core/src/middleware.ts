@@ -1,30 +1,30 @@
-import type { AnyMiddleware, MaybePromise } from "./types.ts";
+import type { MaybePromise } from "./utils.ts";
 
-// ── Compose ───────────────────────────────────────────────────────────
+export type Middleware<TContext> = (context: TContext, next: () => Promise<void>) => MaybePromise<void>;
+
+// biome-ignore lint/suspicious/noExplicitAny: type-erased middleware, typed at definition boundary
+export type AnyMiddleware = Middleware<any>;
 
 export async function compose(
     middlewares: readonly AnyMiddleware[],
     context: Record<string, unknown>,
     handler: () => MaybePromise<void>
 ): Promise<void> {
-    if (middlewares.length === 0) {
-        await handler();
-        return;
-    }
-
     let index = -1;
 
-    async function dispatch(i: number): Promise<void> {
-        if (i <= index) {
+    async function dispatch(nextIndex: number): Promise<void> {
+        if (nextIndex <= index) {
             throw new Error("next() called multiple times");
         }
-        index = i;
-        const mw = middlewares[i];
-        if (!mw) {
+        index = nextIndex;
+
+        const middleware = middlewares[nextIndex];
+        if (!middleware) {
             await handler();
             return;
         }
-        await mw(context, () => dispatch(i + 1));
+
+        await middleware(context, () => dispatch(nextIndex + 1));
     }
 
     await dispatch(0);

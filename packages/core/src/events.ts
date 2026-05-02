@@ -1,10 +1,9 @@
-// ── Primitives ────────────────────────────────────────────────────────
-
-// biome-ignore lint/suspicious/noExplicitAny: EventMap must accept any payload type to serve as an open generic constraint
+// biome-ignore lint/suspicious/noExplicitAny: event maps need to accept arbitrary payload shapes
 export type EventMap = Record<string, any>;
+
 export type AsEventMap<T> = { [K in keyof T & string]: T[K] };
 
-// ── Envelope ──────────────────────────────────────────────────────────
+export type EventSource = "cleanup" | "container" | "flow" | "items" | "logger" | "provide" | "system" | "task";
 
 export interface Envelope<TPayload = unknown> {
     correlationId?: string;
@@ -15,10 +14,8 @@ export interface Envelope<TPayload = unknown> {
     topic: string;
 }
 
-// ── System Events ─────────────────────────────────────────────────────
-
 export interface SystemInternalEvents {
-    "flow:end": {
+    "flow:ended": {
         duration: number;
         error?: Error;
         flowName: string;
@@ -28,8 +25,8 @@ export interface SystemInternalEvents {
     };
     "flow:paused": { flowName: string; runId: string };
     "flow:resumed": { flowName: string; runId: string };
-    "flow:start": { flowName: string; runId: string };
-    "node:every:end": {
+    "flow:started": { flowName: string; runId: string };
+    "node:every:ended": {
         duration: number;
         errors?: Error[];
         failedIndexes?: number[];
@@ -39,8 +36,8 @@ export interface SystemInternalEvents {
         status: "failed" | "success";
         totalItems: number;
     };
-    "node:every:start": { flowName: string; nodeName: string; runId: string; totalItems: number };
-    "node:parallel:end": {
+    "node:every:started": { flowName: string; nodeName: string; runId: string; totalItems: number };
+    "node:parallel:ended": {
         duration: number;
         errors?: Error[];
         flowName: string;
@@ -48,8 +45,8 @@ export interface SystemInternalEvents {
         runId: string;
         status: "failed" | "success";
     };
-    "node:parallel:start": { flowName: string; nodeName: string; runId: string };
-    "node:task:attempt:end": {
+    "node:parallel:started": { flowName: string; nodeName: string; runId: string };
+    "node:task:attempt:ended": {
         attempt: number;
         duration: number;
         error?: Error;
@@ -59,14 +56,14 @@ export interface SystemInternalEvents {
         runId: string;
         status: "failed" | "success";
     };
-    "node:task:attempt:start": {
+    "node:task:attempt:started": {
         attempt: number;
         flowName: string;
         index?: number;
         nodeName: string;
         runId: string;
     };
-    "node:task:end": {
+    "node:task:ended": {
         attempts: number;
         duration: number;
         error?: Error;
@@ -76,7 +73,7 @@ export interface SystemInternalEvents {
         runId: string;
         status: "failed" | "skipped" | "success";
     };
-    "node:task:retry": {
+    "node:task:retried": {
         attempt: number;
         error: Error;
         flowName: string;
@@ -85,7 +82,7 @@ export interface SystemInternalEvents {
         nodeName: string;
         runId: string;
     };
-    "node:task:start": { flowName: string; index?: number; maxAttempts: number; nodeName: string; runId: string };
+    "node:task:started": { flowName: string; index?: number; maxAttempts: number; nodeName: string; runId: string };
 }
 
 export type LogLevel = "debug" | "error" | "info" | "warn";
@@ -103,8 +100,6 @@ export interface SystemPublicEvents {
 }
 
 export type SystemEvents = SystemInternalEvents & SystemPublicEvents;
-
-// ── Type-Level Merge Helpers ──────────────────────────────────────────
 
 export type MergeAllEvents<
     TCurrentAll extends EventMap,

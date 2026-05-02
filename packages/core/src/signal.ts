@@ -1,82 +1,61 @@
-// ── Pause Gate ──────────────────────────────────────────────────────
-
 export class PauseGate {
-    private paused = false;
-    private gate: Promise<void> | null = null;
-    private resolveGate: (() => void) | null = null;
+    #paused = false;
+    readonly #waiters: (() => void)[] = [];
 
     pause(): void {
-        if (!this.paused) {
-            this.paused = true;
-            this.gate = new Promise((resolve) => {
-                this.resolveGate = resolve;
-            });
-        }
+        this.#paused = true;
     }
 
     resume(): void {
-        if (this.paused) {
-            this.paused = false;
-            this.resolveGate?.();
-            this.gate = null;
-            this.resolveGate = null;
+        if (!this.#paused) {
+            return;
+        }
+        this.#paused = false;
+        const waiters = this.#waiters.splice(0);
+        for (const resolve of waiters) {
+            resolve();
         }
     }
 
     async waitIfPaused(): Promise<void> {
-        if (this.gate) {
-            await this.gate;
+        if (!this.#paused) {
+            return;
         }
-    }
-
-    get isPaused(): boolean {
-        return this.paused;
+        await new Promise<void>((resolve) => {
+            this.#waiters.push(resolve);
+        });
     }
 }
 
-// ── AbortSignal Helpers ──────────────────────────────────────────────
-
-export function createChildController(parentSignal: AbortSignal): {
-    cleanup: () => void;
-    controller: AbortController;
-} {
+export function createChildController(parent: AbortSignal): { cleanup: () => void; controller: AbortController } {
     const controller = new AbortController();
 
-    if (parentSignal.aborted) {
-        controller.abort(parentSignal.reason);
-        return {
-            cleanup: () => {
-                /* no listener to remove */
-            },
-            controller,
-        };
+    if (parent.aborted) {
+        controller.abort(parent.reason);
+        return { cleanup: () => undefined, controller };
     }
 
-    const propagate = () => controller.abort(parentSignal.reason);
-    parentSignal.addEventListener("abort", propagate, { once: true });
+    const abort = () => controller.abort(parent.reason);
+    parent.addEventListener("abort", abort, { once: true });
 
     return {
-        cleanup: () => parentSignal.removeEventListener("abort", propagate),
+        cleanup: () => parent.removeEventListener("abort", abort),
         controller,
     };
 }
 
-export function sleepWithSignal(ms: number, signal: AbortSignal): Promise<void> {
-    if (ms <= 0) {
-        return Promise.resolve();
-    }
-    if (signal.aborted) {
-        return Promise.reject(signal.reason);
-    }
-    return new Promise((resolve, reject) => {
-        const onAbort = () => {
-            clearTimeout(timer);
-            reject(signal.reason);
-        };
+export async function sleepWithSignal(ms: number, signal: AbortSignal): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => {
             signal.removeEventListener("abort", onAbort);
             resolve();
         }, ms);
+
+        const onAbort = () => {
+            clearTimeout(timer);
+            reject(signal.reason);
+        };
+
         signal.addEventListener("abort", onAbort, { once: true });
     });
 }
