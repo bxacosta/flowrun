@@ -51,10 +51,11 @@ export function title(heading: string): void {
 // ── Simulated Browser ───────────────────────────────────────────────
 
 export interface Page {
+    close(): Promise<void>;
     closed: boolean;
-    id: number;
     content(): string;
     goto(url: string): Promise<void>;
+    id: number;
 }
 
 export interface Browser {
@@ -65,20 +66,26 @@ export function createBrowser(): Browser {
     let nextPageId = 1;
 
     return {
-        async newPage(): Promise<Page> {
+        newPage(): Promise<Page> {
             const id = nextPageId++;
             log(`  [browser] page #${id} opened`);
-            return {
+            const page: Page = {
+                close() {
+                    this.closed = true;
+                    log(`  [page #${id}] closed`);
+                    return Promise.resolve();
+                },
                 closed: false,
-                id,
+                content() {
+                    return `<html lang="en">data from page #${id}</html>`;
+                },
                 async goto(url: string) {
                     log(`  [page #${id}] navigating to ${url}`);
                     await delay(30);
                 },
-                content() {
-                    return `<html lang="en">data from page #${id}</html>`;
-                },
+                id,
             };
+            return Promise.resolve(page);
         },
     };
 }

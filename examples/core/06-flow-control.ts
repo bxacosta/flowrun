@@ -1,0 +1,257 @@
+/**
+ * 06-flow-control.ts — Flow Handle & Resource Isolation
+ *
+ * Covers:
+ *  - engine.start(flow) -> FlowHandle
+ *  - handle.join(), handle.status()
+ *  - handle.cancel(reason) -> CancelledFlowResult
+ *  - handle.pause() / handle.resume()
+ *  - context.signal (cooperative cancellation with AbortSignal)
+ *  - provide / cleanup in every (per-iteration resource isolation)
+ *  - provide / cleanup in parallel (per-branch resource isolation)
+ *  - typed child context: provide adds keys that child tasks see typed
+ */
+
+import { createEngine, define } from "@flowrun/core"
+import type { Browser, Page } from "./shared/helpers.ts";
+import { createBrowser, log, simulateWork, title } from "./shared/helpers.ts";
+import { subscriber } from "./shared/subscriber.ts";
+
+// ── Browser extension ───────────────────────────────────────────────
+
+const browserExtension = (browser: Browser) =>
+    define.extension({
+        name: "browser",
+        provide() {
+            return { browser };
+        },
+        cleanup() {
+            log("  [browser] extension disposed");
+        },
+    });
+
+interface BrowserContract {
+    provided: {
+        browser: Browser;
+    };
+}
+
+// ── Engine ──────────────────────────────────────────────────────────
+
+const browser = createBrowser();
+const engine = createEngine().use(browserExtension(browser));
+subscriber(engine.bus);
+
+// ── Flow: data pipeline — used for FlowHandle demos ─────────────────
+
+const pipeline = define.flow({
+    name: "data-pipeline",
+    state: () => ({ steps: [] as string[] }),
+    nodes: ({ parallel, task }) => [
+        task({
+            name: "fetch",
+            run: async (context) => {
+                await simulateWork(80, context.signal);
+                context.state.set("steps", [...context.state.get("steps"), "fetch"]);
+            },
+        }),
+        parallel({
+            name: "process",
+            merge: "overwrite",
+            nodes: ({ task }) => [
+                task({
+                    name: "validate",
+                    run: async (context) => {
+                        await simulateWork(60, context.signal);
+                        context.state.set("steps", [...context.state.get("steps"), "validate"]);
+                    },
+                }),
+                task({
+                    name: "enrich",
+                    run: async (context) => {
+                        await simulateWork(60, context.signal);
+                        context.state.set("steps", [...context.state.get("steps"), "enrich"]);
+                    },
+                }),
+            ],
+        }),
+        task({
+            name: "save",
+            run: async (context) => {
+                await simulateWork(50, context.signal);
+                context.state.set("steps", [...context.state.get("steps"), "save"]);
+            },
+        }),
+    ],
+});
+
+// ── Demo 1: register() returns a callable Flow — start() + join() ──
+
+title("Demo 1 - register + start (Flow returned by register is invocable)");
+
+const registered = engine.register(pipeline);
+log(`registered: ${registered.name}`);
+
+const handle1 = await registered.start();
+log(`handle: flowName=${handle1.flowName}  runId=${handle1.runId}`);
+log(`status: ${handle1.status()}`);
+
+const result1 = await handle1.join();
+log(`\nstatus: ${handle1.status()}`);
+log(`result: ${result1.status}, duration: ${result1.duration}ms`);
+log("steps:", result1.state.steps);
+
+// ── Demo 2: cancel() with reason ────────────────────────────────────
+
+title("Demo 2 - cancel");
+
+const handle2 = await registered.start();
+
+setTimeout(() => {
+    log(`\n  -> cancelling (status was: ${handle2.status()})`);
+    handle2.cancel("user pressed Ctrl+C");
+    log(`  -> status now: ${handle2.status()}`);
+}, 100);
+
+const result2 = await handle2.join();
+log(`\nresult: ${result2.status}`);
+if (result2.status === "cancelled") {
+    log(`reason: ${result2.reason}`);
+}
+log("tasks:", result2.tasks.map((result) => `${result.path}(${result.status})`).join(", "));
+
+// ── Demo 3: pause() + resume() ──────────────────────────────────────
+
+title("Demo 3 - pause + resume");
+
+const handle3 = await registered.start();
+
+setTimeout(() => {
+    handle3.pause();
+    log(`\n  -> paused (status: ${handle3.status()})`);
+
+    setTimeout(() => {
+        handle3.resume();
+        log(`  -> resumed (status: ${handle3.status()})`);
+    }, 200);
+}, 100);
+
+const result3 = await handle3.join();
+log(`\nresult: ${result3.status}, duration: ${result3.duration}ms (includes ~200ms pause)`);
+log("steps:", result3.state.steps);
+
+// ── Flow: every + provide (per-iteration browser pages) ─────────────
+
+const browserScope = define.scope<
+    BrowserContract & {
+        state: {
+            scraped: { month: string; pageId: number }[];
+        };
+    }
+>();
+
+const months = ["2024-01", "2024-02", "2024-03", "2024-04"];
+
+const scrapeFlow = browserScope.flow({
+    name: "scrape-invoices",
+    state: () => ({ scraped: [] }),
+    nodes: ({ every }) => [
+        every({
+            name: "scrape-month",
+            items: () => months,
+            concurrency: 2,
+            merge: "append",
+
+            // provide opens a fresh page per iteration; cleanup closes it.
+            // The returned keys are typed in the child context (context.page).
+            // meta is EveryMeta<string>: index, item, nodeName.
+            provide: async (context, meta) => {
+                log(`  [every meta] start iteration #${meta.index} item="${meta.item}"`);
+                return { page: await context.browser.newPage() };
+            },
+            cleanup: async (context, meta) => {
+                log(`  [every meta] cleanup iteration #${meta.index} item="${meta.item}" page=#${context.page.id}`);
+                await context.page.close();
+            },
+
+            nodes: ({ task }) => [
+                task({
+                    name: "navigate",
+                    run: async (context) => {
+                        await context.page.goto(`https://portal.example.com/invoices?month=${context.iteration.item}`);
+                    },
+                }),
+                task({
+                    name: "extract",
+                    run: (context) => {
+                        context.state.set("scraped", [{ month: context.iteration.item, pageId: context.page.id }]);
+                    },
+                }),
+            ],
+        }),
+    ],
+});
+
+title("Demo 4 - provide/cleanup in every (per-iteration pages)");
+
+const scrapeResult = await engine.run(scrapeFlow);
+log(`\nresult: ${scrapeResult.status}`);
+for (const entry of scrapeResult.state.scraped) {
+    log(`  ${entry.month} -> page #${entry.pageId}`);
+}
+
+// ── Flow: parallel + provide (per-branch browser pages) ─────────────
+
+const parallelScrape = define
+    .scope<
+        BrowserContract & {
+            state: {
+                invoicePage: number;
+                reportPage: number;
+            };
+        }
+    >()
+    .flow({
+        name: "parallel-scrape",
+        state: () => ({ invoicePage: 0, reportPage: 0 }),
+        nodes: ({ parallel }) => [
+            parallel({
+                name: "scrape-both",
+                merge: "overwrite",
+
+                // provide receives meta with branchName/branchIndex; useful for logs and labels
+                provide: async (context, meta) => {
+                    const page: Page = await context.browser.newPage();
+                    log(`  branch "${meta.branchName}" got page #${page.id}`);
+                    return { page };
+                },
+                cleanup: async (context, meta) => {
+                    log(`  branch "${meta.branchName}" released page #${context.page.id}`);
+                    await context.page.close();
+                },
+
+                nodes: ({ task }) => [
+                    task({
+                        name: "scrape-invoices",
+                        run: async (context) => {
+                            await context.page.goto("https://portal.example.com/invoices");
+                            context.state.set("invoicePage", context.page.id);
+                        },
+                    }),
+                    task({
+                        name: "scrape-reports",
+                        run: async (context) => {
+                            await context.page.goto("https://portal.example.com/reports");
+                            context.state.set("reportPage", context.page.id);
+                        },
+                    }),
+                ],
+            }),
+        ],
+    });
+
+title("Demo 5 - provide/cleanup in parallel (per-branch pages)");
+
+const parallelResult = await engine.run(parallelScrape);
+log(`\nresult: ${parallelResult.status}`);
+log(`invoices -> page #${parallelResult.state.invoicePage}, reports -> page #${parallelResult.state.reportPage}`);
