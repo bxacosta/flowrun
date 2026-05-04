@@ -53,8 +53,9 @@ export interface SystemInternalEvents {
         flowName: string;
         index?: number;
         nodeName: string;
+        reason?: string;
         runId: string;
-        status: "failed" | "success";
+        status: "failed" | "skipped" | "success";
     };
     "node:task:attempt:started": {
         attempt: number;
@@ -70,6 +71,7 @@ export interface SystemInternalEvents {
         flowName: string;
         index?: number;
         nodeName: string;
+        reason?: string;
         runId: string;
         status: "failed" | "skipped" | "success";
     };

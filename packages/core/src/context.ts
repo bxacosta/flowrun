@@ -1,3 +1,4 @@
+import { SkipSignal } from "./errors.ts";
 import type { InternalBus, PublishableBus } from "./event-bus.ts";
 import type { EventMap, EventSource, SystemEvents, SystemPublicEvents } from "./events.ts";
 import type { Logger } from "./logger.ts";
@@ -37,6 +38,7 @@ type BaseContextOf<
 type TaskExtras<TIteration = never> = {
     attempt: number;
     nodeName: string;
+    skip: (reason?: string) => never;
 } & IterationField<TIteration>;
 
 export type BaseContext<TScope extends AnyScope = Scope> = BaseContextOf<
@@ -146,6 +148,9 @@ export function buildTaskContext(
         ...buildBaseContext(runtime, state, signal, "task"),
         attempt,
         nodeName,
+        skip: (reason?: string) => {
+            throw new SkipSignal(reason);
+        },
     };
 
     if (!iteration) {

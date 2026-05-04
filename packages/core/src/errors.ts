@@ -72,6 +72,16 @@ export class MergeConflictError extends FlowEngineError {
     }
 }
 
+export class SkipSignal extends Error {
+    override readonly name = "SkipSignal";
+    readonly reason: string | undefined;
+
+    constructor(reason?: string) {
+        super(reason ?? "Task skipped");
+        this.reason = reason;
+    }
+}
+
 export function normalizeError(error: unknown): Error {
     if (error instanceof Error) {
         return error;

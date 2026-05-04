@@ -32,6 +32,7 @@ export {
     InvalidPlainObjectError,
     MergeConflictError,
     normalizeError,
+    SkipSignal,
 } from "./errors.ts";
 export type {
     EventBusConfig,

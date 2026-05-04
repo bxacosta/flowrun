@@ -73,6 +73,7 @@ export interface TaskResult {
     iteration?: { index: number; item: unknown };
     nodeName: string;
     path: string;
+    reason?: string;
     status: "failed" | "skipped" | "success";
 }
 

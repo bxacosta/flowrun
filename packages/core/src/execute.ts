@@ -1,7 +1,7 @@
 import { executeContinueBranches, executeFailFastBranches } from "./concurrency.ts";
 import type { ExecutionContext, FlowProgress, FlowRuntime } from "./context.ts";
 import { buildItemsContext, buildTaskContext } from "./context.ts";
-import { InvalidItemsError, normalizeError } from "./errors.ts";
+import { InvalidItemsError, normalizeError, SkipSignal } from "./errors.ts";
 import { compose } from "./middleware.ts";
 import type {
     AnyCleanup,
@@ -28,6 +28,18 @@ function computeRetryDelay(options: RetryConfig, attempt: number): number {
     return options.jitter ? capped / 2 + Math.random() * (capped / 2) : capped;
 }
 
+type AttemptOutcome =
+    | { status: "failed"; error: Error }
+    | { status: "skipped"; reason: string | undefined }
+    | { status: "success" };
+
+interface TaskNodeBase {
+    flowName: string;
+    index?: number;
+    nodeName: string;
+    runId: string;
+}
+
 function recordTaskResult(
     progress: FlowProgress,
     node: TaskNodeDefinition,
@@ -36,6 +48,7 @@ function recordTaskResult(
     duration: number,
     status: "failed" | "skipped" | "success",
     error: Error | null,
+    reason: string | undefined,
     iteration?: { index: number; item: unknown }
 ): void {
     const result: TaskResult = {
@@ -47,6 +60,9 @@ function recordTaskResult(
     };
     if (error) {
         result.error = error;
+    }
+    if (reason !== undefined) {
+        result.reason = reason;
     }
     if (iteration) {
         result.iteration = { index: iteration.index, item: iteration.item };
@@ -61,7 +77,7 @@ async function runSingleAttempt(
     signal: AbortSignal,
     attempt: number,
     iteration?: { index: number; item: unknown }
-): Promise<Error | null> {
+): Promise<AttemptOutcome> {
     signal.throwIfAborted();
 
     const { bus, flowName, runId } = executionContext.runtime;
@@ -78,16 +94,71 @@ async function runSingleAttempt(
             { ...attemptBase, duration: Date.now() - attemptStart, status: "success" },
             { source: "system" }
         );
-        return null;
+        return { status: "success" };
     } catch (error) {
+        if (error instanceof SkipSignal) {
+            await bus.publish(
+                "node:task:attempt:ended",
+                { ...attemptBase, duration: Date.now() - attemptStart, reason: error.reason, status: "skipped" },
+                { source: "system" }
+            );
+            return { status: "skipped", reason: error.reason };
+        }
         const normalized = normalizeError(error);
         await bus.publish(
             "node:task:attempt:ended",
             { ...attemptBase, duration: Date.now() - attemptStart, error: normalized, status: "failed" },
             { source: "system" }
         );
-        return normalized;
+        return { status: "failed", error: normalized };
     }
+}
+
+async function runAttemptLoop(
+    node: TaskNodeDefinition,
+    executionContext: ExecutionContext,
+    state: AnyFlowStateStore,
+    signal: AbortSignal,
+    nodeBase: TaskNodeBase,
+    maxAttempts: number,
+    iteration?: { index: number; item: unknown }
+): Promise<{ attempts: number; outcome: AttemptOutcome }> {
+    const { bus } = executionContext.runtime;
+    let attempts = 0;
+    let outcome: AttemptOutcome = { error: new Error("task did not run"), status: "failed" };
+
+    try {
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            outcome = await runSingleAttempt(node, executionContext, state, signal, attempt, iteration);
+            attempts = attempt;
+
+            if (outcome.status !== "failed") {
+                break;
+            }
+            if (signal.aborted) {
+                break;
+            }
+
+            const isLastAttempt = attempt === maxAttempts;
+            const shouldRetry = node.retry?.retryOn ? node.retry.retryOn(outcome.error, attempt) : true;
+            if (isLastAttempt || !shouldRetry || !node.retry) {
+                break;
+            }
+
+            const nextDelayMs = computeRetryDelay(node.retry, attempt);
+            await bus.publish(
+                "node:task:retried",
+                { ...nodeBase, attempt, error: outcome.error, nextDelayMs },
+                { source: "system" }
+            );
+            await sleepWithSignal(nextDelayMs, signal);
+            await executionContext.pauseGate.waitIfPaused();
+        }
+    } catch (abortError) {
+        outcome = { error: normalizeError(abortError), status: "failed" };
+    }
+
+    return { attempts, outcome };
 }
 
 async function executeTask(
@@ -98,75 +169,101 @@ async function executeTask(
     iteration?: { index: number; item: unknown }
 ): Promise<void> {
     const { bus, flowName, runId } = executionContext.runtime;
-    const nodeBase = { flowName, index: iteration?.index, nodeName: node.name, runId };
+    const nodeBase: TaskNodeBase = { flowName, index: iteration?.index, nodeName: node.name, runId };
     const maxAttempts = node.retry?.attempts ?? 1;
     const path = [...executionContext.pathSegments, node.name].join("/");
     const taskStart = Date.now();
 
     await bus.publish("node:task:started", { ...nodeBase, maxAttempts }, { source: "system" });
 
-    let attempts = 0;
-    let lastError: Error | null = null;
-
-    try {
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            const error = await runSingleAttempt(node, executionContext, state, signal, attempt, iteration);
-            attempts = attempt;
-
-            if (!error) {
-                lastError = null;
-                break;
-            }
-
-            lastError = error;
-            if (signal.aborted) {
-                break;
-            }
-
-            const isLastAttempt = attempt === maxAttempts;
-            const shouldRetry = node.retry?.retryOn ? node.retry.retryOn(error, attempt) : true;
-            if (isLastAttempt || !shouldRetry || !node.retry) {
-                break;
-            }
-
-            const nextDelayMs = computeRetryDelay(node.retry, attempt);
-            await bus.publish("node:task:retried", { ...nodeBase, attempt, error, nextDelayMs }, { source: "system" });
-            await sleepWithSignal(nextDelayMs, signal);
-            await executionContext.pauseGate.waitIfPaused();
-        }
-    } catch (abortError) {
-        lastError = normalizeError(abortError);
-    }
-
+    const { attempts, outcome } = await runAttemptLoop(
+        node,
+        executionContext,
+        state,
+        signal,
+        nodeBase,
+        maxAttempts,
+        iteration
+    );
     const duration = Date.now() - taskStart;
 
-    if (!lastError) {
+    if (outcome.status === "success") {
         await bus.publish(
             "node:task:ended",
             { ...nodeBase, attempts, duration, status: "success" },
             { source: "system" }
         );
-        recordTaskResult(executionContext.progress, node, path, attempts, duration, "success", null, iteration);
+        recordTaskResult(
+            executionContext.progress,
+            node,
+            path,
+            attempts,
+            duration,
+            "success",
+            null,
+            undefined,
+            iteration
+        );
+        return;
+    }
+
+    if (outcome.status === "skipped") {
+        await bus.publish(
+            "node:task:ended",
+            { ...nodeBase, attempts, duration, reason: outcome.reason, status: "skipped" },
+            { source: "system" }
+        );
+        recordTaskResult(
+            executionContext.progress,
+            node,
+            path,
+            attempts,
+            duration,
+            "skipped",
+            null,
+            outcome.reason,
+            iteration
+        );
         return;
     }
 
     if (!signal.aborted && node.onError === "skip") {
         await bus.publish(
             "node:task:ended",
-            { ...nodeBase, attempts, duration, error: lastError, status: "skipped" },
+            { ...nodeBase, attempts, duration, error: outcome.error, status: "skipped" },
             { source: "system" }
         );
-        recordTaskResult(executionContext.progress, node, path, attempts, duration, "skipped", lastError, iteration);
+        recordTaskResult(
+            executionContext.progress,
+            node,
+            path,
+            attempts,
+            duration,
+            "skipped",
+            outcome.error,
+            undefined,
+            iteration
+        );
         return;
     }
 
     await bus.publish(
         "node:task:ended",
-        { ...nodeBase, attempts, duration, error: lastError, status: "failed" },
+        { ...nodeBase, attempts, duration, error: outcome.error, status: "failed" },
         { source: "system" }
     );
-    recordTaskResult(executionContext.progress, node, path, attempts, duration, "failed", lastError, iteration);
-    throw lastError;
+    recordTaskResult(
+        executionContext.progress,
+        node,
+        path,
+        attempts,
+        duration,
+        "failed",
+        outcome.error,
+        undefined,
+        iteration
+    );
+    throw outcome.error;
 }
 
 function mergeBranchProgresses(parent: FlowProgress, branches: readonly FlowProgress[]): void {
