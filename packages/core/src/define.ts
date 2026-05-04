@@ -1,4 +1,4 @@
-import type { FlowMiddlewareOf, ItemsContext, TaskContext, TaskMiddlewareOf } from "./context.ts";
+import type { FlowContext, FlowMiddlewareOf, ItemsContext, TaskContext, TaskMiddlewareOf } from "./context.ts";
 import type {
     AnyExtensionCleanup,
     AnyExtensionDefinition,
@@ -13,6 +13,7 @@ import type {
     ExtractPublicEvents,
 } from "./extension.ts";
 import type { AnyFlowDefinition, FlowDefinition } from "./flow-runner.ts";
+import type { Middleware, MiddlewareRun } from "./middleware.ts";
 import type { ModuleConfig, ModuleDefinition } from "./module.ts";
 import type {
     ContainerErrorMode,
@@ -139,13 +140,20 @@ export type FlowConfig<TScope extends AnyScope> = {
     nodes: NodesSpec<TScope>;
 } & FlowStateFieldOf<TScope["_params"], TScope["_state"]>;
 
+export interface MiddlewareConfig<TContext> {
+    name: string;
+    run: MiddlewareRun<TContext>;
+}
+
 export interface ScopedDefine<TScope extends AnyScope> {
     every<TItem>(config: EveryConfigWithoutProvide<TScope, TItem>): Node<TScope>;
     every<TItem, TLocal extends object>(config: EveryConfigWithProvide<TScope, TItem, TLocal>): Node<TScope>;
     flow(config: FlowConfig<TScope>): FlowDefinition<TScope>;
+    flowMiddleware(config: MiddlewareConfig<FlowContext<TScope>>): Middleware<FlowContext<TScope>>;
     parallel(config: ParallelConfigWithoutProvide<TScope>): Node<TScope>;
     parallel<TLocal extends object>(config: ParallelConfigWithProvide<TScope, TLocal>): Node<TScope>;
     task(config: TaskConfig<TScope>): Node<TScope>;
+    taskMiddleware(config: MiddlewareConfig<TaskContext<TScope>>): Middleware<TaskContext<TScope>>;
 }
 
 function resolveNodes<TScope extends AnyScope>(
@@ -206,6 +214,10 @@ function defineEvery<TScope extends AnyScope, TItem>(
     };
 }
 
+function defineMiddleware<TContext>(config: MiddlewareConfig<TContext>): Middleware<TContext> {
+    return { name: config.name, run: config.run };
+}
+
 function defineFlow<TScope extends AnyScope>(config: FlowConfig<TScope>): FlowDefinition<TScope> {
     const nodes = resolveNodes(config.nodes);
     assertUniqueNodeNames(nodes, config.name);
@@ -259,8 +271,10 @@ function createScopedDefine<TScope extends AnyScope>(): ScopedDefine<TScope> {
     return {
         every: defineEvery,
         flow: defineFlow,
+        flowMiddleware: defineMiddleware,
         parallel: defineParallel,
         task: defineTask,
+        taskMiddleware: defineMiddleware,
     };
 }
 
@@ -274,9 +288,19 @@ function flow<TParams extends object = EmptyObject, TState extends object = Empt
     return defineFlow(config);
 }
 
+function flowMiddleware(config: MiddlewareConfig<FlowContext>): Middleware<FlowContext> {
+    return defineMiddleware(config);
+}
+
+function taskMiddleware(config: MiddlewareConfig<TaskContext>): Middleware<TaskContext> {
+    return defineMiddleware(config);
+}
+
 export const define = {
     extension: defineExtension,
     flow,
+    flowMiddleware,
     module: defineModule,
     scope,
+    taskMiddleware,
 } as const;

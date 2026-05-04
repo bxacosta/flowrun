@@ -10,6 +10,7 @@ export type {
     EveryConfigWithProvide,
     EveryOptions,
     FlowConfig,
+    MiddlewareConfig,
     NodeFactory,
     ParallelConfigWithoutProvide,
     ParallelConfigWithProvide,
@@ -78,7 +79,7 @@ export type {
     SuccessFlowResult,
 } from "./flow-runner.ts";
 export type { Logger } from "./logger.ts";
-export type { Middleware } from "./middleware.ts";
+export type { Middleware, MiddlewareRun } from "./middleware.ts";
 export type { ModuleConfig, ModuleDefinition } from "./module.ts";
 export type {
     BackoffStrategy,

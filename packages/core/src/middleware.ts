@@ -1,6 +1,11 @@
 import type { MaybePromise } from "./utils.ts";
 
-export type Middleware<TContext> = (context: TContext, next: () => Promise<void>) => MaybePromise<void>;
+export type MiddlewareRun<TContext> = (context: TContext, next: () => Promise<void>) => MaybePromise<void>;
+
+export interface Middleware<TContext> {
+    readonly name: string;
+    readonly run: MiddlewareRun<TContext>;
+}
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased middleware, typed at definition boundary
 export type AnyMiddleware = Middleware<any>;
@@ -24,7 +29,7 @@ export async function compose(
             return;
         }
 
-        await middleware(context, () => dispatch(nextIndex + 1));
+        await middleware.run(context, () => dispatch(nextIndex + 1));
     }
 
     await dispatch(0);
