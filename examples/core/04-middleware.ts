@@ -11,7 +11,7 @@
  * Retry, onError and other node options live in 02-nodes.ts.
  */
 
-import { createEngine, define } from "@flowrun/core"
+import { createEngine, define } from "@flowrun/core";
 import { delay, log, title } from "./shared/helpers.ts";
 import { subscriber } from "./shared/subscriber.ts";
 

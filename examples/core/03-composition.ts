@@ -22,7 +22,7 @@
  * concatenates contributions cleanly across forks.
  */
 
-import { createEngine, define } from "@flowrun/core"
+import { createEngine, define } from "@flowrun/core";
 import { delay, log, title } from "./shared/helpers.ts";
 
 // ── Shared contract & state ─────────────────────────────────────────

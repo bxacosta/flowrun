@@ -13,8 +13,8 @@
  *  - context.publish() with correlationId
  */
 
-import type { EngineEvents, Envelope, ReadableBus, Subscription } from "@flowrun/core"
-import { createEngine, define, event } from "@flowrun/core"
+import type { EngineEvents, Envelope, ReadableBus, Subscription } from "@flowrun/core";
+import { createEngine, define, event } from "@flowrun/core";
 import { log, title } from "./shared/helpers.ts";
 
 // ── Extension 1: database — config factory + provided context ───────

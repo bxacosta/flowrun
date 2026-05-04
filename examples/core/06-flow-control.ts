@@ -12,7 +12,7 @@
  *  - typed child context: provide adds keys that child tasks see typed
  */
 
-import { createEngine, define } from "@flowrun/core"
+import { createEngine, define } from "@flowrun/core";
 import type { Browser, Page } from "./shared/helpers.ts";
 import { createBrowser, log, simulateWork, title } from "./shared/helpers.ts";
 import { subscriber } from "./shared/subscriber.ts";

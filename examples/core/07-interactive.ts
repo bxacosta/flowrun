@@ -12,7 +12,7 @@
  */
 
 import { emitKeypressEvents } from "node:readline";
-import { createEngine, define, event } from "@flowrun/core"
+import { createEngine, define, event } from "@flowrun/core";
 import { colorize, log, simulateWork } from "./shared/helpers.ts";
 import { subscriber } from "./shared/subscriber.ts";
 

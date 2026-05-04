@@ -6,12 +6,12 @@
  *
  * Covers:
  *  - task: sync/async run, retry (constant + exponential w/ jitter, factor,
- *          maxDelayMs, retryOn), onError:"skip", context.attempt
+ *          maxDelayMs, retryOn), onError:"skip", context.skip(), context.attempt
  *  - parallel: merge strategies (overwrite, append, strict -> MergeConflictError)
  *  - every: items source, concurrency, merge, onError:"continue", context.iteration
  */
 
-import { createEngine, define } from "@flowrun/core"
+import { createEngine, define } from "@flowrun/core";
 import { delay, log, title } from "./shared/helpers.ts";
 import { subscriber } from "./shared/subscriber.ts";
 
@@ -87,7 +87,19 @@ const taskShowcase = define.flow({
             },
         }),
 
-        // Final task observes that the previous failure did not kill the flow
+        // context.skip(reason) — task validates and bails cleanly (no error thrown)
+        task({
+            name: "skip-when-not-applicable",
+            run: (context) => {
+                const shouldRun = false; // imagine this comes from a validation check
+                if (!shouldRun) {
+                    context.skip("input did not match preconditions");
+                }
+                context.state.set("steps", [...context.state.get("steps"), "should-not-appear"]);
+            },
+        }),
+
+        // Final task observes that both skips did not kill the flow
         task({
             name: "after-skip",
             run: (context) => {
@@ -271,12 +283,13 @@ subscriber(engine.bus);
 
 // ── Run ─────────────────────────────────────────────────────────────
 
-title("Task - sync/async + retry (constant + exponential) + onError:skip + context.attempt");
+title("Task - sync/async + retry + onError:skip + context.skip() + context.attempt");
 const taskResult = await engine.run(taskShowcase);
 log("steps:", taskResult.state.steps);
 log("tasks:");
 for (const result of taskResult.tasks) {
-    log(`  ${result.nodeName} -> ${result.status} (attempts=${result.attempts})`);
+    const reason = result.reason ? ` (${result.reason})` : "";
+    log(`  ${result.nodeName} -> ${result.status}${reason} (attempts=${result.attempts})`);
 }
 
 title("Parallel - overwrite (last write wins)");
