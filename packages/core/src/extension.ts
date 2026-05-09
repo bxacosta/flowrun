@@ -57,11 +57,20 @@ export interface ExtensionSetupContext<TEvents extends EventMap> {
 export type ExtensionCleanupContext<TProvided extends object, TEvents extends EventMap> = TProvided &
     ExtensionSetupContext<TEvents>;
 
-export interface ExtensionConfig<TDefinitions extends EventDefinitions, TProvided extends object> {
+export interface ExtensionResourceConfig<TDefinitions extends EventDefinitions, TProvided extends object> {
     cleanup?: (context: ExtensionCleanupContext<TProvided, UnwrapEvents<TDefinitions>>) => MaybePromise<void>;
+    provide: (context: ExtensionSetupContext<UnwrapEvents<TDefinitions>>) => MaybePromise<TProvided>;
+}
+
+export interface ExtensionConfig<TDefinitions extends EventDefinitions, TProvided extends object> {
     events?: TDefinitions;
     name: string;
-    provide: (context: ExtensionSetupContext<UnwrapEvents<TDefinitions>>) => MaybePromise<TProvided>;
+    resource: ExtensionResourceConfig<TDefinitions, TProvided>;
+}
+
+export interface ExtensionResource {
+    cleanup?: AnyExtensionCleanup;
+    provide: AnyExtensionProvide;
 }
 
 export interface ExtensionDefinition<
@@ -72,10 +81,9 @@ export interface ExtensionDefinition<
     readonly _internalEvents?: TInternalEvents;
     readonly _provided?: TProvided;
     readonly _publicEvents?: TPublicEvents;
-    readonly cleanup?: AnyExtensionCleanup;
     readonly kind: "extension";
     readonly name: string;
-    readonly provide: AnyExtensionProvide;
+    readonly resource: ExtensionResource;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased extension for runtime registries

@@ -410,8 +410,8 @@ async function executeParallel(
                     forkedStore,
                     controller.signal,
                     branchPathSegments,
-                    node.provide,
-                    node.cleanup,
+                    node.resource?.provide,
+                    node.resource?.cleanup,
                     meta,
                     iteration,
                     async (runtime) => {
@@ -534,8 +534,8 @@ async function executeEvery(
                     forkedStore,
                     controller.signal,
                     branchPathSegments,
-                    node.provide,
-                    node.cleanup,
+                    node.resource?.provide,
+                    node.resource?.cleanup,
                     meta,
                     itemIteration,
                     async (runtime) => {

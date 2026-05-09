@@ -114,10 +114,10 @@ async function cleanupExtensions(
     baseContext: { bus: InternalBus<EventMap>; flowName: string; log: ReturnType<typeof createLogger>; runId: string }
 ): Promise<void> {
     for (const { extension, provided } of [...instances].reverse()) {
-        if (!extension.cleanup) {
+        if (!extension.resource.cleanup) {
             continue;
         }
-        await extension.cleanup({ ...provided, ...baseContext });
+        await extension.resource.cleanup({ ...provided, ...baseContext });
     }
 }
 
@@ -130,7 +130,7 @@ async function provideExtensions(
 
     try {
         for (const extension of extensions) {
-            const result = await extension.provide(baseContext);
+            const result = await extension.resource.provide(baseContext);
             assertPlainObject(result, `Extension "${extension.name}" provide() must return a plain object`);
             Object.assign(provided, result);
             instances.push({ extension, provided: result });

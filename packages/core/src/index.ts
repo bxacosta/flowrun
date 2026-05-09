@@ -6,15 +6,17 @@ export type {
     TaskContext,
 } from "./context.ts";
 export type {
-    EveryConfigWithoutProvide,
-    EveryConfigWithProvide,
+    EveryConfig,
+    EveryConfigWithResource,
     EveryOptions,
+    EveryResourceConfig,
     FlowConfig,
     MiddlewareConfig,
     NodeFactory,
-    ParallelConfigWithoutProvide,
-    ParallelConfigWithProvide,
+    ParallelConfig,
+    ParallelConfigWithResource,
     ParallelOptions,
+    ParallelResourceConfig,
     TaskConfig,
 } from "./define.ts";
 // biome-ignore lint/performance/noBarrelFile: public library entry point
@@ -67,6 +69,8 @@ export type {
     ExtensionCleanupContext,
     ExtensionConfig,
     ExtensionDefinition,
+    ExtensionResource,
+    ExtensionResourceConfig,
     ExtensionSetupContext,
     Internal,
     Public,
@@ -90,6 +94,7 @@ export type { ModuleConfig, ModuleDefinition } from "./module.ts";
 export type {
     BackoffStrategy,
     ContainerErrorMode,
+    ContainerResource,
     EveryMeta,
     Node,
     ParallelMeta,

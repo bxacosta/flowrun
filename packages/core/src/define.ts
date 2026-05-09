@@ -9,6 +9,7 @@ import type {
     ExtensionInternalEvents,
     ExtensionProvided,
     ExtensionPublicEvents,
+    ExtensionResource,
     ExtractInternalEvents,
     ExtractPublicEvents,
 } from "./extension.ts";
@@ -73,18 +74,21 @@ export interface ParallelOptions {
     onError?: ContainerErrorMode;
 }
 
-export type ParallelConfigWithoutProvide<TScope extends AnyScope> = ParallelOptions & {
-    cleanup?: never;
+export interface ParallelResourceConfig<TScope extends AnyScope, TLocal extends object> {
+    cleanup?: (context: ItemsContext<WithProvided<TScope, TLocal>>, meta: ParallelMeta) => MaybePromise<void>;
+    provide: (context: ItemsContext<TScope>, meta: ParallelMeta) => MaybePromise<TLocal>;
+}
+
+export type ParallelConfig<TScope extends AnyScope> = ParallelOptions & {
     name: string;
     nodes: NodesSpec<TScope>;
-    provide?: never;
+    resource?: never;
 };
 
-export type ParallelConfigWithProvide<TScope extends AnyScope, TLocal extends object> = ParallelOptions & {
-    cleanup?: (context: ItemsContext<WithProvided<TScope, TLocal>>, meta: ParallelMeta) => MaybePromise<void>;
+export type ParallelConfigWithResource<TScope extends AnyScope, TLocal extends object> = ParallelOptions & {
     name: string;
     nodes: NodesSpec<WithProvided<TScope, TLocal>>;
-    provide: (context: ItemsContext<TScope>, meta: ParallelMeta) => MaybePromise<TLocal>;
+    resource: ParallelResourceConfig<TScope, TLocal>;
 };
 
 export interface EveryOptions {
@@ -93,23 +97,26 @@ export interface EveryOptions {
     onError?: ContainerErrorMode;
 }
 
-export type EveryConfigWithoutProvide<TScope extends AnyScope, TItem> = EveryOptions & {
-    cleanup?: never;
-    items: (context: ItemsContext<TScope>) => readonly TItem[];
-    name: string;
-    nodes: NodesSpec<IterationScope<TScope, TItem>>;
-    provide?: never;
-};
-
-export type EveryConfigWithProvide<TScope extends AnyScope, TItem, TLocal extends object> = EveryOptions & {
+export interface EveryResourceConfig<TScope extends AnyScope, TItem, TLocal extends object> {
     cleanup?: (
         context: ItemsContext<WithProvided<IterationScope<TScope, TItem>, TLocal>>,
         meta: EveryMeta<TItem>
     ) => MaybePromise<void>;
+    provide: (context: ItemsContext<IterationScope<TScope, TItem>>, meta: EveryMeta<TItem>) => MaybePromise<TLocal>;
+}
+
+export type EveryConfig<TScope extends AnyScope, TItem> = EveryOptions & {
+    items: (context: ItemsContext<TScope>) => readonly TItem[];
+    name: string;
+    nodes: NodesSpec<IterationScope<TScope, TItem>>;
+    resource?: never;
+};
+
+export type EveryConfigWithResource<TScope extends AnyScope, TItem, TLocal extends object> = EveryOptions & {
     items: (context: ItemsContext<TScope>) => readonly TItem[];
     name: string;
     nodes: NodesSpec<WithProvided<IterationScope<TScope, TItem>, TLocal>>;
-    provide: (context: ItemsContext<IterationScope<TScope, TItem>>, meta: EveryMeta<TItem>) => MaybePromise<TLocal>;
+    resource: EveryResourceConfig<TScope, TItem, TLocal>;
 };
 
 export type NodesSpec<TScope extends AnyScope> =
@@ -117,10 +124,10 @@ export type NodesSpec<TScope extends AnyScope> =
     | ((nodes: NodeFactory<TScope>) => readonly Node<TScope>[]);
 
 export interface NodeFactory<TScope extends AnyScope> {
-    every<TItem>(config: EveryConfigWithoutProvide<TScope, TItem>): Node<TScope>;
-    every<TItem, TLocal extends object>(config: EveryConfigWithProvide<TScope, TItem, TLocal>): Node<TScope>;
-    parallel(config: ParallelConfigWithoutProvide<TScope>): Node<TScope>;
-    parallel<TLocal extends object>(config: ParallelConfigWithProvide<TScope, TLocal>): Node<TScope>;
+    every<TItem>(config: EveryConfig<TScope, TItem>): Node<TScope>;
+    every<TItem, TLocal extends object>(config: EveryConfigWithResource<TScope, TItem, TLocal>): Node<TScope>;
+    parallel(config: ParallelConfig<TScope>): Node<TScope>;
+    parallel<TLocal extends object>(config: ParallelConfigWithResource<TScope, TLocal>): Node<TScope>;
     task(config: TaskConfig<TScope>): Node<TScope>;
 }
 
@@ -148,12 +155,12 @@ export interface MiddlewareConfig<TContext> {
 }
 
 export interface ScopedDefine<TScope extends AnyScope> {
-    every<TItem>(config: EveryConfigWithoutProvide<TScope, TItem>): Node<TScope>;
-    every<TItem, TLocal extends object>(config: EveryConfigWithProvide<TScope, TItem, TLocal>): Node<TScope>;
+    every<TItem>(config: EveryConfig<TScope, TItem>): Node<TScope>;
+    every<TItem, TLocal extends object>(config: EveryConfigWithResource<TScope, TItem, TLocal>): Node<TScope>;
     flow(config: FlowConfig<TScope>): FlowDefinition<TScope>;
     flowMiddleware(config: MiddlewareConfig<FlowContext<TScope>>): Middleware<FlowContext<TScope>>;
-    parallel(config: ParallelConfigWithoutProvide<TScope>): Node<TScope>;
-    parallel<TLocal extends object>(config: ParallelConfigWithProvide<TScope, TLocal>): Node<TScope>;
+    parallel(config: ParallelConfig<TScope>): Node<TScope>;
+    parallel<TLocal extends object>(config: ParallelConfigWithResource<TScope, TLocal>): Node<TScope>;
     task(config: TaskConfig<TScope>): Node<TScope>;
     taskMiddleware(config: MiddlewareConfig<TaskContext<TScope>>): Middleware<TaskContext<TScope>>;
 }
@@ -177,7 +184,7 @@ function defineTask<TScope extends AnyScope>(config: TaskConfig<TScope>): Node<T
 }
 
 function defineParallel<TScope extends AnyScope>(
-    config: ParallelConfigWithoutProvide<TScope> | ParallelConfigWithProvide<TScope, object>
+    config: ParallelConfig<TScope> | ParallelConfigWithResource<TScope, object>
 ): Node<TScope> {
     type ChildScope = TScope | WithProvided<TScope, object>;
     const childNodes = resolveNodes(
@@ -185,18 +192,17 @@ function defineParallel<TScope extends AnyScope>(
     );
     assertUniqueNodeNames(childNodes, config.name);
     return {
-        cleanup: "cleanup" in config ? config.cleanup : undefined,
         merge: config.merge ?? "overwrite",
         name: config.name,
         nodes: childNodes as NodeDefinition[],
         onError: config.onError ?? "fail",
-        provide: "provide" in config ? config.provide : undefined,
+        resource: config.resource,
         type: "parallel",
     };
 }
 
 function defineEvery<TScope extends AnyScope, TItem>(
-    config: EveryConfigWithoutProvide<TScope, TItem> | EveryConfigWithProvide<TScope, TItem, object>
+    config: EveryConfig<TScope, TItem> | EveryConfigWithResource<TScope, TItem, object>
 ): Node<TScope> {
     type ChildScope = IterationScope<TScope, TItem> | WithProvided<IterationScope<TScope, TItem>, object>;
     const childNodes = resolveNodes(
@@ -204,14 +210,13 @@ function defineEvery<TScope extends AnyScope, TItem>(
     );
     assertUniqueNodeNames(childNodes, config.name);
     return {
-        cleanup: "cleanup" in config ? config.cleanup : undefined,
         concurrency: config.concurrency ?? Number.POSITIVE_INFINITY,
         items: config.items,
         merge: config.merge ?? "overwrite",
         name: config.name,
         nodes: childNodes as NodeDefinition[],
         onError: config.onError ?? "fail",
-        provide: "provide" in config ? config.provide : undefined,
+        resource: config.resource,
         type: "every",
     };
 }
@@ -235,11 +240,14 @@ function defineFlow<TScope extends AnyScope>(config: FlowConfig<TScope>): FlowDe
 function defineExtension<TDefinitions extends EventDefinitions, TProvided extends object>(
     config: ExtensionConfig<TDefinitions, TProvided>
 ): ExtensionDefinition<TProvided, ExtractInternalEvents<TDefinitions>, ExtractPublicEvents<TDefinitions>> {
+    const resource: ExtensionResource = {
+        cleanup: config.resource.cleanup as AnyExtensionCleanup | undefined,
+        provide: config.resource.provide as AnyExtensionProvide,
+    };
     return {
-        cleanup: config.cleanup as AnyExtensionCleanup | undefined,
         kind: "extension",
         name: config.name,
-        provide: config.provide as AnyExtensionProvide,
+        resource,
     };
 }
 

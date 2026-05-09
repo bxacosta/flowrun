@@ -38,25 +38,28 @@ export interface TaskNodeDefinition {
     type: "task";
 }
 
-export interface ParallelNodeDefinition {
+export interface ContainerResource {
     cleanup?: AnyCleanup;
+    provide: AnyProvide;
+}
+
+export interface ParallelNodeDefinition {
     merge: MergeStrategy;
     name: string;
     nodes: NodeDefinition[];
     onError: ContainerErrorMode;
-    provide?: AnyProvide;
+    resource?: ContainerResource;
     type: "parallel";
 }
 
 export interface EveryNodeDefinition {
-    cleanup?: AnyCleanup;
     concurrency: number;
     items: AnyItemsFunction;
     merge: MergeStrategy;
     name: string;
     nodes: NodeDefinition[];
     onError: ContainerErrorMode;
-    provide?: AnyProvide;
+    resource?: ContainerResource;
     type: "every";
 }
 
