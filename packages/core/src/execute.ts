@@ -75,6 +75,7 @@ async function runSingleAttempt(
     executionContext: ExecutionContext,
     state: AnyFlowStateStore,
     signal: AbortSignal,
+    pathSegments: readonly string[],
     attempt: number,
     iteration?: { index: number; item: unknown }
 ): Promise<AttemptOutcome> {
@@ -87,7 +88,15 @@ async function runSingleAttempt(
     await bus.publish("node:task:attempt:started", attemptBase, { source: "system" });
 
     try {
-        const context = buildTaskContext(executionContext.runtime, state, signal, node.name, attempt, iteration);
+        const context = buildTaskContext(
+            executionContext.runtime,
+            state,
+            signal,
+            pathSegments,
+            node.name,
+            attempt,
+            iteration
+        );
         await compose(node.middleware, context, () => node.run(context));
         await bus.publish(
             "node:task:attempt:ended",
@@ -119,6 +128,7 @@ async function runAttemptLoop(
     executionContext: ExecutionContext,
     state: AnyFlowStateStore,
     signal: AbortSignal,
+    pathSegments: readonly string[],
     nodeBase: TaskNodeBase,
     maxAttempts: number,
     iteration?: { index: number; item: unknown }
@@ -129,7 +139,7 @@ async function runAttemptLoop(
 
     try {
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            outcome = await runSingleAttempt(node, executionContext, state, signal, attempt, iteration);
+            outcome = await runSingleAttempt(node, executionContext, state, signal, pathSegments, attempt, iteration);
             attempts = attempt;
 
             if (outcome.status !== "failed") {
@@ -171,7 +181,8 @@ async function executeTask(
     const { bus, flowName, runId } = executionContext.runtime;
     const nodeBase: TaskNodeBase = { flowName, index: iteration?.index, nodeName: node.name, runId };
     const maxAttempts = node.retry?.attempts ?? 1;
-    const path = [...executionContext.pathSegments, node.name].join("/");
+    const taskPathSegments = [...executionContext.pathSegments, node.name];
+    const path = taskPathSegments.join("/");
     const taskStart = Date.now();
 
     await bus.publish("node:task:started", { ...nodeBase, maxAttempts }, { source: "system" });
@@ -181,6 +192,7 @@ async function executeTask(
         executionContext,
         state,
         signal,
+        taskPathSegments,
         nodeBase,
         maxAttempts,
         iteration
@@ -276,6 +288,7 @@ async function withLocalProvided(
     executionContext: ExecutionContext,
     state: AnyFlowStateStore,
     signal: AbortSignal,
+    branchPathSegments: readonly string[],
     provide: AnyProvide | undefined,
     cleanup: AnyCleanup | undefined,
     meta: unknown,
@@ -285,7 +298,14 @@ async function withLocalProvided(
     let branchRuntime = executionContext.runtime;
 
     if (provide) {
-        const provideContext = buildItemsContext(branchRuntime, state, signal, iteration, "provide");
+        const provideContext = buildItemsContext(
+            branchRuntime,
+            state,
+            signal,
+            branchPathSegments,
+            iteration,
+            "provide"
+        );
         const localProvided = await provide(provideContext, meta);
         assertPlainObject(localProvided, "Container provide() must return a plain object");
         branchRuntime = {
@@ -299,7 +319,14 @@ async function withLocalProvided(
     } finally {
         if (cleanup) {
             try {
-                const cleanupContext = buildItemsContext(branchRuntime, state, signal, iteration, "cleanup");
+                const cleanupContext = buildItemsContext(
+                    branchRuntime,
+                    state,
+                    signal,
+                    branchPathSegments,
+                    iteration,
+                    "cleanup"
+                );
                 await cleanup(cleanupContext, meta);
             } catch (cleanupError) {
                 executionContext.runtime.log.error("cleanup failed", { error: cleanupError });
@@ -373,6 +400,7 @@ async function executeParallel(
         for (const [branchIndex, child] of node.nodes.entries()) {
             const forkedStore = state.fork();
             const branchProgress: FlowProgress = { taskResults: [] };
+            const branchPathSegments = [...childPathSegments, child.name];
             plan.forks.push({ label: child.name, store: forkedStore });
             plan.branchProgresses.push(branchProgress);
             plan.branches.push(async () => {
@@ -381,6 +409,7 @@ async function executeParallel(
                     executionContext,
                     forkedStore,
                     controller.signal,
+                    branchPathSegments,
                     node.provide,
                     node.cleanup,
                     meta,
@@ -463,7 +492,15 @@ async function executeEvery(
     iteration?: { index: number; item: unknown }
 ): Promise<void> {
     const { bus, flowName, runId } = executionContext.runtime;
-    const itemsContext = buildItemsContext(executionContext.runtime, state, signal, iteration, "items");
+    const everyPathSegments = [...executionContext.pathSegments, node.name];
+    const itemsContext = buildItemsContext(
+        executionContext.runtime,
+        state,
+        signal,
+        everyPathSegments,
+        iteration,
+        "items"
+    );
     const items = node.items(itemsContext);
 
     if (!Array.isArray(items)) {
@@ -486,6 +523,7 @@ async function executeEvery(
             const forkedStore = state.fork();
             const branchProgress: FlowProgress = { taskResults: [] };
             const itemIteration = { index: itemIndex, item };
+            const branchPathSegments = [...everyPathSegments, String(itemIndex)];
 
             plan.forks.push({ label: itemIndex, store: forkedStore });
             plan.branchProgresses.push(branchProgress);
@@ -495,6 +533,7 @@ async function executeEvery(
                     executionContext,
                     forkedStore,
                     controller.signal,
+                    branchPathSegments,
                     node.provide,
                     node.cleanup,
                     meta,
@@ -503,7 +542,7 @@ async function executeEvery(
                         await executeNodes(
                             node.nodes,
                             {
-                                pathSegments: [...executionContext.pathSegments, node.name, String(itemIndex)],
+                                pathSegments: branchPathSegments,
                                 pauseGate: executionContext.pauseGate,
                                 progress: branchProgress,
                                 runtime,

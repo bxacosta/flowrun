@@ -1,3 +1,5 @@
+import type { TerminalRequestStatus } from "./request.ts";
+
 export class FlowEngineError extends Error {
     override readonly name: string = "FlowEngineError";
 }
@@ -79,6 +81,59 @@ export class SkipSignal extends Error {
     constructor(reason?: string) {
         super(reason ?? "Task skipped");
         this.reason = reason;
+    }
+}
+
+export class RequestError extends FlowEngineError {
+    override readonly name: string = "RequestError";
+    readonly requestId: string | undefined;
+    readonly requestName: string | undefined;
+
+    constructor(message: string, options?: { requestId?: string; requestName?: string }) {
+        super(message);
+        this.requestId = options?.requestId;
+        this.requestName = options?.requestName;
+    }
+}
+
+export class RequestTimeoutError extends RequestError {
+    override readonly name = "RequestTimeoutError";
+    readonly timeoutMs: number;
+
+    constructor(requestName: string, requestId: string, timeoutMs: number) {
+        super(`Request "${requestName}" timed out after ${timeoutMs}ms`, { requestId, requestName });
+        this.timeoutMs = timeoutMs;
+    }
+}
+
+export class RequestCancelledError extends RequestError {
+    override readonly name = "RequestCancelledError";
+    readonly reason: string | undefined;
+
+    constructor(requestName: string, requestId: string, reason?: string) {
+        super(reason ? `Request "${requestName}" cancelled: ${reason}` : `Request "${requestName}" cancelled`, {
+            requestId,
+            requestName,
+        });
+        this.reason = reason;
+    }
+}
+
+export class RequestNotFoundError extends RequestError {
+    override readonly name = "RequestNotFoundError";
+
+    constructor(requestId: string) {
+        super(`Request "${requestId}" not found`, { requestId });
+    }
+}
+
+export class RequestAlreadyResolvedError extends RequestError {
+    override readonly name = "RequestAlreadyResolvedError";
+    readonly currentStatus: TerminalRequestStatus;
+
+    constructor(requestName: string, requestId: string, currentStatus: TerminalRequestStatus) {
+        super(`Request "${requestName}" is already ${currentStatus}`, { requestId, requestName });
+        this.currentStatus = currentStatus;
     }
 }
 

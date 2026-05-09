@@ -9,6 +9,7 @@ import { createLogger } from "./logger.ts";
 import type { AnyMiddleware } from "./middleware.ts";
 import { compose } from "./middleware.ts";
 import type { AnyStateFactory, NodeDefinition, TaskResult } from "./node.ts";
+import type { RequestManager } from "./request-manager.ts";
 import type { AnyScope } from "./scope.ts";
 import { PauseGate } from "./signal.ts";
 import type { AnyFlowStateStore } from "./state.ts";
@@ -101,6 +102,7 @@ export interface FlowRunArgs<TScope extends AnyScope = AnyScope> {
     extensions: readonly AnyExtensionDefinition[];
     flow: FlowDefinition<TScope>;
     params: Readonly<TScope["_params"]>;
+    requests: RequestManager;
 }
 
 function isTerminalStatus(status: FlowStatus): boolean {
@@ -215,7 +217,7 @@ async function runPipeline(args: PipelineArgs): Promise<AnyFlowResult> {
 }
 
 export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScope>): Promise<AnyFlowHandle> {
-    const { bus, extensions, flow, params } = args;
+    const { bus, extensions, flow, params, requests } = args;
     const flowName = flow.name;
 
     assertPlainObject(params, "Flow params must be a plain object");
@@ -240,6 +242,7 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
         params: frozenParams,
         provided,
         publicBus,
+        requests,
         runId,
     };
 
@@ -275,11 +278,14 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
             }
             return result;
         })
-        .finally(() =>
-            cleanupExtensions(instances, extensionContext).catch((error: unknown) => {
+        .finally(async () => {
+            requests.pruneRun(runId);
+            try {
+                return await cleanupExtensions(instances, extensionContext);
+            } catch (error) {
                 logger.error("extension cleanup failed", { error });
-            })
-        );
+            }
+        });
 
     return {
         cancel(reason?: string) {

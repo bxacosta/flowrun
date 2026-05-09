@@ -24,6 +24,8 @@ import type {
     RetryConfig,
     TaskErrorMode,
 } from "./node.ts";
+import type { RequestConfig, RequestDefinition } from "./request.ts";
+import { defineRequest } from "./request.ts";
 import type { AnyScope, IterationScope, Scope, ScopeContract, ScopeFromContract, WithProvided } from "./scope.ts";
 import type { MergeStrategy } from "./state.ts";
 import type { EmptyObject, MaybePromise, Simplify } from "./utils.ts";
@@ -296,11 +298,18 @@ function taskMiddleware(config: MiddlewareConfig<TaskContext>): Middleware<TaskC
     return defineMiddleware(config);
 }
 
+function request<TPayload, TResponse>(
+    config: RequestConfig<TPayload, TResponse>
+): RequestDefinition<TPayload, TResponse> {
+    return defineRequest(config);
+}
+
 export const define = {
     extension: defineExtension,
     flow,
     flowMiddleware,
     module: defineModule,
+    request,
     scope,
     taskMiddleware,
 } as const;

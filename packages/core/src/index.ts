@@ -32,6 +32,11 @@ export {
     InvalidPlainObjectError,
     MergeConflictError,
     normalizeError,
+    RequestAlreadyResolvedError,
+    RequestCancelledError,
+    RequestError,
+    RequestNotFoundError,
+    RequestTimeoutError,
     SkipSignal,
 } from "./errors.ts";
 export type {
@@ -92,6 +97,20 @@ export type {
     TaskErrorMode,
     TaskResult,
 } from "./node.ts";
+export type {
+    ContextRequest,
+    EngineRequests,
+    PendingRequest,
+    RequestConfig,
+    RequestDefinition,
+    RequestFilter,
+    RequestOptions,
+    RequestRecord,
+    RequestResponseOptions,
+    RequestStatus,
+    RequestSubscribeOptions,
+    RequestSubscription,
+} from "./request.ts";
 export type {
     AnyScope,
     IterationContext,

@@ -85,6 +85,49 @@ export interface SystemInternalEvents {
         runId: string;
     };
     "node:task:started": { flowName: string; index?: number; maxAttempts: number; nodeName: string; runId: string };
+    "request:cancelled": {
+        flowName: string;
+        id: string;
+        key?: string;
+        name: string;
+        nodeName?: string;
+        path: readonly string[];
+        reason?: string;
+        runId: string;
+    };
+    "request:created": {
+        flowName: string;
+        id: string;
+        key?: string;
+        metadata?: Record<string, unknown>;
+        name: string;
+        nodeName?: string;
+        path: readonly string[];
+        payload: unknown;
+        runId: string;
+        timeoutAt?: number;
+    };
+    "request:expired": {
+        flowName: string;
+        id: string;
+        key?: string;
+        name: string;
+        nodeName?: string;
+        path: readonly string[];
+        runId: string;
+        timeoutAt: number;
+    };
+    "request:responded": {
+        flowName: string;
+        id: string;
+        key?: string;
+        name: string;
+        nodeName?: string;
+        path: readonly string[];
+        response: unknown;
+        responseMetadata?: Record<string, unknown>;
+        runId: string;
+    };
 }
 
 export type LogLevel = "debug" | "error" | "info" | "warn";

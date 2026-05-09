@@ -27,6 +27,8 @@ import type {
     ModuleProvided,
     ModulePublicEvents,
 } from "./module.ts";
+import type { EngineRequests } from "./request.ts";
+import { createRequestManager } from "./request-manager.ts";
 import type { AnyScope } from "./scope.ts";
 import type { EmptyObject, MergeObjects } from "./utils.ts";
 
@@ -48,6 +50,8 @@ export interface Engine<TProvided extends object, TPublicEvents extends EventMap
     register<TScope extends AnyScope>(
         flow: CompatibleFlow<TProvided, TScope>
     ): Flow<TScope["_params"], TScope["_state"]>;
+
+    requests: EngineRequests;
 
     run<TScope extends AnyScope>(
         flow: CompatibleFlow<TProvided, TScope>,
@@ -82,13 +86,15 @@ type AnyEngine = Engine<any, any, any>;
 function createRunnable(
     flow: AnyFlowDefinition,
     extensions: readonly AnyExtensionDefinition[],
-    bus: ReturnType<typeof createEventBus<EventMap>>
+    bus: ReturnType<typeof createEventBus<EventMap>>,
+    requests: ReturnType<typeof createRequestManager>
 ): AnyFlow {
     const buildArgs = (args: AnyRunArgs) => ({
         bus,
         extensions,
         flow,
         params: args[0] ?? {},
+        requests,
     });
 
     return {
@@ -100,6 +106,7 @@ function createRunnable(
 
 export function createEngine(config?: EngineConfig): Engine<EmptyObject, SystemPublicEvents, SystemEvents> {
     const bus = createEventBus<EventMap>(config?.events);
+    const requests = createRequestManager(bus);
     const extensions: AnyExtensionDefinition[] = [];
     const flows = new Map<string, AnyFlowDefinition>();
 
@@ -125,7 +132,7 @@ export function createEngine(config?: EngineConfig): Engine<EmptyObject, SystemP
             if (!registered) {
                 throw new FlowNotRegisteredError(name);
             }
-            return createRunnable(registered, extensions, bus);
+            return createRunnable(registered, extensions, bus, requests);
         },
 
         flows() {
@@ -134,15 +141,17 @@ export function createEngine(config?: EngineConfig): Engine<EmptyObject, SystemP
 
         register(flow: AnyFlowDefinition) {
             installFlow(flow);
-            return createRunnable(flow, extensions, bus);
+            return createRunnable(flow, extensions, bus, requests);
         },
 
+        requests,
+
         run(flow: AnyFlowDefinition, ...args: AnyRunArgs) {
-            return createRunnable(flow, extensions, bus).run(...args);
+            return createRunnable(flow, extensions, bus, requests).run(...args);
         },
 
         start(flow: AnyFlowDefinition, ...args: AnyRunArgs) {
-            return createRunnable(flow, extensions, bus).start(...args);
+            return createRunnable(flow, extensions, bus, requests).start(...args);
         },
 
         use(definition: AnyExtensionDefinition | AnyModuleDefinition) {
