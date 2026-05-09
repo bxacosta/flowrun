@@ -1,3 +1,21 @@
+import { createInterface } from "node:readline";
+
+// ── Terminal Input ──────────────────────────────────────────────────
+
+export function isInteractive(): boolean {
+    return Boolean(process.stdin.isTTY);
+}
+
+export function prompt(message: string): Promise<string> {
+    return new Promise((resolve) => {
+        const readline = createInterface({ input: process.stdin, output: process.stdout });
+        readline.question(message, (answer) => {
+            readline.close();
+            resolve(answer.trim());
+        });
+    });
+}
+
 // ── Async Simulation ────────────────────────────────────────────────
 
 export async function simulateWork(ms: number, signal: AbortSignal): Promise<void> {

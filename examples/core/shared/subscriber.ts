@@ -139,6 +139,33 @@ export function subscriber<TEvents extends SystemEvents>(bus: ReadableBus<TEvent
         );
     });
 
+    track("request:created", (envelope) => {
+        const prefix = formatPrefix(envelope);
+        const label = colorize("cyan", "REQUEST CREATED");
+        const id = colorize("dim", `id=${envelope.payload.id.slice(0, 8)}`);
+        console.log(`${prefix}   ${label}  ${envelope.payload.name} ${id}`);
+    });
+
+    track("request:responded", (envelope) => {
+        const prefix = formatPrefix(envelope);
+        const label = colorize("green", "REQUEST RESPONDED");
+        const id = colorize("dim", `id=${envelope.payload.id.slice(0, 8)}`);
+        console.log(`${prefix}   ${label}  ${envelope.payload.name} ${id}`);
+    });
+
+    track("request:cancelled", (envelope) => {
+        const prefix = formatPrefix(envelope);
+        const label = colorize("yellow", "REQUEST CANCELLED");
+        const reason = envelope.payload.reason ? colorize("dim", ` (${envelope.payload.reason})`) : "";
+        console.log(`${prefix}   ${label}  ${envelope.payload.name}${reason}`);
+    });
+
+    track("request:expired", (envelope) => {
+        const prefix = formatPrefix(envelope);
+        const label = colorize("red", "REQUEST EXPIRED");
+        console.log(`${prefix}   ${label}  ${envelope.payload.name}`);
+    });
+
     subscriptions.push(
         bus.subscribe("log", (envelope) => {
             const timestamp = formatTimestamp(envelope.timestamp);
