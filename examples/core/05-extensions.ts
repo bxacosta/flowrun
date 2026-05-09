@@ -26,24 +26,26 @@ const databaseExtension = (config: { connectionString: string }) =>
             "db:connected": event.internal<{ poolSize: number }>(),
             "db:query": event.public<{ duration: number; sql: string }>(),
         },
-        provide: async (context) => {
-            context.log.info(`Connecting to ${config.connectionString}`);
-            await context.bus.publish("db:connected", { poolSize: 10 }, { source: "database" });
+        resource: {
+            provide: async (context) => {
+                context.log.info(`Connecting to ${config.connectionString}`);
+                await context.bus.publish("db:connected", { poolSize: 10 }, { source: "database" });
 
-            return {
-                db: {
-                    query: async <TRow>(sql: string): Promise<TRow[]> => {
-                        const start = Date.now();
-                        const result: TRow[] = [];
-                        await context.bus.publish(
-                            "db:query",
-                            { duration: Date.now() - start, sql },
-                            { source: "database" }
-                        );
-                        return result;
+                return {
+                    db: {
+                        query: async <TRow>(sql: string): Promise<TRow[]> => {
+                            const start = Date.now();
+                            const result: TRow[] = [];
+                            await context.bus.publish(
+                                "db:query",
+                                { duration: Date.now() - start, sql },
+                                { source: "database" }
+                            );
+                            return result;
+                        },
                     },
-                },
-            };
+                };
+            },
         },
     });
 
@@ -55,31 +57,33 @@ const metricsExtension = () =>
         events: {
             "metrics:flushed": event.public<{ count: number }>(),
         },
-        provide(context) {
-            const counters = new Map<string, number>();
+        resource: {
+            provide(context) {
+                const counters = new Map<string, number>();
 
-            // Cross-extension listening: react to db:query events from the database extension
-            context.bus.on("db:query", (envelope) => {
-                counters.set("db.queries", (counters.get("db.queries") ?? 0) + 1);
-                const payload = envelope.payload as { sql: string };
-                context.log.info(`metric recorded for query: ${payload.sql}`);
-            });
+                // Cross-extension listening: react to db:query events from the database extension
+                context.bus.on("db:query", (envelope) => {
+                    counters.set("db.queries", (counters.get("db.queries") ?? 0) + 1);
+                    const payload = envelope.payload as { sql: string };
+                    context.log.info(`metric recorded for query: ${payload.sql}`);
+                });
 
-            return {
-                metrics: {
-                    counter: (name: string, value = 1) => {
-                        counters.set(name, (counters.get(name) ?? 0) + value);
+                return {
+                    metrics: {
+                        counter: (name: string, value = 1) => {
+                            counters.set(name, (counters.get(name) ?? 0) + value);
+                        },
+                        flush: async () => {
+                            const count = counters.size;
+                            context.log.info(`Flushed ${count} metrics`);
+                            await context.bus.publish("metrics:flushed", { count }, { source: "metrics" });
+                        },
                     },
-                    flush: async () => {
-                        const count = counters.size;
-                        context.log.info(`Flushed ${count} metrics`);
-                        await context.bus.publish("metrics:flushed", { count }, { source: "metrics" });
-                    },
-                },
-            };
-        },
-        cleanup() {
-            log("  [metrics] disposed");
+                };
+            },
+            cleanup() {
+                log("  [metrics] disposed");
+            },
         },
     });
 

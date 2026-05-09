@@ -7,9 +7,9 @@
  *  - handle.cancel(reason) -> CancelledFlowResult
  *  - handle.pause() / handle.resume()
  *  - context.signal (cooperative cancellation with AbortSignal)
- *  - provide / cleanup in every (per-iteration resource isolation)
- *  - provide / cleanup in parallel (per-branch resource isolation)
- *  - typed child context: provide adds keys that child tasks see typed
+ *  - resource in every (per-iteration resource isolation)
+ *  - resource in parallel (per-branch resource isolation)
+ *  - typed child context: resource.provide adds keys that child tasks see typed
  */
 
 import { createEngine, define } from "@flowrun/core";
@@ -22,11 +22,13 @@ import { subscriber } from "./shared/subscriber.ts";
 const browserExtension = (browser: Browser) =>
     define.extension({
         name: "browser",
-        provide() {
-            return { browser };
-        },
-        cleanup() {
-            log("  [browser] extension disposed");
+        resource: {
+            provide() {
+                return { browser };
+            },
+            cleanup() {
+                log("  [browser] extension disposed");
+            },
         },
     });
 
@@ -162,16 +164,18 @@ const scrapeFlow = browserScope.flow({
             concurrency: 2,
             merge: "append",
 
-            // provide opens a fresh page per iteration; cleanup closes it.
+            // resource opens a fresh page per iteration and closes it on cleanup.
             // The returned keys are typed in the child context (context.page).
             // meta is EveryMeta<string>: index, item, nodeName.
-            provide: async (context, meta) => {
-                log(`  [every meta] start iteration #${meta.index} item="${meta.item}"`);
-                return { page: await context.browser.newPage() };
-            },
-            cleanup: async (context, meta) => {
-                log(`  [every meta] cleanup iteration #${meta.index} item="${meta.item}" page=#${context.page.id}`);
-                await context.page.close();
+            resource: {
+                provide: async (context, meta) => {
+                    log(`  [every meta] start iteration #${meta.index} item="${meta.item}"`);
+                    return { page: await context.browser.newPage() };
+                },
+                cleanup: async (context, meta) => {
+                    log(`  [every meta] cleanup iteration #${meta.index} item="${meta.item}" page=#${context.page.id}`);
+                    await context.page.close();
+                },
             },
 
             nodes: ({ task }) => [
@@ -192,7 +196,7 @@ const scrapeFlow = browserScope.flow({
     ],
 });
 
-title("Demo 4 - provide/cleanup in every (per-iteration pages)");
+title("Demo 4 - resource in every (per-iteration pages)");
 
 const scrapeResult = await engine.run(scrapeFlow);
 log(`\nresult: ${scrapeResult.status}`);
@@ -219,15 +223,17 @@ const parallelScrape = define
                 name: "scrape-both",
                 merge: "overwrite",
 
-                // provide receives meta with branchName/branchIndex; useful for logs and labels
-                provide: async (context, meta) => {
-                    const page: Page = await context.browser.newPage();
-                    log(`  branch "${meta.branchName}" got page #${page.id}`);
-                    return { page };
-                },
-                cleanup: async (context, meta) => {
-                    log(`  branch "${meta.branchName}" released page #${context.page.id}`);
-                    await context.page.close();
+                // resource.provide receives meta with branchName/branchIndex; useful for logs and labels
+                resource: {
+                    provide: async (context, meta) => {
+                        const page: Page = await context.browser.newPage();
+                        log(`  branch "${meta.branchName}" got page #${page.id}`);
+                        return { page };
+                    },
+                    cleanup: async (context, meta) => {
+                        log(`  branch "${meta.branchName}" released page #${context.page.id}`);
+                        await context.page.close();
+                    },
                 },
 
                 nodes: ({ task }) => [
@@ -250,7 +256,7 @@ const parallelScrape = define
         ],
     });
 
-title("Demo 5 - provide/cleanup in parallel (per-branch pages)");
+title("Demo 5 - resource in parallel (per-branch pages)");
 
 const parallelResult = await engine.run(parallelScrape);
 log(`\nresult: ${parallelResult.status}`);
