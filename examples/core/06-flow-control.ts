@@ -24,10 +24,12 @@ const browserExtension = (browser: Browser) =>
         name: "browser",
         resource: {
             provide() {
-                return { browser };
-            },
-            cleanup() {
-                log("  [browser] extension disposed");
+                return {
+                    provided: { browser },
+                    cleanup: (outcome) => {
+                        log(`  [browser] extension disposed (run ended ${outcome.status})`);
+                    },
+                };
             },
         },
     });

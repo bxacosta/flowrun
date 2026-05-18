@@ -47,19 +47,31 @@ export type UnwrapEvents<TDefinitions extends EventDefinitions> = {
     [K in keyof TDefinitions & string]: TDefinitions[K] extends { _type: infer TPayload } ? TPayload : never;
 };
 
+export interface FlowOutcome {
+    error?: Error;
+    reason?: string;
+    status: "cancelled" | "failed" | "success";
+}
+
+export type ExtensionCleanup = (outcome: FlowOutcome) => MaybePromise<void>;
+
+export interface ExtensionProvideResult<TProvided extends object> {
+    cleanup?: ExtensionCleanup;
+    provided: TProvided;
+}
+
 export interface ExtensionSetupContext<TEvents extends EventMap> {
     bus: PublishableBus<SystemPublicEvents & TEvents, SystemEvents & TEvents>;
     flowName: string;
     log: Logger;
     runId: string;
+    signal: AbortSignal;
 }
 
-export type ExtensionCleanupContext<TProvided extends object, TEvents extends EventMap> = TProvided &
-    ExtensionSetupContext<TEvents>;
-
 export interface ExtensionResourceConfig<TDefinitions extends EventDefinitions, TProvided extends object> {
-    cleanup?: (context: ExtensionCleanupContext<TProvided, UnwrapEvents<TDefinitions>>) => MaybePromise<void>;
-    provide: (context: ExtensionSetupContext<UnwrapEvents<TDefinitions>>) => MaybePromise<TProvided>;
+    provide: (
+        context: ExtensionSetupContext<UnwrapEvents<TDefinitions>>
+    ) => MaybePromise<ExtensionProvideResult<TProvided>>;
 }
 
 export interface ExtensionConfig<TDefinitions extends EventDefinitions, TProvided extends object> {
@@ -69,7 +81,6 @@ export interface ExtensionConfig<TDefinitions extends EventDefinitions, TProvide
 }
 
 export interface ExtensionResource {
-    cleanup?: AnyExtensionCleanup;
     provide: AnyExtensionProvide;
 }
 
@@ -90,10 +101,7 @@ export interface ExtensionDefinition<
 export type AnyExtensionDefinition = ExtensionDefinition<any, any, any>;
 
 // biome-ignore lint/suspicious/noExplicitAny: typed at define.extension boundary
-export type AnyExtensionCleanup = (context: any) => MaybePromise<void>;
-
-// biome-ignore lint/suspicious/noExplicitAny: typed at define.extension boundary
-export type AnyExtensionProvide = (context: any) => MaybePromise<object>;
+export type AnyExtensionProvide = (context: any) => MaybePromise<ExtensionProvideResult<object>>;
 
 export type ExtensionProvided<TDefinition> =
     TDefinition extends ExtensionDefinition<infer TProvided, object, object> ? TProvided : EmptyObject;

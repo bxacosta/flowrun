@@ -32,16 +32,18 @@ const databaseExtension = (config: { connectionString: string }) =>
                 await context.bus.publish("db:connected", { poolSize: 10 }, { source: "database" });
 
                 return {
-                    db: {
-                        query: async <TRow>(sql: string): Promise<TRow[]> => {
-                            const start = Date.now();
-                            const result: TRow[] = [];
-                            await context.bus.publish(
-                                "db:query",
-                                { duration: Date.now() - start, sql },
-                                { source: "database" }
-                            );
-                            return result;
+                    provided: {
+                        db: {
+                            query: async <TRow>(sql: string): Promise<TRow[]> => {
+                                const start = Date.now();
+                                const result: TRow[] = [];
+                                await context.bus.publish(
+                                    "db:query",
+                                    { duration: Date.now() - start, sql },
+                                    { source: "database" }
+                                );
+                                return result;
+                            },
                         },
                     },
                 };
@@ -62,27 +64,30 @@ const metricsExtension = () =>
                 const counters = new Map<string, number>();
 
                 // Cross-extension listening: react to db:query events from the database extension
-                context.bus.on("db:query", (envelope) => {
+                const subscription = context.bus.on("db:query", (envelope) => {
                     counters.set("db.queries", (counters.get("db.queries") ?? 0) + 1);
                     const payload = envelope.payload as { sql: string };
                     context.log.info(`metric recorded for query: ${payload.sql}`);
                 });
 
                 return {
-                    metrics: {
-                        counter: (name: string, value = 1) => {
-                            counters.set(name, (counters.get(name) ?? 0) + value);
-                        },
-                        flush: async () => {
-                            const count = counters.size;
-                            context.log.info(`Flushed ${count} metrics`);
-                            await context.bus.publish("metrics:flushed", { count }, { source: "metrics" });
+                    provided: {
+                        metrics: {
+                            counter: (name: string, value = 1) => {
+                                counters.set(name, (counters.get(name) ?? 0) + value);
+                            },
+                            flush: async () => {
+                                const count = counters.size;
+                                context.log.info(`Flushed ${count} metrics`);
+                                await context.bus.publish("metrics:flushed", { count }, { source: "metrics" });
+                            },
                         },
                     },
+                    cleanup: (outcome) => {
+                        subscription.unsubscribe();
+                        log(`  [metrics] disposed (run ended ${outcome.status})`);
+                    },
                 };
-            },
-            cleanup() {
-                log("  [metrics] disposed");
             },
         },
     });

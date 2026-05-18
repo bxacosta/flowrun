@@ -1,11 +1,11 @@
-import { define, type ExtensionDefinition, event, type Subscription } from "@flowrun/core";
+import { define, type ExtensionDefinition, event } from "@flowrun/core";
 
 import type { BrowserSession } from "../contracts/provider.ts";
 import { BrowserSessionError } from "../errors.ts";
 import { type BrowserBus, createNavigate } from "./navigate.ts";
-import { attachPageObservers, type PageObservers } from "./page-observers.ts";
+import { attachPageObservers } from "./page-observers.ts";
 import { wrapStorage } from "./storage-wrap.ts";
-import { createTracingLifecycle, type FlowOutcome, type TracingLifecycle } from "./tracing.ts";
+import { createTracingLifecycle, type FlowOutcome as TracingOutcome } from "./tracing.ts";
 import {
     type BrowserEventPayloads,
     type BrowserExtensionConfig,
@@ -17,15 +17,6 @@ import {
 export const BROWSER_EXTENSION_NAME = "browser";
 
 export type BrowserExtensionDefinition = ExtensionDefinition<BrowserProvidedContext, object, BrowserEventPayloads>;
-
-interface RunState {
-    flowEndedSubscription: Subscription;
-    observers: PageObservers;
-    outcome: FlowOutcome;
-    tracing: TracingLifecycle;
-}
-
-const runStates = new Map<string, RunState>();
 
 export function createBrowserExtension(config: BrowserExtensionConfig): BrowserExtensionDefinition {
     const resolved = resolveConfig(config);
@@ -48,6 +39,7 @@ export function createBrowserExtension(config: BrowserExtensionConfig): BrowserE
         resource: {
             provide: async (context) => {
                 const bus = context.bus as unknown as BrowserBus;
+
                 let session: BrowserSession;
                 try {
                     session = await resolved.provider.open(resolved.openOptions);
@@ -56,6 +48,18 @@ export function createBrowserExtension(config: BrowserExtensionConfig): BrowserE
                         throw error;
                     }
                     throw new BrowserSessionError("open", error);
+                }
+
+                if (resolved.cancelStrategy === "close-context" && !context.signal.aborted) {
+                    context.signal.addEventListener(
+                        "abort",
+                        () => {
+                            session.context.close().catch(() => {
+                                /* idempotent */
+                            });
+                        },
+                        { once: true }
+                    );
                 }
 
                 if (resolved.defaultTimeout !== undefined) {
@@ -76,24 +80,6 @@ export function createBrowserExtension(config: BrowserExtensionConfig): BrowserE
                 });
                 await tracing.start();
 
-                const state: RunState = {
-                    outcome: "success",
-                    observers,
-                    tracing,
-                    flowEndedSubscription: bus.subscribe(
-                        "flow:ended" as keyof BrowserEventPayloads,
-                        // biome-ignore lint/suspicious/noExplicitAny: subscribing to a system event whose payload is outside BrowserEventPayloads typing
-                        (envelope: any) => {
-                            if (envelope.payload?.runId !== context.runId) {
-                                return;
-                            }
-                            const status = envelope.payload.status as FlowOutcome;
-                            state.outcome = status;
-                        }
-                    ),
-                };
-                runStates.set(context.runId, state);
-
                 const navigate = createNavigate(session.page, bus, { emitEvent: resolved.emitNavigateEvent });
                 const wrappedStorage = wrapStorage(resolved.storage, bus, { emitEvent: resolved.emitStorageEvent });
 
@@ -107,32 +93,28 @@ export function createBrowserExtension(config: BrowserExtensionConfig): BrowserE
                     storage: wrappedStorage,
                     navigate,
                 };
-                return provided;
-            },
 
-            cleanup: async (context) => {
-                const bus = context.bus as unknown as BrowserBus;
-                const state = runStates.get(context.runId);
-                runStates.delete(context.runId);
+                return {
+                    provided,
+                    cleanup: async (outcome) => {
+                        await tracing.finish(outcome.status as TracingOutcome);
+                        observers.detach();
 
-                if (state) {
-                    await state.tracing.finish(state.outcome);
-                    state.observers.detach();
-                    state.flowEndedSubscription.unsubscribe();
-                }
+                        let closeError: Error | undefined;
+                        try {
+                            await resolved.provider.close(session);
+                        } catch (error) {
+                            closeError =
+                                error instanceof BrowserSessionError ? error : new BrowserSessionError("close", error);
+                        }
 
-                let closeError: Error | undefined;
-                try {
-                    await resolved.provider.close(context.session);
-                } catch (error) {
-                    closeError = error instanceof BrowserSessionError ? error : new BrowserSessionError("close", error);
-                }
+                        await bus.publish("browser:closed", {}, { source: EVENT_SOURCE });
 
-                await bus.publish("browser:closed", {}, { source: EVENT_SOURCE });
-
-                if (closeError) {
-                    throw closeError;
-                }
+                        if (closeError) {
+                            throw closeError;
+                        }
+                    },
+                };
             },
         },
     });

@@ -66,12 +66,14 @@ export type {
 export type {
     EventDefinitions,
     EventMarker,
-    ExtensionCleanupContext,
+    ExtensionCleanup,
     ExtensionConfig,
     ExtensionDefinition,
+    ExtensionProvideResult,
     ExtensionResource,
     ExtensionResourceConfig,
     ExtensionSetupContext,
+    FlowOutcome,
     Internal,
     Public,
 } from "./extension.ts";

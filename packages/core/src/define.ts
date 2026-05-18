@@ -1,6 +1,5 @@
 import type { FlowContext, FlowMiddlewareOf, ItemsContext, TaskContext, TaskMiddlewareOf } from "./context.ts";
 import type {
-    AnyExtensionCleanup,
     AnyExtensionDefinition,
     AnyExtensionProvide,
     EventDefinitions,
@@ -241,7 +240,6 @@ function defineExtension<TDefinitions extends EventDefinitions, TProvided extend
     config: ExtensionConfig<TDefinitions, TProvided>
 ): ExtensionDefinition<TProvided, ExtractInternalEvents<TDefinitions>, ExtractPublicEvents<TDefinitions>> {
     const resource: ExtensionResource = {
-        cleanup: config.resource.cleanup as AnyExtensionCleanup | undefined,
         provide: config.resource.provide as AnyExtensionProvide,
     };
     return {

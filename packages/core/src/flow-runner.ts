@@ -4,7 +4,7 @@ import { normalizeError } from "./errors.ts";
 import type { InternalBus, PublishableBus } from "./event-bus.ts";
 import type { EventMap } from "./events.ts";
 import { executeNodes } from "./execute.ts";
-import type { AnyExtensionDefinition } from "./extension.ts";
+import type { AnyExtensionDefinition, ExtensionCleanup, FlowOutcome } from "./extension.ts";
 import { createLogger } from "./logger.ts";
 import type { AnyMiddleware } from "./middleware.ts";
 import { compose } from "./middleware.ts";
@@ -88,13 +88,21 @@ export type FlowResult<TState extends object> =
 export type AnyFlowResult = FlowResult<any>;
 
 interface ExtensionInstance {
+    cleanup?: ExtensionCleanup;
     extension: AnyExtensionDefinition;
-    provided: Record<string, unknown>;
 }
 
 interface CancellationState {
     reason?: string;
     requested: boolean;
+}
+
+interface ExtensionSetupBaseContext {
+    bus: InternalBus<EventMap>;
+    flowName: string;
+    log: ReturnType<typeof createLogger>;
+    runId: string;
+    signal: AbortSignal;
 }
 
 export interface FlowRunArgs<TScope extends AnyScope = AnyScope> {
@@ -109,21 +117,18 @@ function isTerminalStatus(status: FlowStatus): boolean {
     return status === "cancelled" || status === "completed" || status === "failed";
 }
 
-async function cleanupExtensions(
-    instances: readonly ExtensionInstance[],
-    baseContext: { bus: InternalBus<EventMap>; flowName: string; log: ReturnType<typeof createLogger>; runId: string }
-): Promise<void> {
-    for (const { extension, provided } of [...instances].reverse()) {
-        if (!extension.resource.cleanup) {
+async function cleanupExtensions(instances: readonly ExtensionInstance[], outcome: FlowOutcome): Promise<void> {
+    for (const { cleanup } of [...instances].reverse()) {
+        if (!cleanup) {
             continue;
         }
-        await extension.resource.cleanup({ ...provided, ...baseContext });
+        await cleanup(outcome);
     }
 }
 
 async function provideExtensions(
     extensions: readonly AnyExtensionDefinition[],
-    baseContext: { bus: InternalBus<EventMap>; flowName: string; log: ReturnType<typeof createLogger>; runId: string }
+    baseContext: ExtensionSetupBaseContext
 ): Promise<{ instances: ExtensionInstance[]; provided: Record<string, unknown> }> {
     const instances: ExtensionInstance[] = [];
     const provided: Record<string, unknown> = {};
@@ -132,11 +137,16 @@ async function provideExtensions(
         for (const extension of extensions) {
             const result = await extension.resource.provide(baseContext);
             assertPlainObject(result, `Extension "${extension.name}" provide() must return a plain object`);
-            Object.assign(provided, result);
-            instances.push({ extension, provided: result });
+            assertPlainObject(
+                result.provided,
+                `Extension "${extension.name}" provide() must return { provided } as a plain object`
+            );
+            Object.assign(provided, result.provided);
+            instances.push({ cleanup: result.cleanup, extension });
         }
     } catch (error) {
-        await cleanupExtensions(instances, baseContext);
+        const failure: FlowOutcome = { error: normalizeError(error), status: "failed" };
+        await cleanupExtensions(instances, failure);
         throw error;
     }
 
@@ -226,13 +236,19 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
     const runId = crypto.randomUUID();
     const flowStart = Date.now();
     const logger = createLogger(flowName, runId, bus);
-    const extensionContext = { bus, flowName, log: logger, runId };
+    const controller = new AbortController();
+    const pauseGate = new PauseGate();
+    const extensionContext: ExtensionSetupBaseContext = {
+        bus,
+        flowName,
+        log: logger,
+        runId,
+        signal: controller.signal,
+    };
     const { instances, provided } = await provideExtensions(extensions, extensionContext);
     const initialState = flow.state ? flow.state(frozenParams) : {};
     const state = createStateStore(initialState);
     const publicBus: PublishableBus<EventMap, EventMap> = bus.narrow();
-    const controller = new AbortController();
-    const pauseGate = new PauseGate();
     const progress: FlowProgress = { taskResults: [] };
 
     const runtime: FlowRuntime = {
@@ -255,6 +271,7 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
 
     let currentStatus: FlowStatus = "running";
     const cancellation: CancellationState = { requested: false };
+    let cleanupOutcome: FlowOutcome = { status: "success" };
 
     const pipelinePromise = runPipeline({
         bus,
@@ -276,12 +293,13 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
                     currentStatus = "completed";
                 }
             }
+            cleanupOutcome = toCleanupOutcome(result);
             return result;
         })
         .finally(async () => {
             requests.pruneRun(runId);
             try {
-                return await cleanupExtensions(instances, extensionContext);
+                return await cleanupExtensions(instances, cleanupOutcome);
             } catch (error) {
                 logger.error("extension cleanup failed", { error });
             }
@@ -328,4 +346,14 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
 export async function runFlow<TScope extends AnyScope>(args: FlowRunArgs<TScope>): Promise<AnyFlowResult> {
     const handle = await startFlow(args);
     return handle.join();
+}
+
+function toCleanupOutcome(result: AnyFlowResult): FlowOutcome {
+    if (result.status === "cancelled") {
+        return { reason: result.reason, status: "cancelled" };
+    }
+    if (result.status === "failed") {
+        return { error: result.error, status: "failed" };
+    }
+    return { status: "success" };
 }
