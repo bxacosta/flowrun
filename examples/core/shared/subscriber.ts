@@ -1,4 +1,4 @@
-import type { Envelope, ReadableBus, Subscription, SystemEvents } from "@flowrun/core";
+import type { Envelope, ReadableBus, Subscription, SystemEvents } from "../../src";
 import { type Color, colorize } from "./helpers.ts";
 
 const FLOW_STATUS_COLORS: Record<string, Color> = {

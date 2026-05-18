@@ -23,7 +23,7 @@
  * so the full example still completes end-to-end.
  */
 
-import { createEngine, define, RequestTimeoutError } from "@flowrun/core";
+import { createEngine, define, RequestTimeoutError } from "../src";
 import { isInteractive, log, prompt, title } from "./shared/helpers.ts";
 import { subscriber } from "./shared/subscriber.ts";
 

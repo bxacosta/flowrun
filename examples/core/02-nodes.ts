@@ -11,7 +11,7 @@
  *  - every: items source, concurrency, merge, onError:"continue", context.iteration
  */
 
-import { createEngine, define } from "@flowrun/core";
+import { createEngine, define } from "../src";
 import { delay, log, title } from "./shared/helpers.ts";
 import { subscriber } from "./shared/subscriber.ts";
 

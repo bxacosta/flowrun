@@ -12,7 +12,7 @@
  *  - define.scope() for reusable typed nodes
  */
 
-import { createEngine, define, type Node, type ScopeFromContract } from "@flowrun/core";
+import { createEngine, define, type Node, type ScopeFromContract } from "../src";
 import { log, title } from "./shared/helpers.ts";
 
 // ─────────────────────────────────────────────────────────────────────
