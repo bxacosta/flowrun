@@ -11,7 +11,6 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "fix": "turbo run fix",
-    "check": "turbo run check",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test"
   },

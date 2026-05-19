@@ -19,9 +19,6 @@
     "fix": {
       "cache": false
     },
-    "check": {
-      "cache": false
-    },
     "test": {
       "dependsOn": ["^typecheck"],
       "outputs": []

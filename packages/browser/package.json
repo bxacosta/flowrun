@@ -7,7 +7,6 @@
   },
   "scripts": {
     "fix": "ultracite fix",
-    "check": "ultracite check",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
