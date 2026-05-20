@@ -12,9 +12,9 @@ export interface FlowBuilder<TScope extends AnyScope> {
     middleware(list: NoInfer<Middleware<FlowContext<TScope>>>[]): FlowBuilder<TScope>;
     nodes(spec: NodesSpec<TScope>): FlowDefinition<TScope>;
     params<TParams extends object>(): FlowBuilder<WithParams<TScope, TParams>>;
-    state<TState extends object>(
-        initial: TState | ((params: Readonly<TScope["_params"]>) => TState)
-    ): FlowBuilder<WithState<TScope, TState>>;
+    state<TState extends object, TParams extends TScope["_params"] = TScope["_params"]>(
+        initial: TState | ((params: Readonly<TParams>) => TState)
+    ): FlowBuilder<WithState<WithParams<TScope, TParams>, TState>>;
 }
 
 interface BuilderState {
@@ -52,10 +52,12 @@ function instantiate<TScope extends AnyScope>(state: BuilderState): FlowBuilder<
             return instantiate<WithParams<TScope, TParams>>(state);
         },
 
-        state<TState extends object>(initial: TState | ((params: Readonly<TScope["_params"]>) => TState)) {
+        state<TState extends object, TParams extends TScope["_params"] = TScope["_params"]>(
+            initial: TState | ((params: Readonly<TParams>) => TState)
+        ) {
             const stateFactory: AnyStateFactory =
                 typeof initial === "function" ? (initial as AnyStateFactory) : () => initial;
-            return instantiate<WithState<TScope, TState>>({ ...state, stateFactory });
+            return instantiate<WithState<WithParams<TScope, TParams>, TState>>({ ...state, stateFactory });
         },
     };
 }
