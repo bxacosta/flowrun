@@ -2,10 +2,10 @@
  * 05-extensions.ts — Extensions, Modules & Event Bus
  *
  * Covers:
- *  - define.extension() with public and internal events
- *  - event.public<T>() vs event.internal<T>() (visibility)
+ *  - extension() with public and internal events
+ *  - eventPublic<T>() vs eventInternal<T>() (visibility markers)
  *  - Extension config factory, provided context, cleanup()
- *  - define.module() to bundle extensions + flows for distribution
+ *  - defineModule() to bundle extensions + flows for distribution
  *  - engine.use() chains extensions and modules; bufferSize via engine config
  *  - subscribe(), on() (pattern: *, **), waitFor(), history()
  *  - Subscription options: priority, filter, subscriberId, once
@@ -14,17 +14,17 @@
  */
 
 import type { EngineEvents, Envelope, ReadableBus, Subscription } from "@flowrun/core";
-import { createEngine, define, event } from "@flowrun/core";
+import { createEngine, defineModule, eventInternal, eventPublic, extension, shape } from "@flowrun/core";
 import { log, title } from "./shared/helpers.ts";
 
 // ── Extension 1: database — config factory + provided context ───────
 
 const databaseExtension = (config: { connectionString: string }) =>
-    define.extension({
+    extension({
         name: "database",
         events: {
-            "db:connected": event.internal<{ poolSize: number }>(),
-            "db:query": event.public<{ duration: number; sql: string }>(),
+            "db:connected": eventInternal<{ poolSize: number }>(),
+            "db:query": eventPublic<{ duration: number; sql: string }>(),
         },
         resource: {
             provide: async (context) => {
@@ -54,10 +54,10 @@ const databaseExtension = (config: { connectionString: string }) =>
 // ── Extension 2: metrics — cross-extension listening + cleanup ──────
 
 const metricsExtension = () =>
-    define.extension({
+    extension({
         name: "metrics",
         events: {
-            "metrics:flushed": event.public<{ count: number }>(),
+            "metrics:flushed": eventPublic<{ count: number }>(),
         },
         resource: {
             provide(context) {
@@ -110,12 +110,12 @@ interface SyncContract {
     state: { fetched: number; source: string };
 }
 
-const sync = define.scope<SyncContract>();
+const sync = shape<SyncContract>();
 
-const syncFlow = sync.flow({
-    name: "sync-data",
-    state: (params) => ({ fetched: 0, source: params.source }),
-    nodes: ({ task }) => [
+const syncFlow = sync
+    .flow("sync-data")
+    .state((params) => ({ fetched: 0, source: params.source }))
+    .nodes(({ task }) => [
         task({
             name: "fetch",
             run: async (context) => {
@@ -135,12 +135,11 @@ const syncFlow = sync.flow({
                 await context.metrics.flush();
             },
         }),
-    ],
-});
+    ]);
 
 // ── Module: bundle of extensions + flows ────────────────────────────
 
-const syncModule = define.module({
+const syncModule = defineModule({
     name: "sync-module",
     extensions: [databaseExtension({ connectionString: "postgresql://localhost/mydb" }), metricsExtension()],
     flows: [syncFlow],

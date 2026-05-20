@@ -2,63 +2,59 @@
  * 01-basics.ts — Fundamentals
  *
  * Covers:
- *  - define.flow() for portable flow definitions
+ *  - flow(name) builder: chainable .params / .state / .nodes
  *  - createEngine(), engine.run(flow), engine.register(flow), engine.flow(name)
- *  - typed params / state from inline state factories
+ *  - typed params and state propagating to handler contexts
  *  - context.state (get, set, patch, snapshot, has)
  *  - context.params, context.log
- *  - FlowResult discrimination (success, failed)
+ *  - FlowResult discrimination (success, failed, cancelled)
  *  - engine.flows() (list registered flows)
- *  - define.scope() for reusable typed nodes
+ *  - shape<TContract>() for reusable typed nodes shared across files
  */
 
-import { createEngine, define, type Node, type ScopeFromContract } from "@flowrun/core";
+import { createEngine, flow, type Node, type ScopeFromShape, shape } from "@flowrun/core";
 import { log, title } from "./shared/helpers.ts";
 
 // ─────────────────────────────────────────────────────────────────────
 // Flow 1: no params, no state — the simplest possible flow
 // ─────────────────────────────────────────────────────────────────────
 
-const healthCheck = define.flow({
-    name: "health-check",
-    nodes: ({ task }) => [
-        task({
-            name: "ping",
-            run: (context) => {
-                context.log.info("system is healthy");
-            },
-        }),
-    ],
-});
+const healthCheck = flow("health-check").nodes(({ task }) => [
+    task({
+        name: "ping",
+        run: (context) => {
+            context.log.info("system is healthy");
+        },
+    }),
+]);
 
 // ─────────────────────────────────────────────────────────────────────
 // Flow 2: typed params, no state
 // ─────────────────────────────────────────────────────────────────────
 
-const notify = define.flow<{ channel: string; message: string }>({
-    name: "notify",
-    nodes: ({ task }) => [
+const notify = flow("notify")
+    .params<{ channel: string; message: string }>()
+    .nodes(({ task }) => [
         task({
             name: "send",
             run: (context) => {
                 context.log.info(`[${context.params.channel}] ${context.params.message}`);
             },
         }),
-    ],
-});
+    ]);
 
 // ─────────────────────────────────────────────────────────────────────
-// Flow 3: params + state — demonstrates full state API
+// Flow 3: params + state derived from params (callback form)
 // ─────────────────────────────────────────────────────────────────────
 
-const processOrder = define.flow({
-    name: "process-order",
-    state: (params: { orderId: string }) => ({
+const processOrder = flow("process-order")
+    .params<{ orderId: string }>()
+    .state((params) => ({
         orderId: params.orderId,
-        status: "pending" as string,
+        status: "pending",
         total: 0,
-    }),
-    nodes: ({ task }) => [
+    }))
+    .nodes(({ task }) => [
         task({
             name: "validate",
             run: (context) => {
@@ -85,17 +81,57 @@ const processOrder = define.flow({
                 context.log.info(`final state: ${JSON.stringify(context.state.snapshot())}`);
             },
         }),
-    ],
-});
+    ]);
 
 // ─────────────────────────────────────────────────────────────────────
-// Flow 4: demonstrates failure — FlowResult discrimination
+// Flow 4: params inferred from the state callback
 // ─────────────────────────────────────────────────────────────────────
 
-const riskyFlow = define.flow({
-    name: "risky",
-    state: () => ({ processed: false }),
-    nodes: ({ task }) => [
+const archiveOrder = flow("archive-order")
+    .state((params: { orderId: string; reason: string }) => ({
+        archivedId: params.orderId,
+        reason: params.reason,
+        archivedAt: 0,
+    }))
+    .nodes(({ task }) => [
+        task({
+            name: "archive",
+            run: (context) => {
+                context.state.set("archivedAt", Date.now());
+                context.log.info(`archived ${context.params.orderId} (${context.params.reason})`);
+            },
+        }),
+    ]);
+
+// ─────────────────────────────────────────────────────────────────────
+// Flow 5: params + literal state (state independent of params)
+// ─────────────────────────────────────────────────────────────────────
+
+const inspect = flow("inspect")
+    .params<{ path: string }>()
+    .state({
+        finalUrl: "",
+        userAgent: "",
+    })
+    .nodes(({ task }) => [
+        task({
+            name: "record",
+            run: (context) => {
+                context.state.patch({
+                    finalUrl: `https://example.com${context.params.path}`,
+                    userAgent: "Demo/1.0",
+                });
+            },
+        }),
+    ]);
+
+// ─────────────────────────────────────────────────────────────────────
+// Flow 6: failure handling — FlowResult discrimination
+// ─────────────────────────────────────────────────────────────────────
+
+const riskyFlow = flow("risky")
+    .state({ processed: false })
+    .nodes(({ task }) => [
         task({
             name: "process",
             run: (context) => {
@@ -108,11 +144,10 @@ const riskyFlow = define.flow({
                 throw new Error("unexpected error");
             },
         }),
-    ],
-});
+    ]);
 
 // ─────────────────────────────────────────────────────────────────────
-// Flow 5: define.scope() — reusable nodes typed against a contract
+// Flow 7: shape<TContract>() — reusable nodes typed against a contract
 // ─────────────────────────────────────────────────────────────────────
 
 interface ReportContract {
@@ -120,12 +155,9 @@ interface ReportContract {
     state: { generated: boolean };
 }
 
-type ReportScope = ScopeFromContract<ReportContract>;
+const report = shape<ReportContract>();
 
-const report = define.scope<ReportContract>();
-
-// Tasks defined under a scope can be reused across flows that share the contract.
-const generateTask: Node<ReportScope> = report.task({
+const generateTask: Node<ScopeFromShape<ReportContract>> = report.task({
     name: "generate",
     run: (context) => {
         context.state.set("generated", true);
@@ -133,11 +165,7 @@ const generateTask: Node<ReportScope> = report.task({
     },
 });
 
-const reportFlow = report.flow({
-    name: "generate-report",
-    state: () => ({ generated: false }),
-    nodes: [generateTask],
-});
+const reportFlow = report.flow("generate-report").state({ generated: false }).nodes([generateTask]);
 
 // ── Engine ──────────────────────────────────────────────────────────
 
@@ -156,7 +184,7 @@ title("2 - Typed params, no state");
 const notifyResult = await engine.run(notify, { channel: "#alerts", message: "deploy complete" });
 log(`Status: ${notifyResult.status}`);
 
-title("3 - Params + state (full state API)");
+title("3 - Params + state derived from params (full state API)");
 const orderResult = await engine.run(processOrder, { orderId: "ORD-001" });
 if (orderResult.status === "success") {
     log("State:", orderResult.state);
@@ -164,18 +192,31 @@ if (orderResult.status === "success") {
     log(`Tasks: ${orderResult.tasks.map((result) => `${result.nodeName}(${result.status})`).join(", ")}`);
 }
 
-title("4 - Result discrimination (failed flow)");
+title("4 - Params inferred from the state callback");
+const archiveResult = await engine.run(archiveOrder, { orderId: "ORD-002", reason: "duplicate" });
+if (archiveResult.status === "success") {
+    log(`archived ${archiveResult.state.archivedId} at ${archiveResult.state.archivedAt}`);
+}
+
+title("5 - Params + literal state (state independent of params)");
+const inspectResult = await engine.run(inspect, { path: "/" });
+if (inspectResult.status === "success") {
+    log(`final url: ${inspectResult.state.finalUrl}`);
+    log(`user agent: ${inspectResult.state.userAgent}`);
+}
+
+title("6 - Result discrimination (failed flow)");
 const riskyResult = await engine.run(riskyFlow);
 if (riskyResult.status === "failed") {
     log(`Error: ${riskyResult.error.message}`);
     log(`State at failure: processed=${riskyResult.state.processed}`);
 }
 
-title("5 - Reusable scoped definitions");
+title("7 - Reusable shaped definitions");
 const reportResult = await engine.run(reportFlow, { title: "Monthly Sales" });
 log(`Status: ${reportResult.status}, generated=${reportResult.state.generated}`);
 
-title("6 - engine.register() + engine.flow(name) for by-name dispatch");
+title("8 - engine.register() + engine.flow(name) for by-name dispatch");
 const registeredHealth = engine.register(healthCheck);
 log(`Registered: ${registeredHealth.name}`);
 log("All registered flows:", engine.flows());

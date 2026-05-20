@@ -12,7 +12,7 @@
  *  - typed child context: resource.provide adds keys that child tasks see typed
  */
 
-import { createEngine, define } from "@flowrun/core";
+import { createEngine, extension, flow, shape } from "@flowrun/core";
 import type { Browser, Page } from "./shared/helpers.ts";
 import { createBrowser, log, simulateWork, title } from "./shared/helpers.ts";
 import { subscriber } from "./shared/subscriber.ts";
@@ -20,7 +20,7 @@ import { subscriber } from "./shared/subscriber.ts";
 // ── Browser extension ───────────────────────────────────────────────
 
 const browserExtension = (browser: Browser) =>
-    define.extension({
+    extension({
         name: "browser",
         resource: {
             provide() {
@@ -48,10 +48,9 @@ subscriber(engine.bus);
 
 // ── Flow: data pipeline — used for FlowHandle demos ─────────────────
 
-const pipeline = define.flow({
-    name: "data-pipeline",
-    state: () => ({ steps: [] as string[] }),
-    nodes: ({ parallel, task }) => [
+const pipeline = flow("data-pipeline")
+    .state({ steps: [] as string[] })
+    .nodes(({ parallel, task }) => [
         task({
             name: "fetch",
             run: async (context) => {
@@ -86,8 +85,7 @@ const pipeline = define.flow({
                 context.state.set("steps", [...context.state.get("steps"), "save"]);
             },
         }),
-    ],
-});
+    ]);
 
 // ── Demo 1: register() returns a callable Flow — start() + join() ──
 
@@ -144,22 +142,20 @@ const result3 = await handle3.join();
 log(`\nresult: ${result3.status}, duration: ${result3.duration}ms (includes ~200ms pause)`);
 log("steps:", result3.state.steps);
 
-// ── Flow: every + provide (per-iteration browser pages) ─────────────
+// ── Flow: every + resource (per-iteration browser pages) ────────────
 
-const browserScope = define.scope<
+const months = ["2024-01", "2024-02", "2024-03", "2024-04"];
+
+const scrapeFlow = shape<
     BrowserContract & {
         state: {
             scraped: { month: string; pageId: number }[];
         };
     }
->();
-
-const months = ["2024-01", "2024-02", "2024-03", "2024-04"];
-
-const scrapeFlow = browserScope.flow({
-    name: "scrape-invoices",
-    state: () => ({ scraped: [] }),
-    nodes: ({ every }) => [
+>()
+    .flow("scrape-invoices")
+    .state({ scraped: [] as { month: string; pageId: number }[] })
+    .nodes(({ every }) => [
         every({
             name: "scrape-month",
             items: () => months,
@@ -195,8 +191,7 @@ const scrapeFlow = browserScope.flow({
                 }),
             ],
         }),
-    ],
-});
+    ]);
 
 title("Demo 4 - resource in every (per-iteration pages)");
 
@@ -206,57 +201,54 @@ for (const entry of scrapeResult.state.scraped) {
     log(`  ${entry.month} -> page #${entry.pageId}`);
 }
 
-// ── Flow: parallel + provide (per-branch browser pages) ─────────────
+// ── Flow: parallel + resource (per-branch browser pages) ────────────
 
-const parallelScrape = define
-    .scope<
-        BrowserContract & {
-            state: {
-                invoicePage: number;
-                reportPage: number;
-            };
-        }
-    >()
-    .flow({
-        name: "parallel-scrape",
-        state: () => ({ invoicePage: 0, reportPage: 0 }),
-        nodes: ({ parallel }) => [
-            parallel({
-                name: "scrape-both",
-                merge: "overwrite",
+const parallelScrape = shape<
+    BrowserContract & {
+        state: {
+            invoicePage: number;
+            reportPage: number;
+        };
+    }
+>()
+    .flow("parallel-scrape")
+    .state({ invoicePage: 0, reportPage: 0 })
+    .nodes(({ parallel }) => [
+        parallel({
+            name: "scrape-both",
+            merge: "overwrite",
 
-                // resource.provide receives meta with branchName/branchIndex; useful for logs and labels
-                resource: {
-                    provide: async (context, meta) => {
-                        const page: Page = await context.browser.newPage();
-                        log(`  branch "${meta.branchName}" got page #${page.id}`);
-                        return { page };
-                    },
-                    cleanup: async (context, meta) => {
-                        log(`  branch "${meta.branchName}" released page #${context.page.id}`);
-                        await context.page.close();
-                    },
+            // resource.provide receives meta with branchName/branchIndex; useful for logs and labels
+            resource: {
+                provide: async (context, meta) => {
+                    const page: Page = await context.browser.newPage();
+                    log(`  branch "${meta.branchName}" got page #${page.id}`);
+                    return { page };
                 },
+                cleanup: async (context, meta) => {
+                    log(`  branch "${meta.branchName}" released page #${context.page.id}`);
+                    await context.page.close();
+                },
+            },
 
-                nodes: ({ task }) => [
-                    task({
-                        name: "scrape-invoices",
-                        run: async (context) => {
-                            await context.page.goto("https://portal.example.com/invoices");
-                            context.state.set("invoicePage", context.page.id);
-                        },
-                    }),
-                    task({
-                        name: "scrape-reports",
-                        run: async (context) => {
-                            await context.page.goto("https://portal.example.com/reports");
-                            context.state.set("reportPage", context.page.id);
-                        },
-                    }),
-                ],
-            }),
-        ],
-    });
+            nodes: ({ task }) => [
+                task({
+                    name: "scrape-invoices",
+                    run: async (context) => {
+                        await context.page.goto("https://portal.example.com/invoices");
+                        context.state.set("invoicePage", context.page.id);
+                    },
+                }),
+                task({
+                    name: "scrape-reports",
+                    run: async (context) => {
+                        await context.page.goto("https://portal.example.com/reports");
+                        context.state.set("reportPage", context.page.id);
+                    },
+                }),
+            ],
+        }),
+    ]);
 
 title("Demo 5 - resource in parallel (per-branch pages)");
 

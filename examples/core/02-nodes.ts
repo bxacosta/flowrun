@@ -11,21 +11,20 @@
  *  - every: items source, concurrency, merge, onError:"continue", context.iteration
  */
 
-import { createEngine, define } from "@flowrun/core";
+import { createEngine, flow } from "@flowrun/core";
 import { delay, log, title } from "./shared/helpers.ts";
 import { subscriber } from "./shared/subscriber.ts";
 
 // ─────────────────────────────────────────────────────────────────────
-// Task — run, retry, onError, context.attempt
+// Task — run, retry, onError, context.attempt, context.skip()
 // ─────────────────────────────────────────────────────────────────────
 
 let constantFails = 2; // succeeds on attempt #3
 let exponentialFails = 1; // succeeds on attempt #2
 
-const taskShowcase = define.flow({
-    name: "task-showcase",
-    state: () => ({ steps: [] as string[] }),
-    nodes: ({ task }) => [
+const taskShowcase = flow("task-showcase")
+    .state({ steps: [] as string[] })
+    .nodes(({ task }) => [
         // Sync run — simplest form
         task({
             name: "sync-step",
@@ -106,18 +105,16 @@ const taskShowcase = define.flow({
                 context.state.set("steps", [...context.state.get("steps"), "after-skip-ok"]);
             },
         }),
-    ],
-});
+    ]);
 
 // ─────────────────────────────────────────────────────────────────────
 // Parallel — merge strategies
 // ─────────────────────────────────────────────────────────────────────
 
 // overwrite: same key from N branches -> last write wins
-const overwriteDemo = define.flow({
-    name: "overwrite-demo",
-    state: () => ({ winner: "" }),
-    nodes: ({ parallel }) => [
+const overwriteDemo = flow("overwrite-demo")
+    .state({ winner: "" })
+    .nodes(({ parallel }) => [
         parallel({
             name: "race",
             merge: "overwrite",
@@ -136,14 +133,12 @@ const overwriteDemo = define.flow({
                 }),
             ],
         }),
-    ],
-});
+    ]);
 
 // append: arrays from each branch concatenated
-const appendDemo = define.flow({
-    name: "append-demo",
-    state: () => ({ items: [] as string[] }),
-    nodes: ({ parallel }) => [
+const appendDemo = flow("append-demo")
+    .state({ items: [] as string[] })
+    .nodes(({ parallel }) => [
         parallel({
             name: "collect",
             merge: "append",
@@ -162,14 +157,12 @@ const appendDemo = define.flow({
                 }),
             ],
         }),
-    ],
-});
+    ]);
 
 // strict: same key from 2 branches -> MergeConflictError
-const strictDemo = define.flow({
-    name: "strict-demo",
-    state: () => ({ shared: "" }),
-    nodes: ({ parallel }) => [
+const strictDemo = flow("strict-demo")
+    .state({ shared: "" })
+    .nodes(({ parallel }) => [
         parallel({
             name: "will-conflict",
             merge: "strict",
@@ -188,14 +181,12 @@ const strictDemo = define.flow({
                 }),
             ],
         }),
-    ],
-});
+    ]);
 
 // continue: one branch fails, successful branches still merge — flow survives
-const continueDemo = define.flow({
-    name: "continue-demo",
-    state: () => ({ collected: [] as string[] }),
-    nodes: ({ parallel }) => [
+const continueDemo = flow("continue-demo")
+    .state({ collected: [] as string[] })
+    .nodes(({ parallel }) => [
         parallel({
             name: "tolerant",
             merge: "append",
@@ -221,21 +212,19 @@ const continueDemo = define.flow({
                 }),
             ],
         }),
-    ],
-});
+    ]);
 
 // ─────────────────────────────────────────────────────────────────────
 // Every — items source, concurrency, iteration context, onError
 // ─────────────────────────────────────────────────────────────────────
 
-const everyShowcase = define.flow({
-    name: "every-showcase",
-    state: () => ({
+const everyShowcase = flow("every-showcase")
+    .state({
         ordered: [] as string[],
         resilient: [] as string[],
         sourceItems: ["x1", "x2", "x3", "x4"],
-    }),
-    nodes: ({ every }) => [
+    })
+    .nodes(({ every }) => [
         // items pulled from state, bounded concurrency, iteration context
         every({
             name: "process-from-state",
@@ -273,8 +262,7 @@ const everyShowcase = define.flow({
                 }),
             ],
         }),
-    ],
-});
+    ]);
 
 // ── Engine ──────────────────────────────────────────────────────────
 

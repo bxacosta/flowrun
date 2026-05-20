@@ -1,9 +1,12 @@
 /**
  * 03-composition.ts — Composing Nodes
  *
- * A CI pipeline built bottom-up from reusable scoped pieces. The same scope
- * (`define.scope<CIContract>()`) types every node, so they compose without
- * losing access to params/state — and can live in separate files unchanged.
+ * Covers:
+ *  - Nested containers: parallel inside parallel, every inside parallel, parallel inside every
+ *  - Bottom-up composition: nodes built standalone with shape.task/parallel/every
+ *    and assembled into a flow later
+ *  - Reusable shape contract shared across every node and the final flow
+ *  - merge: "append" across forks — each branch contributes its slice of state
  *
  * Tree structure:
  *   prepare (task)                      <- task at flow level
@@ -17,21 +20,18 @@
  *   └─ deployEnv (parallel)             <- parallel inside every
  *      ├─ deployServer (task)
  *      └─ smokeTest (task)
- *
- * Each leaf writes a disjoint state key with [oneEntry], so merge: "append"
- * concatenates contributions cleanly across forks.
  */
 
-import { createEngine, define } from "@flowrun/core";
+import { createEngine, shape } from "@flowrun/core";
 import { delay, log, title } from "./shared/helpers.ts";
 
 // ── Shared contract & state ─────────────────────────────────────────
 
-interface CIContract {
-    state: CIState;
+interface PipelineContract {
+    state: PipelineState;
 }
 
-interface CIState {
+interface PipelineState {
     compiled: string[];
     deployments: string[];
     environments: string[];
@@ -40,9 +40,9 @@ interface CIState {
     smokeTests: string[];
 }
 
-const ci = define.scope<CIContract>();
+const pipeline = shape<PipelineContract>();
 
-const initialCIState = (): CIState => ({
+const initialState = (): PipelineState => ({
     compiled: [],
     deployments: [],
     environments: ["staging", "production"],
@@ -51,19 +51,17 @@ const initialCIState = (): CIState => ({
     smokeTests: [],
 });
 
-// ─────────────────────────────────────────────────────────────────────
-// Leaf and container nodes — built bottom-up, each typed by `ci`
-// ─────────────────────────────────────────────────────────────────────
+// ── Leaf and container nodes — built bottom-up, each typed by `pipeline` ──
 
-const prepare = ci.task({
+const prepare = pipeline.task({
     name: "prepare",
     run: (context) => {
-        context.log.info("preparing build");
+        context.log.info("preparing");
     },
 });
 
-// every inside the build parallel — fans out per module
-const compileAll = ci.every({
+// every inside parallel — fans out per item
+const compileAll = pipeline.every({
     name: "compileAll",
     items: (context) => context.state.get("modules"),
     concurrency: 2,
@@ -79,8 +77,8 @@ const compileAll = ci.every({
     ],
 });
 
-// parallel inside the build parallel — sibling linters
-const runLinters = ci.parallel({
+// parallel inside parallel — sibling tasks running concurrently
+const runLinters = pipeline.parallel({
     name: "runLinters",
     merge: "append",
     nodes: ({ task }) => [
@@ -99,14 +97,14 @@ const runLinters = ci.parallel({
     ],
 });
 
-// outer parallel that runs compilation and linters concurrently
-const build = ci.parallel({
+// outer parallel that runs both children concurrently
+const build = pipeline.parallel({
     name: "build",
     nodes: [compileAll, runLinters],
 });
 
-// every iterates per environment and runs a parallel pair of tasks per env
-const deploy = ci.every({
+// every iterates per item and runs a parallel of two tasks inside
+const deploy = pipeline.every({
     name: "deploy",
     items: (context) => context.state.get("environments"),
     concurrency: 1,
@@ -137,11 +135,7 @@ const deploy = ci.every({
 
 // ── Flow assembly ───────────────────────────────────────────────────
 
-const ciPipeline = ci.flow({
-    name: "ci-pipeline",
-    state: initialCIState,
-    nodes: [prepare, build, deploy],
-});
+const compositionFlow = pipeline.flow("composition").state(initialState).nodes([prepare, build, deploy]);
 
 // ── Engine ──────────────────────────────────────────────────────────
 
@@ -149,16 +143,12 @@ const engine = createEngine();
 
 // ── Run ─────────────────────────────────────────────────────────────
 
-function summarize(label: string, state: CIState, durationMs: number, taskCount: number): void {
-    log(`status: success (${taskCount} tasks, ${durationMs}ms)`);
-    log(`  ${label} compiled:    [${state.compiled.join(", ")}]`);
-    log(`  ${label} lintReport:  [${state.lintReport.join(", ")}]`);
-    log(`  ${label} deployments: [${state.deployments.join(", ")}]`);
-    log(`  ${label} smokeTests:  [${state.smokeTests.join(", ")}]`);
-}
-
-title("Scoped composition - CI pipeline");
-const result = await engine.run(ciPipeline);
+title("Shaped composition - nested containers");
+const result = await engine.run(compositionFlow);
 if (result.status === "success") {
-    summarize("ci", result.state, result.duration, result.tasks.length);
+    log(`status: success (${result.tasks.length} tasks, ${result.duration}ms)`);
+    log(`  compiled:    [${result.state.compiled.join(", ")}]`);
+    log(`  lintReport:  [${result.state.lintReport.join(", ")}]`);
+    log(`  deployments: [${result.state.deployments.join(", ")}]`);
+    log(`  smokeTests:  [${result.state.smokeTests.join(", ")}]`);
 }

@@ -1,53 +1,45 @@
 /**
- * 07-requests.ts -- Requests: typed human-in-the-loop primitive
- *
- * A `request` is a typed pause point: the flow asks for something and waits
- * for an external responder (a human via UI, an approval service, a webhook)
- * to answer. This is the same pattern agent SDKs like Mastra and LangGraph
- * use for HITL: pre-tool approvals, output review, credential prompts,
- * routing decisions.
+ * 07-requests.ts — Requests
  *
  * Covers:
- *  - define.request<TPayload, TResponse>() -- portable request definitions
+ *  - defineRequest<TPayload, TResponse>() — portable typed request definitions
  *  - context.request(definition, payload, options?) inside a task
  *  - engine.requests.on(definition, handler) typed responder subscription
  *  - request.respond(response) typed answer from external code
- *  - Discriminated response types (approve | edit | reject)
+ *  - Discriminated response types (multi-shape responses)
  *  - redact() hides secrets in bus events while keeping the actual response
  *  - timeout -> RequestTimeoutError
  *  - options.key for idempotent prompts across task retries
  *  - handle.cancel() rejects pending requests with RequestCancelledError
  *
- * Demos 1 and 3 prompt the user interactively when run on a TTY; in
- * non-interactive contexts (CI, piped output) they fall back to auto-answer
- * so the full example still completes end-to-end.
+ * Demos 1 and 3 prompt the user interactively on a TTY; in non-interactive
+ * contexts they fall back to an auto-answer so the example still completes.
  */
 
-import { createEngine, define, RequestTimeoutError } from "@flowrun/core";
+import { createEngine, defineRequest, flow, RequestTimeoutError } from "@flowrun/core";
 import { isInteractive, log, prompt, title } from "./shared/helpers.ts";
 import { subscriber } from "./shared/subscriber.ts";
 
-// -- Request definitions (portable tokens) ---------------------------
-//
-// Each `define.request` is a plain value that carries the payload/response
-// types. It can live in a shared package -- the flow imports it to ask, the
-// CLI/UI imports the same token to answer with full type safety.
+// ── Request definitions (portable tokens) ──────────────────────────
+// Each defineRequest() is a plain value carrying payload/response types.
+// The flow imports it to ask; the responder imports the same token to
+// answer with full type safety.
 
-const toolApproval = define.request<
+const toolApproval = defineRequest<
     { args: Record<string, unknown>; toolName: string },
     { decision: "allow" | "deny"; note?: string }
->({ name: "agent.tool-approval" });
+>({ name: "tool-approval" });
 
-const outputReview = define.request<
+const outputReview = defineRequest<
     { draft: string },
     { action: "approve" } | { action: "edit"; revised: string } | { action: "reject"; reason: string }
->({ name: "agent.output-review" });
+>({ name: "output-review" });
 
-const credentialsRequest = define.request<{ service: string }, { apiKey: string }>({
-    name: "agent.credentials",
-    // redact runs only when the manager emits events. The promise returned by
-    // ctx.request still resolves to the full response -- only subscribers see
-    // the masked version.
+const credentialsRequest = defineRequest<{ service: string }, { apiKey: string }>({
+    name: "credentials",
+    // redact runs only when the manager emits events. The promise returned
+    // by context.request still resolves to the full response — only event
+    // subscribers see the masked version.
     redact: (record) => {
         const response = record.response as { apiKey: string } | undefined;
         return {
@@ -57,24 +49,23 @@ const credentialsRequest = define.request<{ service: string }, { apiKey: string 
     },
 });
 
-const mfaCodeRequest = define.request<{ destination: string }, { code: string }>({
-    name: "agent.mfa-code",
+const mfaCodeRequest = defineRequest<{ destination: string }, { code: string }>({
+    name: "mfa-code",
 });
 
-const routingDecision = define.request<{ question: string }, { route: "yes" | "no" }>({
-    name: "agent.routing",
+const routingDecision = defineRequest<{ question: string }, { route: "yes" | "no" }>({
+    name: "routing",
 });
 
-// -- Flows -----------------------------------------------------------
+// ── Flows ──────────────────────────────────────────────────────────
 
-// Demo 1: approval and execution share one task. `ctx.skip()` only skips the
-// task it runs in -- if approval lived in a separate task, skipping it would
-// not prevent later tasks from running. Gating execution via skip therefore
-// requires both to share a task body.
-const callToolFlow = define.flow({
-    name: "agent-call-tool",
-    state: () => ({ note: "", status: "pending" as string }),
-    nodes: ({ task }) => [
+// Demo 1: approval and execution share one task. context.skip() only skips
+// the task it runs in — if approval lived in a separate task, skipping it
+// would not prevent later tasks from running. Gating execution via skip
+// therefore requires both to share a task body.
+const callToolFlow = flow("call-tool")
+    .state({ note: "", status: "pending" as string })
+    .nodes(({ task }) => [
         task({
             name: "send-email",
             run: async (context) => {
@@ -83,19 +74,17 @@ const callToolFlow = define.flow({
                     toolName: "send-email",
                 });
                 if (decision.decision === "deny") {
-                    context.skip(decision.note ?? "denied by human");
+                    context.skip(decision.note ?? "denied");
                 }
                 context.state.patch({ note: decision.note ?? "approved", status: "email sent" });
             },
         }),
-    ],
-});
+    ]);
 
-// Demo 2: discriminated response types model rich human decisions.
-const draftEmailFlow = define.flow({
-    name: "agent-draft-email",
-    state: () => ({ final: "" }),
-    nodes: ({ task }) => [
+// Demo 2: discriminated response types let one request return multiple shapes.
+const draftEmailFlow = flow("draft-email")
+    .state({ final: "" })
+    .nodes(({ task }) => [
         task({
             name: "draft",
             run: (context) => {
@@ -116,29 +105,25 @@ const draftEmailFlow = define.flow({
                 context.skip(decision.reason);
             },
         }),
-    ],
-});
+    ]);
 
 // Demo 3: redact hides secrets in events but the task code still has the real value.
-const authFlow = define.flow({
-    name: "agent-auth",
-    state: () => ({ keySuffix: "" }),
-    nodes: ({ task }) => [
+const authFlow = flow("auth")
+    .state({ keySuffix: "" })
+    .nodes(({ task }) => [
         task({
             name: "get-key",
             run: async (context) => {
-                const creds = await context.request(credentialsRequest, { service: "OpenAI" });
-                context.state.set("keySuffix", creds.apiKey.slice(-4));
+                const credentials = await context.request(credentialsRequest, { service: "OpenAI" });
+                context.state.set("keySuffix", credentials.apiKey.slice(-4));
             },
         }),
-    ],
-});
+    ]);
 
 // Demo 4: timeout -> RequestTimeoutError. Nothing responds to mfaCodeRequest.
-const mfaFlow = define.flow({
-    name: "agent-mfa",
-    state: () => ({ outcome: "" }),
-    nodes: ({ task }) => [
+const mfaFlow = flow("mfa")
+    .state({ outcome: "" })
+    .nodes(({ task }) => [
         task({
             name: "ask-mfa",
             onError: "skip",
@@ -155,14 +140,12 @@ const mfaFlow = define.flow({
                 }
             },
         }),
-    ],
-});
+    ]);
 
 // Demo 5: options.key makes the prompt idempotent across task retries.
-const flakyDecisionFlow = define.flow({
-    name: "agent-flaky-decision",
-    state: () => ({ answered: "", finalAttempt: 0 }),
-    nodes: ({ task }) => [
+const flakyDecisionFlow = flow("flaky-decision")
+    .state({ answered: "", finalAttempt: 0 })
+    .nodes(({ task }) => [
         task({
             name: "decide-then-act",
             retry: { attempts: 3, backoff: "constant", delayMs: 5 },
@@ -178,37 +161,32 @@ const flakyDecisionFlow = define.flow({
                 }
             },
         }),
-    ],
-});
+    ]);
 
 // Demo 6: handle.cancel() rejects any pending request for that run.
 // Letting RequestCancelledError propagate is what makes the flow result
-// `cancelled` -- if a task catches it, the flow would complete normally.
-const blockedFlow = define.flow({
-    name: "agent-blocked",
-    nodes: ({ task }) => [
-        task({
-            name: "wait-on-approval",
-            run: async (context) => {
-                await context.request(toolApproval, { args: {}, toolName: "noop" });
-            },
-        }),
-    ],
-});
+// `cancelled` — if a task catches it, the flow would complete normally.
+const blockedFlow = flow("blocked").nodes(({ task }) => [
+    task({
+        name: "wait-on-approval",
+        run: async (context) => {
+            await context.request(toolApproval, { args: {}, toolName: "noop" });
+        },
+    }),
+]);
 
-// -- Engine ----------------------------------------------------------
+// ── Engine ─────────────────────────────────────────────────────────
 
 const engine = createEngine();
 subscriber(engine.bus);
 
-// -- Responders (simulated humans) -----------------------------------
-//
-// In a real app these handlers live in a CLI prompt, web UI, Slack bot, or
-// webhook route. They are registered with the typed token, so payload and
-// response are fully type-checked.
+// ── Responders ─────────────────────────────────────────────────────
+// Responders are registered with the typed token, so payload and response
+// are fully type-checked. They can live anywhere — CLI prompt, web UI,
+// webhook handler — and read the same `defineRequest` token the flow uses.
 
 engine.requests.on(toolApproval, async (request) => {
-    if (request.flowName === "agent-blocked") {
+    if (request.flowName === "blocked") {
         // Demo 6 cancels before this responder ever answers.
         return;
     }
@@ -243,16 +221,16 @@ engine.requests.on(routingDecision, async (request) => {
     await request.respond({ route: "yes" });
 });
 
-// No responder registered for mfaCodeRequest -- Demo 4 relies on timeout.
+// No responder registered for mfaCodeRequest — Demo 4 relies on timeout.
 
-// -- Run -------------------------------------------------------------
+// ── Run ────────────────────────────────────────────────────────────
 
-title("Demo 1 - basic request/respond (tool approval gates execution)");
+title("Demo 1 - basic request/respond (approval gates execution via skip)");
 const result1 = await engine.run(callToolFlow);
 if (result1.status === "success") {
     const skipped = result1.tasks.find((task) => task.status === "skipped");
     if (skipped) {
-        log(`tool was not executed (skipped: ${skipped.reason ?? "no reason"})`);
+        log(`task skipped: ${skipped.reason ?? "no reason"}`);
     } else {
         log(`status: ${result1.state.status}, note: ${result1.state.note}`);
     }
@@ -267,7 +245,7 @@ if (result2.status === "success") {
 title("Demo 3 - redact: secrets hidden in events, real value in code");
 let observedResponse: unknown;
 const responseSubscription = engine.bus.subscribe("request:responded", (envelope) => {
-    if (envelope.payload.name === "agent.credentials") {
+    if (envelope.payload.name === "credentials") {
         observedResponse = envelope.payload.response;
     }
 });
@@ -287,7 +265,7 @@ if (result4.status === "success") {
 title("Demo 5 - idempotent key: one prompt across 3 retries");
 let promptCount = 0;
 const promptSubscription = engine.bus.subscribe("request:created", (envelope) => {
-    if (envelope.payload.name === "agent.routing") {
+    if (envelope.payload.name === "routing") {
         promptCount++;
     }
 });
