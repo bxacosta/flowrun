@@ -10,5 +10,5 @@
     // Project
     "rootDir": "."
   },
-  "include": ["core"]
+  "include": ["core", "browser"]
 }

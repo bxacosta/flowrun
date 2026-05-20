@@ -15,6 +15,7 @@
     "examples": {
       "name": "@flowrun/examples",
       "dependencies": {
+        "@flowrun/browser": "workspace:*",
         "@flowrun/core": "workspace:*",
       },
     },

@@ -1,4 +1,4 @@
-import type { EveryMeta, ItemsContext, ParallelMeta } from "@flowrun/core";
+import type { EveryMeta, ParallelMeta } from "@flowrun/core";
 
 import type { BrowserSession } from "../contracts/provider.ts";
 import { type BrowserBus, createNavigate } from "../extension/navigate.ts";
@@ -17,9 +17,19 @@ export interface NewPageOptions {
     emitNavigateEvent?: boolean;
 }
 
+// Structural type listing only the parent-context fields this adapter reads.
+// Because NewPageContext has fewer fields than any ItemsContext<TScope> the
+// caller will pass, it is a supertype — so this resource is assignable to
+// both EveryResourceConfig and ParallelResourceConfig regardless of TScope.
+interface NewPageContext {
+    bus: BrowserBus;
+    session: BrowserSession;
+    signal: AbortSignal;
+}
+
 interface NewPageResource {
-    cleanup: (context: ItemsContext & NewPageLocal, meta: EveryMeta<unknown> | ParallelMeta) => Promise<void>;
-    provide: (context: ItemsContext, meta: EveryMeta<unknown> | ParallelMeta) => Promise<NewPageLocal>;
+    cleanup(context: NewPageContext & NewPageLocal, meta: EveryMeta<unknown> | ParallelMeta): Promise<void>;
+    provide(context: NewPageContext, meta: EveryMeta<unknown> | ParallelMeta): Promise<NewPageLocal>;
 }
 
 export function newPage(options: NewPageOptions = {}): NewPageResource {
@@ -28,9 +38,7 @@ export function newPage(options: NewPageOptions = {}): NewPageResource {
 
     return {
         provide: async (context, meta) => {
-            const bus = context.bus as unknown as BrowserBus;
-            const parent = context as unknown as { session: BrowserSession };
-            const page = await parent.session.context.newPage();
+            const page = await context.session.context.newPage();
 
             if (options.defaultTimeout !== undefined) {
                 page.setDefaultTimeout(options.defaultTimeout);
@@ -51,22 +59,21 @@ export function newPage(options: NewPageOptions = {}): NewPageResource {
                 );
             }
 
-            const navigate = createNavigate(page, bus, { emitEvent: emitNavigate });
-            const session: BrowserSession = { context: parent.session.context, page };
+            const navigate = createNavigate(page, context.bus, { emitEvent: emitNavigate });
+            const session: BrowserSession = { context: context.session.context, page };
 
-            await bus.publish("browser:page-opened", branchInfo(meta), { source: EVENT_SOURCE });
+            await context.bus.publish("browser:page-opened", branchInfo(meta), { source: EVENT_SOURCE });
 
             return { session, page, navigate };
         },
 
         cleanup: async (context, meta) => {
-            const bus = context.bus as unknown as BrowserBus;
             try {
                 await context.page.close();
             } catch {
                 /* idempotent */
             }
-            await bus.publish("browser:page-closed", branchInfo(meta), { source: EVENT_SOURCE });
+            await context.bus.publish("browser:page-closed", branchInfo(meta), { source: EVENT_SOURCE });
         },
     };
 }

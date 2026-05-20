@@ -1,4 +1,4 @@
-import type { EveryMeta, ItemsContext, ParallelMeta } from "@flowrun/core";
+import type { EveryMeta, ParallelMeta } from "@flowrun/core";
 
 import type { BrowserProvider, BrowserSession, OpenOptions } from "../contracts/provider.ts";
 import { BrowserSessionError } from "../errors.ts";
@@ -18,9 +18,19 @@ export interface NewSessionOptions extends OpenOptions {
     emitNavigateEvent?: boolean;
 }
 
+// Structural type listing only the parent-context fields this adapter reads.
+// Because NewSessionContext has fewer fields than any ItemsContext<TScope> the
+// caller will pass, it is a supertype — so this resource is assignable to
+// both EveryResourceConfig and ParallelResourceConfig regardless of TScope.
+interface NewSessionContext {
+    bus: BrowserBus;
+    provider: BrowserProvider;
+    signal: AbortSignal;
+}
+
 interface NewSessionResource {
-    cleanup: (context: ItemsContext & NewSessionLocal, meta: EveryMeta<unknown> | ParallelMeta) => Promise<void>;
-    provide: (context: ItemsContext, meta: EveryMeta<unknown> | ParallelMeta) => Promise<NewSessionLocal>;
+    cleanup(context: NewSessionContext & NewSessionLocal, meta: EveryMeta<unknown> | ParallelMeta): Promise<void>;
+    provide(context: NewSessionContext, meta: EveryMeta<unknown> | ParallelMeta): Promise<NewSessionLocal>;
 }
 
 export function newSession(options: NewSessionOptions = {}): NewSessionResource {
@@ -29,12 +39,9 @@ export function newSession(options: NewSessionOptions = {}): NewSessionResource 
 
     return {
         provide: async (context, meta) => {
-            const bus = context.bus as unknown as BrowserBus;
-            const provider = (context as unknown as { provider: BrowserProvider }).provider;
-
             let session: BrowserSession;
             try {
-                session = await provider.open({ contextOptions: options.contextOptions });
+                session = await context.provider.open({ contextOptions: options.contextOptions });
             } catch (error) {
                 if (error instanceof BrowserSessionError) {
                     throw error;
@@ -61,22 +68,20 @@ export function newSession(options: NewSessionOptions = {}): NewSessionResource 
                 );
             }
 
-            const navigate = createNavigate(session.page, bus, { emitEvent: emitNavigate });
+            const navigate = createNavigate(session.page, context.bus, { emitEvent: emitNavigate });
 
-            await bus.publish("browser:session-opened", branchInfo(meta), { source: EVENT_SOURCE });
+            await context.bus.publish("browser:session-opened", branchInfo(meta), { source: EVENT_SOURCE });
 
             return { session, page: session.page, navigate };
         },
 
         cleanup: async (context, meta) => {
-            const bus = context.bus as unknown as BrowserBus;
-            const provider = (context as unknown as { provider: BrowserProvider }).provider;
             try {
-                await provider.close(context.session);
+                await context.provider.close(context.session);
             } catch {
                 /* idempotent */
             }
-            await bus.publish("browser:session-closed", branchInfo(meta), { source: EVENT_SOURCE });
+            await context.bus.publish("browser:session-closed", branchInfo(meta), { source: EVENT_SOURCE });
         },
     };
 }
