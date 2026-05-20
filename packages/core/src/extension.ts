@@ -18,18 +18,13 @@ export interface Public<TPayload> {
 export type EventMarker = Internal<unknown> | Public<unknown>;
 export type EventDefinitions = Record<string, EventMarker>;
 
-function publicEvent<TPayload>(): Public<TPayload> {
+export function eventPublic<TPayload>(): Public<TPayload> {
     return undefined as unknown as Public<TPayload>;
 }
 
-function internalEvent<TPayload>(): Internal<TPayload> {
+export function eventInternal<TPayload>(): Internal<TPayload> {
     return undefined as unknown as Internal<TPayload>;
 }
-
-export const event = {
-    internal: internalEvent,
-    public: publicEvent,
-} as const;
 
 type ExtractByVisibility<TDefinitions extends EventDefinitions, TVisibility extends string> = {
     [K in keyof TDefinitions as TDefinitions[K] extends { [visibility]: TVisibility }
@@ -100,7 +95,7 @@ export interface ExtensionDefinition<
 // biome-ignore lint/suspicious/noExplicitAny: type-erased extension for runtime registries
 export type AnyExtensionDefinition = ExtensionDefinition<any, any, any>;
 
-// biome-ignore lint/suspicious/noExplicitAny: typed at define.extension boundary
+// biome-ignore lint/suspicious/noExplicitAny: typed at the extension factory boundary
 export type AnyExtensionProvide = (context: any) => MaybePromise<ExtensionProvideResult<object>>;
 
 export type ExtensionProvided<TDefinition> =
@@ -111,3 +106,13 @@ export type ExtensionInternalEvents<TDefinition> =
 
 export type ExtensionPublicEvents<TDefinition> =
     TDefinition extends ExtensionDefinition<object, object, infer TPublic> ? AsEventMap<TPublic> : EmptyObject;
+
+export function extension<TDefinitions extends EventDefinitions, TProvided extends object>(
+    config: ExtensionConfig<TDefinitions, TProvided>
+): ExtensionDefinition<TProvided, ExtractInternalEvents<TDefinitions>, ExtractPublicEvents<TDefinitions>> {
+    return {
+        kind: "extension",
+        name: config.name,
+        resource: { provide: config.resource.provide as AnyExtensionProvide },
+    };
+}

@@ -25,12 +25,41 @@ export interface Scope<
 // biome-ignore lint/suspicious/noExplicitAny: type-erased scope for heterogeneous registries
 export type AnyScope = Scope<any, any, any, any, any, any>;
 
+export type RootScope = Scope<EmptyObject, EmptyObject, EmptyObject, SystemPublicEvents, SystemEvents, never>;
+
 export type WithProvided<TScope extends AnyScope, TLocal extends object> = Scope<
     MergeObjects<TScope["_provided"], TLocal>,
     TScope["_params"],
     TScope["_state"],
     TScope["_publicEvents"],
     TScope["_allEvents"],
+    TScope["_iteration"]
+>;
+
+export type WithParams<TScope extends AnyScope, TParams extends object> = Scope<
+    TScope["_provided"],
+    TParams,
+    TScope["_state"],
+    TScope["_publicEvents"],
+    TScope["_allEvents"],
+    TScope["_iteration"]
+>;
+
+export type WithState<TScope extends AnyScope, TState extends object> = Scope<
+    TScope["_provided"],
+    TScope["_params"],
+    TState,
+    TScope["_publicEvents"],
+    TScope["_allEvents"],
+    TScope["_iteration"]
+>;
+
+export type WithEvents<TScope extends AnyScope, TPublicEvents extends EventMap> = Scope<
+    TScope["_provided"],
+    TScope["_params"],
+    TScope["_state"],
+    MergeObjects<TScope["_publicEvents"], TPublicEvents>,
+    MergeObjects<TScope["_allEvents"], TPublicEvents>,
     TScope["_iteration"]
 >;
 
@@ -41,28 +70,4 @@ export type IterationScope<TScope extends AnyScope, TItem> = Scope<
     TScope["_publicEvents"],
     TScope["_allEvents"],
     IterationContext<TItem>
->;
-
-export interface ScopeContract {
-    events?: object;
-    internalEvents?: object;
-    params?: object;
-    provided?: object;
-    state?: object;
-}
-
-type ContractField<TContract, TKey extends keyof ScopeContract, TFallback extends object> = TKey extends keyof TContract
-    ? NonNullable<TContract[TKey]> extends object
-        ? NonNullable<TContract[TKey]>
-        : TFallback
-    : TFallback;
-
-export type ScopeFromContract<TContract extends ScopeContract> = Scope<
-    ContractField<TContract, "provided", EmptyObject>,
-    ContractField<TContract, "params", EmptyObject>,
-    ContractField<TContract, "state", EmptyObject>,
-    SystemPublicEvents & ContractField<TContract, "events", EmptyObject>,
-    SystemEvents &
-        ContractField<TContract, "events", EmptyObject> &
-        ContractField<TContract, "internalEvents", EmptyObject>
 >;

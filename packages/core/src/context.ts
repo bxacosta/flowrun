@@ -1,8 +1,7 @@
 import { SkipSignal } from "./errors.ts";
 import type { InternalBus, PublishableBus } from "./event-bus.ts";
-import type { EventMap, EventSource, SystemEvents, SystemPublicEvents } from "./events.ts";
+import type { EventMap, EventSource, SystemPublicEvents } from "./events.ts";
 import type { Logger } from "./logger.ts";
-import type { Middleware } from "./middleware.ts";
 import type { TaskResult } from "./node.ts";
 import type { ContextRequest, RequestDefinition, RequestOptions } from "./request.ts";
 import type { RequestManager } from "./request-manager.ts";
@@ -20,22 +19,16 @@ export type ContextPublish<TPublicEvents extends EventMap> = <K extends keyof Do
     options?: { correlationId?: string; source?: string }
 ) => Promise<void>;
 
-type BaseContextOf<
-    TProvided extends object = EmptyObject,
-    TParams extends object = EmptyObject,
-    TState extends object = EmptyObject,
-    TPublicEvents extends EventMap = SystemPublicEvents,
-    TAllEvents extends EventMap = SystemEvents,
-> = TProvided & {
-    bus: PublishableBus<TPublicEvents, TAllEvents>;
+export type BaseContext<TScope extends AnyScope = Scope> = TScope["_provided"] & {
+    bus: PublishableBus<TScope["_publicEvents"], TScope["_allEvents"]>;
     flowName: string;
     log: Logger;
-    params: Readonly<TParams>;
-    publish: ContextPublish<TPublicEvents>;
+    params: Readonly<TScope["_params"]>;
+    publish: ContextPublish<TScope["_publicEvents"]>;
     request: ContextRequest;
     runId: string;
     signal: AbortSignal;
-    state: FlowStateStore<TState>;
+    state: FlowStateStore<TScope["_state"]>;
 };
 
 type TaskExtras<TIteration = never> = {
@@ -44,34 +37,9 @@ type TaskExtras<TIteration = never> = {
     skip: (reason?: string) => never;
 } & IterationField<TIteration>;
 
-export type BaseContext<TScope extends AnyScope = Scope> = BaseContextOf<
-    TScope["_provided"],
-    TScope["_params"],
-    TScope["_state"],
-    TScope["_publicEvents"],
-    TScope["_allEvents"]
->;
-
 export type FlowContext<TScope extends AnyScope = Scope> = BaseContext<TScope>;
 export type ItemsContext<TScope extends AnyScope = Scope> = BaseContext<TScope> & IterationField<TScope["_iteration"]>;
 export type TaskContext<TScope extends AnyScope = Scope> = BaseContext<TScope> & TaskExtras<TScope["_iteration"]>;
-
-export type FlowMiddlewareOf<
-    TProvided extends object = EmptyObject,
-    TParams extends object = EmptyObject,
-    TState extends object = EmptyObject,
-    TPublicEvents extends EventMap = SystemPublicEvents,
-    TAllEvents extends EventMap = SystemEvents,
-> = Middleware<BaseContextOf<TProvided, TParams, TState, TPublicEvents, TAllEvents>>;
-
-export type TaskMiddlewareOf<
-    TProvided extends object = EmptyObject,
-    TParams extends object = EmptyObject,
-    TState extends object = EmptyObject,
-    TPublicEvents extends EventMap = SystemPublicEvents,
-    TAllEvents extends EventMap = SystemEvents,
-    TIteration = never,
-> = Middleware<BaseContextOf<TProvided, TParams, TState, TPublicEvents, TAllEvents> & TaskExtras<TIteration>>;
 
 export interface FlowRuntime {
     bus: InternalBus<EventMap>;

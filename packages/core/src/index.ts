@@ -1,3 +1,6 @@
+export type { FlowBuilder } from "./builder.ts";
+// biome-ignore lint/performance/noBarrelFile: public library entry point
+export { createFlowBuilder, flow } from "./builder.ts";
 export type {
     BaseContext,
     ContextPublish,
@@ -5,22 +8,6 @@ export type {
     ItemsContext,
     TaskContext,
 } from "./context.ts";
-export type {
-    EveryConfig,
-    EveryConfigWithResource,
-    EveryOptions,
-    EveryResourceConfig,
-    FlowConfig,
-    MiddlewareConfig,
-    NodeFactory,
-    ParallelConfig,
-    ParallelConfigWithResource,
-    ParallelOptions,
-    ParallelResourceConfig,
-    TaskConfig,
-} from "./define.ts";
-// biome-ignore lint/performance/noBarrelFile: public library entry point
-export { define } from "./define.ts";
 export type { Engine, EngineConfig, EngineEvents, InferEngine } from "./engine.ts";
 export { createEngine } from "./engine.ts";
 export {
@@ -77,7 +64,7 @@ export type {
     Internal,
     Public,
 } from "./extension.ts";
-export { event } from "./extension.ts";
+export { eventInternal, eventPublic, extension } from "./extension.ts";
 export type {
     BaseFlowResult,
     CancelledFlowResult,
@@ -93,6 +80,7 @@ export type {
 export type { Logger } from "./logger.ts";
 export type { Middleware, MiddlewareRun } from "./middleware.ts";
 export type { ModuleConfig, ModuleDefinition } from "./module.ts";
+export { defineModule } from "./module.ts";
 export type {
     BackoffStrategy,
     ContainerErrorMode,
@@ -104,6 +92,22 @@ export type {
     TaskErrorMode,
     TaskResult,
 } from "./node.ts";
+export type {
+    EveryConfig,
+    EveryConfigWithResource,
+    EveryOptions,
+    EveryResourceConfig,
+    FlowMiddleware,
+    MiddlewareConfig,
+    NodeFactory,
+    NodesSpec,
+    ParallelConfig,
+    ParallelConfigWithResource,
+    ParallelOptions,
+    ParallelResourceConfig,
+    TaskConfig,
+    TaskMiddleware,
+} from "./node-factory.ts";
 export type {
     ContextRequest,
     EngineRequests,
@@ -118,14 +122,19 @@ export type {
     RequestSubscribeOptions,
     RequestSubscription,
 } from "./request.ts";
+export { defineRequest } from "./request.ts";
 export type {
     AnyScope,
     IterationContext,
     IterationScope,
+    RootScope,
     Scope,
-    ScopeContract,
-    ScopeFromContract,
+    WithEvents,
+    WithParams,
     WithProvided,
+    WithState,
 } from "./scope.ts";
+export type { ScopeFromShape, Shape, ShapeContract } from "./shape.ts";
+export { shape } from "./shape.ts";
 export type { FlowStateStore, MergeStrategy } from "./state.ts";
 export type { EmptyObject, MaybePromise } from "./utils.ts";
