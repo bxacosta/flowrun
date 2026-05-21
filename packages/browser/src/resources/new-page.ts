@@ -1,4 +1,4 @@
-import type { EveryMeta, ParallelMeta } from "@flowrun/core";
+import type { ContainerMeta, ResourceFactory } from "@flowrun/core";
 
 import type { BrowserSession } from "../contracts/provider.ts";
 import { type BrowserBus, createNavigate } from "../extension/navigate.ts";
@@ -17,22 +17,13 @@ export interface NewPageOptions {
     emitNavigateEvent?: boolean;
 }
 
-// Structural type listing only the parent-context fields this adapter reads.
-// Because NewPageContext has fewer fields than any ItemsContext<TShape> the
-// caller will pass, it is a supertype — so this resource is assignable to
-// both EveryResourceConfig and ParallelResourceConfig regardless of TShape.
 interface NewPageContext {
     bus: BrowserBus;
     session: BrowserSession;
     signal: AbortSignal;
 }
 
-interface NewPageResource {
-    cleanup(context: NewPageContext & NewPageLocal, meta: EveryMeta<unknown> | ParallelMeta): Promise<void>;
-    provide(context: NewPageContext, meta: EveryMeta<unknown> | ParallelMeta): Promise<NewPageLocal>;
-}
-
-export function newPage(options: NewPageOptions = {}): NewPageResource {
+export function newPage(options: NewPageOptions = {}): ResourceFactory<NewPageContext, NewPageLocal> {
     const emitNavigate = options.emitNavigateEvent ?? true;
     const cancelStrategy = options.cancelStrategy ?? "close-context";
 
@@ -78,7 +69,7 @@ export function newPage(options: NewPageOptions = {}): NewPageResource {
     };
 }
 
-function branchInfo(meta: EveryMeta<unknown> | ParallelMeta): { branch?: string; iteration?: number } {
+function branchInfo(meta: ContainerMeta): { branch?: string; iteration?: number } {
     if ("branchName" in meta) {
         return { branch: meta.branchName };
     }

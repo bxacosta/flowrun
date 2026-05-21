@@ -194,47 +194,16 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
         return { entry, record: newRecord };
     }
 
-    function publishCreated(record: AnyRequestRecord, definition: AnyRequestDefinition): void {
-        const safe = safelyRedact(record, definition);
-        bus.publish(
-            "request:created",
-            {
-                ...buildEventBase(safe),
-                metadata: safe.metadata,
-                payload: safe.payload,
-                timeoutAt: safe.timeoutAt,
-            },
-            { source: "system" }
-        ).catch(() => undefined);
-    }
+    type RequestEventTopic = "request:cancelled" | "request:created" | "request:expired" | "request:responded";
 
-    function publishResponded(record: AnyRequestRecord, definition: AnyRequestDefinition): void {
-        const safe = safelyRedact(record, definition);
-        bus.publish(
-            "request:responded",
-            {
-                ...buildEventBase(safe),
-                response: safe.response,
-                responseMetadata: safe.responseMetadata,
-            },
-            { source: "system" }
-        ).catch(() => undefined);
-    }
-
-    function publishCancelled(record: AnyRequestRecord): void {
-        bus.publish(
-            "request:cancelled",
-            { ...buildEventBase(record), reason: record.reason },
-            { source: "system" }
-        ).catch(() => undefined);
-    }
-
-    function publishExpired(record: AnyRequestRecord): void {
-        bus.publish(
-            "request:expired",
-            { ...buildEventBase(record), timeoutAt: record.timeoutAt ?? Date.now() },
-            { source: "system" }
-        ).catch(() => undefined);
+    function publishRequestEvent(
+        topic: RequestEventTopic,
+        record: AnyRequestRecord,
+        extras: (record: AnyRequestRecord) => object,
+        definition?: AnyRequestDefinition
+    ): void {
+        const safe = definition ? safelyRedact(record, definition) : record;
+        bus.publish(topic, { ...buildEventBase(safe), ...extras(safe) }, { source: "system" }).catch(() => undefined);
     }
 
     function cancelById(id: string, reason?: string): Promise<void> {
@@ -249,7 +218,7 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
         if (!transitioned) {
             return Promise.resolve();
         }
-        publishCancelled(transitioned.record);
+        publishRequestEvent("request:cancelled", transitioned.record, (s) => ({ reason: s.reason }));
         transitioned.entry.reject(new RequestCancelledError(transitioned.record.name, id, reason));
         return Promise.resolve();
     }
@@ -264,7 +233,9 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
         if (!transitioned) {
             return;
         }
-        publishExpired(transitioned.record);
+        publishRequestEvent("request:expired", transitioned.record, (s) => ({
+            timeoutAt: s.timeoutAt ?? Date.now(),
+        }));
         transitioned.entry.reject(
             new RequestTimeoutError(
                 transitioned.record.name,
@@ -299,7 +270,12 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
                 currentStatus && isTerminalStatus(currentStatus) ? currentStatus : "responded";
             throw new RequestAlreadyResolvedError(existing.name, id, finalStatus);
         }
-        publishResponded(transitioned.record, definition);
+        publishRequestEvent(
+            "request:responded",
+            transitioned.record,
+            (s) => ({ response: s.response, responseMetadata: s.responseMetadata }),
+            definition
+        );
         transitioned.entry.resolve(response);
         return Promise.resolve();
     }
@@ -415,7 +391,12 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
         };
         pending.set(id, entry);
 
-        publishCreated(record, args.definition);
+        publishRequestEvent(
+            "request:created",
+            record,
+            (s) => ({ metadata: s.metadata, payload: s.payload, timeoutAt: s.timeoutAt }),
+            args.definition
+        );
         notifySubscribers(id);
 
         return promise;

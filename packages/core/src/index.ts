@@ -89,6 +89,7 @@ export type {
     TaskResult,
 } from "./node.ts";
 export type {
+    ContainerMeta,
     EveryConfig,
     EveryConfigWithResource,
     EveryOptions,
@@ -101,6 +102,7 @@ export type {
     ParallelConfigWithResource,
     ParallelOptions,
     ParallelResourceConfig,
+    ResourceFactory,
     TaskConfig,
     TaskMiddleware,
 } from "./node-factory.ts";

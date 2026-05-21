@@ -66,6 +66,6 @@ export function createFlowBuilder<TShape extends Shape>(name: string): FlowBuild
     return instantiate<TShape>({ middleware: [], name });
 }
 
-export function flow(name: string): FlowBuilder<Shape> {
-    return createFlowBuilder<Shape>(name);
+export function flow<TShape extends Shape = Shape>(name: string): FlowBuilder<TShape> {
+    return createFlowBuilder<TShape>(name);
 }

@@ -37,7 +37,7 @@ export function createBrowserExtension(config: BrowserExtensionConfig): BrowserE
             "browser:storage-saved": eventPublic<BrowserEventPayloads["browser:storage-saved"]>(),
         },
         provide: async (context) => {
-            const bus = context.bus as unknown as BrowserBus;
+            const bus: BrowserBus = context.bus;
 
             let session: BrowserSession;
             try {

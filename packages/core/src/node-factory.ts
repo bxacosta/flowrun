@@ -11,7 +11,7 @@ import type {
 } from "./node.ts";
 import type { Shape, WithIteration, WithProvided } from "./shape.ts";
 import type { MergeStrategy } from "./state.ts";
-import type { MaybePromise } from "./utils.ts";
+import type { MaybePromise, MergeObjects } from "./utils.ts";
 import { assertUniqueNodeNames } from "./validation.ts";
 
 export interface TaskConfig<TShape extends Shape> {
@@ -22,15 +22,23 @@ export interface TaskConfig<TShape extends Shape> {
     run: (context: TaskContext<TShape>) => MaybePromise<void>;
 }
 
+export type ContainerMeta<TItem = unknown> = EveryMeta<TItem> | ParallelMeta;
+
+export interface ResourceFactory<TContext extends object, TLocal extends object, TMeta = ContainerMeta> {
+    cleanup?: (context: MergeObjects<TContext, TLocal>, meta: TMeta) => MaybePromise<void>;
+    provide: (context: TContext, meta: TMeta) => MaybePromise<TLocal>;
+}
+
 export interface ParallelOptions {
     merge?: MergeStrategy;
     onError?: ContainerErrorMode;
 }
 
-export interface ParallelResourceConfig<TShape extends Shape, TLocal extends object> {
-    cleanup?: (context: ItemsContext<WithProvided<TShape, TLocal>>, meta: ParallelMeta) => MaybePromise<void>;
-    provide: (context: ItemsContext<TShape>, meta: ParallelMeta) => MaybePromise<TLocal>;
-}
+export type ParallelResourceConfig<TShape extends Shape, TLocal extends object> = ResourceFactory<
+    ItemsContext<TShape>,
+    TLocal,
+    ParallelMeta
+>;
 
 export type ParallelConfig<TShape extends Shape> = ParallelOptions & {
     name: string;
@@ -50,13 +58,11 @@ export interface EveryOptions {
     onError?: ContainerErrorMode;
 }
 
-export interface EveryResourceConfig<TShape extends Shape, TItem, TLocal extends object> {
-    cleanup?: (
-        context: ItemsContext<WithProvided<WithIteration<TShape, TItem>, TLocal>>,
-        meta: EveryMeta<TItem>
-    ) => MaybePromise<void>;
-    provide: (context: ItemsContext<WithIteration<TShape, TItem>>, meta: EveryMeta<TItem>) => MaybePromise<TLocal>;
-}
+export type EveryResourceConfig<TShape extends Shape, TItem, TLocal extends object> = ResourceFactory<
+    ItemsContext<WithIteration<TShape, TItem>>,
+    TLocal,
+    EveryMeta<TItem>
+>;
 
 export type EveryConfig<TShape extends Shape, TItem> = EveryOptions & {
     items: (context: ItemsContext<TShape>) => readonly TItem[];

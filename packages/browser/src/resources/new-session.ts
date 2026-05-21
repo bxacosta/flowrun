@@ -1,4 +1,4 @@
-import type { EveryMeta, ParallelMeta } from "@flowrun/core";
+import type { ContainerMeta, ResourceFactory } from "@flowrun/core";
 
 import type { BrowserProvider, BrowserSession, OpenOptions } from "../contracts/provider.ts";
 import { BrowserSessionError } from "../errors.ts";
@@ -18,22 +18,13 @@ export interface NewSessionOptions extends OpenOptions {
     emitNavigateEvent?: boolean;
 }
 
-// Structural type listing only the parent-context fields this adapter reads.
-// Because NewSessionContext has fewer fields than any ItemsContext<TShape> the
-// caller will pass, it is a supertype — so this resource is assignable to
-// both EveryResourceConfig and ParallelResourceConfig regardless of TShape.
 interface NewSessionContext {
     bus: BrowserBus;
     provider: BrowserProvider;
     signal: AbortSignal;
 }
 
-interface NewSessionResource {
-    cleanup(context: NewSessionContext & NewSessionLocal, meta: EveryMeta<unknown> | ParallelMeta): Promise<void>;
-    provide(context: NewSessionContext, meta: EveryMeta<unknown> | ParallelMeta): Promise<NewSessionLocal>;
-}
-
-export function newSession(options: NewSessionOptions = {}): NewSessionResource {
+export function newSession(options: NewSessionOptions = {}): ResourceFactory<NewSessionContext, NewSessionLocal> {
     const emitNavigate = options.emitNavigateEvent ?? true;
     const cancelStrategy = options.cancelStrategy ?? "close-context";
 
@@ -86,7 +77,7 @@ export function newSession(options: NewSessionOptions = {}): NewSessionResource 
     };
 }
 
-function branchInfo(meta: EveryMeta<unknown> | ParallelMeta): { branch?: string; iteration?: number } {
+function branchInfo(meta: ContainerMeta): { branch?: string; iteration?: number } {
     if ("branchName" in meta) {
         return { branch: meta.branchName };
     }

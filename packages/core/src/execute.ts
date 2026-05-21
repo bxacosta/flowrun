@@ -2,6 +2,8 @@ import { executeContinueBranches, executeFailFastBranches } from "./concurrency.
 import type { ExecutionContext, FlowProgress, FlowRuntime } from "./context.ts";
 import { buildItemsContext, buildTaskContext } from "./context.ts";
 import { InvalidItemsError, normalizeError, SkipSignal } from "./errors.ts";
+import type { InternalBus } from "./event-bus.ts";
+import type { EventMap } from "./events.ts";
 import { compose } from "./middleware.ts";
 import type {
     AnyCleanup,
@@ -379,6 +381,35 @@ async function resolveBranches(
     };
 }
 
+async function finalizeContainerOutcome(args: {
+    bus: InternalBus<EventMap>;
+    topic: "node:every:ended" | "node:parallel:ended";
+    basePayload: object;
+    outcome: BranchOutcome;
+    onError: ContainerErrorMode;
+    includeFailedIndexesOnContinue?: boolean;
+}): Promise<void> {
+    const { bus, topic, basePayload, outcome, onError, includeFailedIndexesOnContinue } = args;
+
+    if (outcome.errors.length === 0) {
+        await bus.publish(topic, { ...basePayload, status: "success" }, { source: "system" });
+        return;
+    }
+
+    if (onError === "continue") {
+        const failedIndexes = includeFailedIndexesOnContinue ? { failedIndexes: outcome.failedIndexes } : undefined;
+        await bus.publish(
+            topic,
+            { ...basePayload, errors: outcome.errors, ...failedIndexes, status: "success" },
+            { source: "system" }
+        );
+        return;
+    }
+
+    await bus.publish(topic, { ...basePayload, errors: outcome.errors, status: "failed" }, { source: "system" });
+    throw outcome.errors[0];
+}
+
 async function executeParallel(
     node: ParallelNodeDefinition,
     executionContext: ExecutionContext,
@@ -442,43 +473,13 @@ async function executeParallel(
             plan.branches.length
         );
 
-        if (outcome.errors.length > 0) {
-            if (node.onError === "continue") {
-                await bus.publish(
-                    "node:parallel:ended",
-                    {
-                        duration: Date.now() - parallelStart,
-                        errors: outcome.errors,
-                        flowName,
-                        nodeName: node.name,
-                        runId,
-                        status: "success",
-                    },
-                    { source: "system" }
-                );
-                return;
-            }
-
-            await bus.publish(
-                "node:parallel:ended",
-                {
-                    duration: Date.now() - parallelStart,
-                    errors: outcome.errors,
-                    flowName,
-                    nodeName: node.name,
-                    runId,
-                    status: "failed",
-                },
-                { source: "system" }
-            );
-            throw outcome.errors[0];
-        }
-
-        await bus.publish(
-            "node:parallel:ended",
-            { duration: Date.now() - parallelStart, flowName, nodeName: node.name, runId, status: "success" },
-            { source: "system" }
-        );
+        await finalizeContainerOutcome({
+            bus,
+            topic: "node:parallel:ended",
+            basePayload: { duration: Date.now() - parallelStart, flowName, nodeName: node.name, runId },
+            outcome,
+            onError: node.onError,
+        });
     } finally {
         cleanup();
     }
@@ -571,53 +572,20 @@ async function executeEvery(
             effectiveConcurrency
         );
 
-        if (outcome.errors.length > 0) {
-            if (node.onError === "continue") {
-                await bus.publish(
-                    "node:every:ended",
-                    {
-                        duration: Date.now() - everyStart,
-                        errors: outcome.errors,
-                        failedIndexes: outcome.failedIndexes,
-                        flowName,
-                        nodeName: node.name,
-                        runId,
-                        status: "success",
-                        totalItems: items.length,
-                    },
-                    { source: "system" }
-                );
-                return;
-            }
-
-            await bus.publish(
-                "node:every:ended",
-                {
-                    duration: Date.now() - everyStart,
-                    errors: outcome.errors,
-                    flowName,
-                    nodeName: node.name,
-                    runId,
-                    status: "failed",
-                    totalItems: items.length,
-                },
-                { source: "system" }
-            );
-            throw outcome.errors[0];
-        }
-
-        await bus.publish(
-            "node:every:ended",
-            {
+        await finalizeContainerOutcome({
+            bus,
+            topic: "node:every:ended",
+            basePayload: {
                 duration: Date.now() - everyStart,
                 flowName,
                 nodeName: node.name,
                 runId,
-                status: "success",
                 totalItems: items.length,
             },
-            { source: "system" }
-        );
+            outcome,
+            onError: node.onError,
+            includeFailedIndexesOnContinue: true,
+        });
     } finally {
         cleanup();
     }

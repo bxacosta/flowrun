@@ -1,11 +1,11 @@
 import {
     flow as coreFlow,
     shape as coreShape,
-    type EmptyObject,
-    type EventMap,
     type FlowBuilder,
     type Shape,
     type ShapeFactory,
+    type WithEvents,
+    type WithProvided,
 } from "@flowrun/core";
 
 import { createBrowserExtension } from "../extension/browser-extension.ts";
@@ -21,13 +21,10 @@ export interface BrowserShape extends Shape {
     provided: BrowserProvidedContext;
 }
 
-type WithBrowser<TShape extends Shape> = Omit<TShape, "events" | "provided"> & {
-    events: BrowserEventPayloads & (TShape extends { events: infer E extends EventMap } ? E : EmptyObject);
-    provided: BrowserProvidedContext & (TShape extends { provided: infer P extends object } ? P : EmptyObject);
-};
+type WithBrowser<TShape extends Shape> = WithProvided<WithEvents<TShape, BrowserEventPayloads>, BrowserProvidedContext>;
 
 function browserFlow(name: string): FlowBuilder<BrowserShape> {
-    return coreFlow(name) as unknown as FlowBuilder<BrowserShape>;
+    return coreFlow<BrowserShape>(name);
 }
 
 function browserShape<TShape extends Shape = BrowserShape>(): ShapeFactory<WithBrowser<TShape>> {

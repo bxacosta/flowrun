@@ -6,6 +6,7 @@ import { FileStorageProvider, JsonSelectorRegistry, LocalBrowserProvider } from 
  * Base URL for the local test app described in
  * packages/browser/docs/test-app-spec.md. Override with TEST_APP_URL.
  */
+// biome-ignore lint/complexity/useLiteralKeys: TS strict mode requires bracket access for env index signature
 export const BASE_URL = process.env["TEST_APP_URL"] ?? "http://localhost:5173";
 
 /**
@@ -13,6 +14,7 @@ export const BASE_URL = process.env["TEST_APP_URL"] ?? "http://localhost:5173";
  * the first run() call hits provider.open(). Set HEADLESS=0 to watch.
  */
 export const provider = new LocalBrowserProvider({
+    // biome-ignore lint/complexity/useLiteralKeys: TS strict mode requires bracket access for env index signature
     headless: process.env["HEADLESS"] !== "0",
 });
 
