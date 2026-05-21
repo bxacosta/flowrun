@@ -29,7 +29,7 @@ const taskShowcase = flow("task-showcase")
         task({
             name: "sync-step",
             run: (context) => {
-                context.state.set("steps", [...context.state.get("steps"), "sync-ok"]);
+                context.state.append("steps", "sync-ok");
             },
         }),
 
@@ -38,7 +38,7 @@ const taskShowcase = flow("task-showcase")
             name: "async-step",
             run: async (context) => {
                 await delay(10);
-                context.state.set("steps", [...context.state.get("steps"), "async-ok"]);
+                context.state.append("steps", "async-ok");
             },
         }),
 
@@ -51,7 +51,7 @@ const taskShowcase = flow("task-showcase")
                     constantFails--;
                     throw new Error("flaky");
                 }
-                context.state.set("steps", [...context.state.get("steps"), `constant-ok@${context.attempt}`]);
+                context.state.append("steps", `constant-ok@${context.attempt}`);
             },
         }),
 
@@ -72,7 +72,7 @@ const taskShowcase = flow("task-showcase")
                     exponentialFails--;
                     throw new Error("connection timeout");
                 }
-                context.state.set("steps", [...context.state.get("steps"), `exponential-ok@${context.attempt}`]);
+                context.state.append("steps", `exponential-ok@${context.attempt}`);
             },
         }),
 
@@ -102,7 +102,7 @@ const taskShowcase = flow("task-showcase")
         task({
             name: "after-skip",
             run: (context) => {
-                context.state.set("steps", [...context.state.get("steps"), "after-skip-ok"]);
+                context.state.append("steps", "after-skip-ok");
             },
         }),
     ]);

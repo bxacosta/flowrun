@@ -2,40 +2,40 @@
  * 07-requests.ts — Requests
  *
  * Covers:
- *  - defineRequest<TPayload, TResponse>() — portable typed request definitions
+ *  - request<TPayload, TResponse>() — portable typed request definitions
  *  - context.request(definition, payload, options?) inside a task
  *  - engine.requests.on(definition, handler) typed responder subscription
  *  - request.respond(response) typed answer from external code
  *  - Discriminated response types (multi-shape responses)
  *  - redact() hides secrets in bus events while keeping the actual response
  *  - timeout -> RequestTimeoutError
- *  - options.key for idempotent prompts across task retries
+ *  - options.dedupeKey for idempotent prompts across task retries
  *  - handle.cancel() rejects pending requests with RequestCancelledError
  *
  * Demos 1 and 3 prompt the user interactively on a TTY; in non-interactive
  * contexts they fall back to an auto-answer so the example still completes.
  */
 
-import { createEngine, defineRequest, flow, RequestTimeoutError } from "@flowrun/core";
+import { createEngine, flow, RequestTimeoutError, request } from "@flowrun/core";
 import { isInteractive, log, prompt, title } from "./shared/helpers.ts";
 import { subscriber } from "./shared/subscriber.ts";
 
 // ── Request definitions (portable tokens) ──────────────────────────
-// Each defineRequest() is a plain value carrying payload/response types.
+// Each request() is a plain value carrying payload/response types.
 // The flow imports it to ask; the responder imports the same token to
 // answer with full type safety.
 
-const toolApproval = defineRequest<
+const toolApproval = request<
     { args: Record<string, unknown>; toolName: string },
     { decision: "allow" | "deny"; note?: string }
 >({ name: "tool-approval" });
 
-const outputReview = defineRequest<
+const outputReview = request<
     { draft: string },
     { action: "approve" } | { action: "edit"; revised: string } | { action: "reject"; reason: string }
 >({ name: "output-review" });
 
-const credentialsRequest = defineRequest<{ service: string }, { apiKey: string }>({
+const credentialsRequest = request<{ service: string }, { apiKey: string }>({
     name: "credentials",
     // redact runs only when the manager emits events. The promise returned
     // by context.request still resolves to the full response — only event
@@ -49,11 +49,11 @@ const credentialsRequest = defineRequest<{ service: string }, { apiKey: string }
     },
 });
 
-const mfaCodeRequest = defineRequest<{ destination: string }, { code: string }>({
+const mfaCodeRequest = request<{ destination: string }, { code: string }>({
     name: "mfa-code",
 });
 
-const routingDecision = defineRequest<{ question: string }, { route: "yes" | "no" }>({
+const routingDecision = request<{ question: string }, { route: "yes" | "no" }>({
     name: "routing",
 });
 
@@ -129,7 +129,7 @@ const mfaFlow = flow("mfa")
             onError: "skip",
             run: async (context) => {
                 try {
-                    await context.request(mfaCodeRequest, { destination: "+1-555-0100" }, { timeout: 60 });
+                    await context.request(mfaCodeRequest, { destination: "+1-555-0100" }, { timeoutMs: 60 });
                     context.state.set("outcome", "received");
                 } catch (error) {
                     if (error instanceof RequestTimeoutError) {
@@ -153,7 +153,7 @@ const flakyDecisionFlow = flow("flaky-decision")
                 const decision = await context.request(
                     routingDecision,
                     { question: "deploy to production?" },
-                    { key: "deploy" }
+                    { dedupeKey: "deploy" }
                 );
                 context.state.patch({ answered: decision.route, finalAttempt: context.attempt });
                 if (context.attempt < 3) {
@@ -183,7 +183,7 @@ subscriber(engine.bus);
 // ── Responders ─────────────────────────────────────────────────────
 // Responders are registered with the typed token, so payload and response
 // are fully type-checked. They can live anywhere — CLI prompt, web UI,
-// webhook handler — and read the same `defineRequest` token the flow uses.
+// webhook handler — and read the same `request` token the flow uses.
 
 engine.requests.on(toolApproval, async (request) => {
     if (request.flowName === "blocked") {

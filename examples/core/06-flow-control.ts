@@ -22,19 +22,17 @@ import { subscriber } from "./shared/subscriber.ts";
 const browserExtension = (browser: Browser) =>
     extension({
         name: "browser",
-        resource: {
-            provide() {
-                return {
-                    provided: { browser },
-                    cleanup: (outcome) => {
-                        log(`  [browser] extension disposed (run ended ${outcome.status})`);
-                    },
-                };
-            },
+        provide() {
+            return {
+                provided: { browser },
+                cleanup: (outcome) => {
+                    log(`  [browser] extension disposed (run ended ${outcome.status})`);
+                },
+            };
         },
     });
 
-interface BrowserContract {
+interface BrowserShape {
     provided: {
         browser: Browser;
     };
@@ -55,7 +53,7 @@ const pipeline = flow("data-pipeline")
             name: "fetch",
             run: async (context) => {
                 await simulateWork(80, context.signal);
-                context.state.set("steps", [...context.state.get("steps"), "fetch"]);
+                context.state.append("steps", "fetch");
             },
         }),
         parallel({
@@ -66,14 +64,14 @@ const pipeline = flow("data-pipeline")
                     name: "validate",
                     run: async (context) => {
                         await simulateWork(60, context.signal);
-                        context.state.set("steps", [...context.state.get("steps"), "validate"]);
+                        context.state.append("steps", "validate");
                     },
                 }),
                 task({
                     name: "enrich",
                     run: async (context) => {
                         await simulateWork(60, context.signal);
-                        context.state.set("steps", [...context.state.get("steps"), "enrich"]);
+                        context.state.append("steps", "enrich");
                     },
                 }),
             ],
@@ -82,7 +80,7 @@ const pipeline = flow("data-pipeline")
             name: "save",
             run: async (context) => {
                 await simulateWork(50, context.signal);
-                context.state.set("steps", [...context.state.get("steps"), "save"]);
+                context.state.append("steps", "save");
             },
         }),
     ]);
@@ -147,7 +145,7 @@ log("steps:", result3.state.steps);
 const months = ["2024-01", "2024-02", "2024-03", "2024-04"];
 
 const scrapeFlow = shape<
-    BrowserContract & {
+    BrowserShape & {
         state: {
             scraped: { month: string; pageId: number }[];
         };
@@ -204,7 +202,7 @@ for (const entry of scrapeResult.state.scraped) {
 // ── Flow: parallel + resource (per-branch browser pages) ────────────
 
 const parallelScrape = shape<
-    BrowserContract & {
+    BrowserShape & {
         state: {
             invoicePage: number;
             reportPage: number;

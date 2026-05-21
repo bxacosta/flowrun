@@ -5,8 +5,7 @@
  *  - extension() with public and internal events
  *  - eventPublic<T>() vs eventInternal<T>() (visibility markers)
  *  - Extension config factory, provided context, cleanup()
- *  - defineModule() to bundle extensions + flows for distribution
- *  - engine.use() chains extensions and modules; bufferSize via engine config
+ *  - engine.use() chains extensions; bufferSize via engine config
  *  - subscribe(), on() (pattern: *, **), waitFor(), history()
  *  - Subscription options: priority, filter, subscriberId, once
  *  - subscription.unsubscribe()
@@ -14,7 +13,7 @@
  */
 
 import type { EngineEvents, Envelope, ReadableBus, Subscription } from "@flowrun/core";
-import { createEngine, defineModule, eventInternal, eventPublic, extension, shape } from "@flowrun/core";
+import { createEngine, eventInternal, eventPublic, extension, shape } from "@flowrun/core";
 import { log, title } from "./shared/helpers.ts";
 
 // ── Extension 1: database — config factory + provided context ───────
@@ -26,28 +25,26 @@ const databaseExtension = (config: { connectionString: string }) =>
             "db:connected": eventInternal<{ poolSize: number }>(),
             "db:query": eventPublic<{ duration: number; sql: string }>(),
         },
-        resource: {
-            provide: async (context) => {
-                context.log.info(`Connecting to ${config.connectionString}`);
-                await context.bus.publish("db:connected", { poolSize: 10 }, { source: "database" });
+        provide: async (context) => {
+            context.log.info(`Connecting to ${config.connectionString}`);
+            await context.bus.publish("db:connected", { poolSize: 10 }, { source: "database" });
 
-                return {
-                    provided: {
-                        db: {
-                            query: async <TRow>(sql: string): Promise<TRow[]> => {
-                                const start = Date.now();
-                                const result: TRow[] = [];
-                                await context.bus.publish(
-                                    "db:query",
-                                    { duration: Date.now() - start, sql },
-                                    { source: "database" }
-                                );
-                                return result;
-                            },
+            return {
+                provided: {
+                    db: {
+                        query: async <TRow>(sql: string): Promise<TRow[]> => {
+                            const start = Date.now();
+                            const result: TRow[] = [];
+                            await context.bus.publish(
+                                "db:query",
+                                { duration: Date.now() - start, sql },
+                                { source: "database" }
+                            );
+                            return result;
                         },
                     },
-                };
-            },
+                },
+            };
         },
     });
 
@@ -59,42 +56,40 @@ const metricsExtension = () =>
         events: {
             "metrics:flushed": eventPublic<{ count: number }>(),
         },
-        resource: {
-            provide(context) {
-                const counters = new Map<string, number>();
+        provide(context) {
+            const counters = new Map<string, number>();
 
-                // Cross-extension listening: react to db:query events from the database extension
-                const subscription = context.bus.on("db:query", (envelope) => {
-                    counters.set("db.queries", (counters.get("db.queries") ?? 0) + 1);
-                    const payload = envelope.payload as { sql: string };
-                    context.log.info(`metric recorded for query: ${payload.sql}`);
-                });
+            // Cross-extension listening: react to db:query events from the database extension
+            const subscription = context.bus.on("db:query", (envelope) => {
+                counters.set("db.queries", (counters.get("db.queries") ?? 0) + 1);
+                const payload = envelope.payload as { sql: string };
+                context.log.info(`metric recorded for query: ${payload.sql}`);
+            });
 
-                return {
-                    provided: {
-                        metrics: {
-                            counter: (name: string, value = 1) => {
-                                counters.set(name, (counters.get(name) ?? 0) + value);
-                            },
-                            flush: async () => {
-                                const count = counters.size;
-                                context.log.info(`Flushed ${count} metrics`);
-                                await context.bus.publish("metrics:flushed", { count }, { source: "metrics" });
-                            },
+            return {
+                provided: {
+                    metrics: {
+                        counter: (name: string, value = 1) => {
+                            counters.set(name, (counters.get(name) ?? 0) + value);
+                        },
+                        flush: async () => {
+                            const count = counters.size;
+                            context.log.info(`Flushed ${count} metrics`);
+                            await context.bus.publish("metrics:flushed", { count }, { source: "metrics" });
                         },
                     },
-                    cleanup: (outcome) => {
-                        subscription.unsubscribe();
-                        log(`  [metrics] disposed (run ended ${outcome.status})`);
-                    },
-                };
-            },
+                },
+                cleanup: (outcome) => {
+                    subscription.unsubscribe();
+                    log(`  [metrics] disposed (run ended ${outcome.status})`);
+                },
+            };
         },
     });
 
 // ── Flow: uses extension-provided context ───────────────────────────
 
-interface SyncContract {
+interface SyncShape {
     events: {
         "db:query": { duration: number; sql: string };
         "metrics:flushed": { count: number };
@@ -110,7 +105,7 @@ interface SyncContract {
     state: { fetched: number; source: string };
 }
 
-const sync = shape<SyncContract>();
+const sync = shape<SyncShape>();
 
 const syncFlow = sync
     .flow("sync-data")
@@ -137,14 +132,6 @@ const syncFlow = sync
         }),
     ]);
 
-// ── Module: bundle of extensions + flows ────────────────────────────
-
-const syncModule = defineModule({
-    name: "sync-module",
-    extensions: [databaseExtension({ connectionString: "postgresql://localhost/mydb" }), metricsExtension()],
-    flows: [syncFlow],
-});
-
 // ── Engine: bufferSize for history(), onError for bus failures ──────
 
 const engine = createEngine({
@@ -154,7 +141,9 @@ const engine = createEngine({
             log(`  [bus error] phase=${context.phase}: ${error.message}`);
         },
     },
-}).use(syncModule);
+})
+    .use(databaseExtension({ connectionString: "postgresql://localhost/mydb" }))
+    .use(metricsExtension());
 
 // ── Standalone subscriber — reusable, externalizable ────────────────
 
@@ -228,8 +217,7 @@ engine.bus.subscribe(
 title("Extensions + modules + event bus");
 
 const flushPromise = engine.bus.waitFor("metrics:flushed", { timeout: 5000 });
-// syncFlow is registered via the module — look it up by name (type-erased).
-const result = await engine.flow("sync-data").run({ source: "users" });
+const result = await engine.run(syncFlow, { source: "users" });
 const flushEnvelope = await flushPromise;
 
 log(`\nwaitFor resolved: ${flushEnvelope.payload.count} metrics`);

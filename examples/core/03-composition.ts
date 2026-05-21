@@ -25,9 +25,9 @@
 import { createEngine, shape } from "@flowrun/core";
 import { delay, log, title } from "./shared/helpers.ts";
 
-// ── Shared contract & state ─────────────────────────────────────────
+// ── Shared shape & state ─────────────────────────────────────────────
 
-interface PipelineContract {
+interface PipelineShape {
     state: PipelineState;
 }
 
@@ -40,7 +40,7 @@ interface PipelineState {
     smokeTests: string[];
 }
 
-const pipeline = shape<PipelineContract>();
+const pipeline = shape<PipelineShape>();
 
 const initialState = (): PipelineState => ({
     compiled: [],

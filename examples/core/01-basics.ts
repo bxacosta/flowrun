@@ -3,22 +3,21 @@
  *
  * Covers:
  *  - flow(name) builder: chainable .params / .state / .nodes
- *  - createEngine(), engine.run(flow), engine.register(flow), engine.flow(name)
+ *  - createEngine(), engine.run(flow), engine.register(flow), engine.getFlow(name)
  *  - typed params and state propagating to handler contexts
  *  - context.state (get, set, patch, snapshot, has)
  *  - context.params, context.log
  *  - FlowResult discrimination (success, failed, cancelled)
  *  - engine.flows() (list registered flows)
- *  - shape<TContract>() for reusable typed nodes shared across files
+ *  - shape<TShape>() for reusable typed nodes shared across files
  */
 
-import { createEngine, flow, type Node, type ScopeFromShape, shape } from "@flowrun/core";
+import { createEngine, flow, type Node, shape } from "@flowrun/core";
 import { log, title } from "./shared/helpers.ts";
 
 // ─────────────────────────────────────────────────────────────────────
 // Flow 1: no params, no state — the simplest possible flow
 // ─────────────────────────────────────────────────────────────────────
-
 const healthCheck = flow("health-check").nodes(({ task }) => [
     task({
         name: "ping",
@@ -31,7 +30,6 @@ const healthCheck = flow("health-check").nodes(({ task }) => [
 // ─────────────────────────────────────────────────────────────────────
 // Flow 2: typed params, no state
 // ─────────────────────────────────────────────────────────────────────
-
 const notify = flow("notify")
     .params<{ channel: string; message: string }>()
     .nodes(({ task }) => [
@@ -46,7 +44,6 @@ const notify = flow("notify")
 // ─────────────────────────────────────────────────────────────────────
 // Flow 3: params + state derived from params (callback form)
 // ─────────────────────────────────────────────────────────────────────
-
 const processOrder = flow("process-order")
     .params<{ orderId: string }>()
     .state((params) => ({
@@ -147,17 +144,17 @@ const riskyFlow = flow("risky")
     ]);
 
 // ─────────────────────────────────────────────────────────────────────
-// Flow 7: shape<TContract>() — reusable nodes typed against a contract
+// Flow 7: shape<TShape>() — reusable nodes typed against a shape
 // ─────────────────────────────────────────────────────────────────────
 
-interface ReportContract {
+interface ReportShape {
     params: { title: string };
     state: { generated: boolean };
 }
 
-const report = shape<ReportContract>();
+const report = shape<ReportShape>();
 
-const generateTask: Node<ScopeFromShape<ReportContract>> = report.task({
+const generateTask: Node<ReportShape> = report.task({
     name: "generate",
     run: (context) => {
         context.state.set("generated", true);
@@ -174,7 +171,7 @@ const engine = createEngine();
 // ── Run ─────────────────────────────────────────────────────────────
 // engine.run(def, params?) is the typed shortcut for one-shot execution.
 // engine.register(def) returns a typed Flow handle and adds it to the registry.
-// engine.flow(name) does dynamic by-name lookup (throws FlowNotRegisteredError if missing).
+// engine.getFlow(name) does dynamic by-name lookup (throws FlowNotRegisteredError if missing).
 
 title("1 - No params, no state");
 const healthResult = await engine.run(healthCheck);
@@ -216,9 +213,9 @@ title("7 - Reusable shaped definitions");
 const reportResult = await engine.run(reportFlow, { title: "Monthly Sales" });
 log(`Status: ${reportResult.status}, generated=${reportResult.state.generated}`);
 
-title("8 - engine.register() + engine.flow(name) for by-name dispatch");
+title("8 - engine.register() + engine.getFlow(name) for by-name dispatch");
 const registeredHealth = engine.register(healthCheck);
 log(`Registered: ${registeredHealth.name}`);
 log("All registered flows:", engine.flows());
-const runByName = await engine.flow("health-check").run({});
+const runByName = await engine.getFlow("health-check").run({});
 log(`Run by name: ${runByName.status}`);

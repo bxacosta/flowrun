@@ -2,10 +2,9 @@
  * 04-middleware.ts — Middleware
  *
  * Covers:
- *  - Universal middleware: a Middleware<FlowContext> / Middleware<TaskContext>
- *    value that works in any flow
- *  - Shape-typed middleware: shape.flowMiddleware / shape.taskMiddleware,
- *    which gives typed access to the shape's params/state inside the handler
+ *  - middleware(): single factory for universal and shape-typed middleware
+ *  - Universal: context typed as FlowContext or TaskContext (works in any flow)
+ *  - Shape-typed: context typed as FlowContext<TShape> or TaskContext<TShape>
  *  - Patterns: transaction wrap, timing, feature flag (short-circuit),
  *    skip-if-condition
  *  - Composition order: outer -> inner around next()
@@ -13,7 +12,7 @@
  * Retry, onError and other node options live in 02-nodes.ts.
  */
 
-import { createEngine, type FlowContext, type Middleware, shape, type TaskContext } from "@flowrun/core";
+import { createEngine, type FlowContext, middleware, shape, type TaskContext } from "@flowrun/core";
 import { delay, log, title } from "./shared/helpers.ts";
 import { subscriber } from "./shared/subscriber.ts";
 
@@ -29,12 +28,12 @@ interface OrderState {
     validated: boolean;
 }
 
-interface OrderContract {
+interface OrderShape {
     params: OrderParams;
     state: OrderState;
 }
 
-const order = shape<OrderContract>();
+const order = shape<OrderShape>();
 
 // ── Stubs ──────────────────────────────────────────────────────────
 
@@ -49,12 +48,10 @@ function beginTransaction(): Promise<{
 }
 
 // ── Universal flow middleware (works in any flow) ──────────────────
-// Typed against the base FlowContext, so it stays assignable to any
-// flow's middleware slot regardless of its params/state shape.
 
-const withTransaction: Middleware<FlowContext> = {
+const withTransaction = middleware({
     name: "with-transaction",
-    run: async (context, next) => {
+    run: async (context: FlowContext, next) => {
         const transaction = await beginTransaction();
         context.log.info("transaction started");
         try {
@@ -67,46 +64,46 @@ const withTransaction: Middleware<FlowContext> = {
             throw error;
         }
     },
-};
+});
 
-const flowTiming: Middleware<FlowContext> = {
+const flowTiming = middleware({
     name: "flow-timing",
-    run: async (context, next) => {
+    run: async (context: FlowContext, next) => {
         const start = Date.now();
         await next();
         context.log.info(`flow completed in ${Date.now() - start}ms`);
     },
-};
+});
 
 let featureEnabled = true;
 
-const featureFlag: Middleware<FlowContext> = {
+const featureFlag = middleware({
     name: "feature-flag",
-    run: async (context, next) => {
+    run: async (context: FlowContext, next) => {
         if (!featureEnabled) {
             context.log.info(`flow "${context.flowName}" disabled by feature flag - skipping`);
             return; // short-circuit: does not call next()
         }
         await next();
     },
-};
+});
 
 // ── Universal task middleware (works in any task) ──────────────────
 
-const taskTiming: Middleware<TaskContext> = {
+const taskTiming = middleware({
     name: "task-timing",
-    run: async (context, next) => {
+    run: async (context: TaskContext, next) => {
         const start = Date.now();
         await next();
         context.log.info(`task "${context.nodeName}": ${Date.now() - start}ms`);
     },
-};
+});
 
 // ── Shape-typed flow middleware (typed access to params/state) ────
 
-const orderAuditor = order.flowMiddleware({
+const orderAuditor = middleware({
     name: "order-auditor",
-    run: async (context, next) => {
+    run: async (context: FlowContext<OrderShape>, next) => {
         context.log.info(`audit start: order ${context.params.orderId}`);
         await next();
         const charged = context.state.get("charged");
@@ -122,9 +119,9 @@ const orderAuditor = order.flowMiddleware({
 
 // ── Shape-typed task middleware (typed access to state) ───────────
 
-const skipIfCharged = order.taskMiddleware({
+const skipIfCharged = middleware({
     name: "skip-if-charged",
-    run: async (context, next) => {
+    run: async (context: TaskContext<OrderShape>, next) => {
         if (context.state.get("charged")) {
             context.log.info(`skipping "${context.nodeName}" - order already charged`);
             return;
@@ -186,10 +183,10 @@ log("\nFinal state:", result1.state);
 log(`Tasks: ${result1.tasks.map((result) => `${result.nodeName}(${result.status})`).join(", ")}`);
 
 // ── Run 2: feature disabled — flow short-circuited by middleware ──
-// engine.flow(name) is the dynamic by-name path (type-erased).
+// engine.getFlow(name) is the dynamic by-name path (type-erased).
 
 title("Run 2 - Feature disabled (short-circuit, by name)");
 featureEnabled = false;
-const result2 = await engine.flow("order-pipeline").run({ orderId: "ORD-002" });
+const result2 = await engine.getFlow("order-pipeline").run({ orderId: "ORD-002" });
 log("\nFinal state:", result2.state);
 log(`Duration: ${result2.duration}ms`);
