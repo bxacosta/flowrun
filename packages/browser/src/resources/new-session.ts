@@ -19,9 +19,9 @@ export interface NewSessionOptions extends OpenOptions {
 }
 
 // Structural type listing only the parent-context fields this adapter reads.
-// Because NewSessionContext has fewer fields than any ItemsContext<TScope> the
+// Because NewSessionContext has fewer fields than any ItemsContext<TShape> the
 // caller will pass, it is a supertype — so this resource is assignable to
-// both EveryResourceConfig and ParallelResourceConfig regardless of TScope.
+// both EveryResourceConfig and ParallelResourceConfig regardless of TShape.
 interface NewSessionContext {
     bus: BrowserBus;
     provider: BrowserProvider;

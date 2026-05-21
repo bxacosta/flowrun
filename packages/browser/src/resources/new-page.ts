@@ -18,9 +18,9 @@ export interface NewPageOptions {
 }
 
 // Structural type listing only the parent-context fields this adapter reads.
-// Because NewPageContext has fewer fields than any ItemsContext<TScope> the
+// Because NewPageContext has fewer fields than any ItemsContext<TShape> the
 // caller will pass, it is a supertype — so this resource is assignable to
-// both EveryResourceConfig and ParallelResourceConfig regardless of TScope.
+// both EveryResourceConfig and ParallelResourceConfig regardless of TShape.
 interface NewPageContext {
     bus: BrowserBus;
     session: BrowserSession;

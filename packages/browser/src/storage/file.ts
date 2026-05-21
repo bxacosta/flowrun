@@ -69,7 +69,7 @@ export class FileStorageProvider implements StorageProvider {
         } catch (error) {
             throw new StorageError("readStream", key, undefined, error);
         }
-        return Readable.toWeb(createReadStream(absolute)) as ReadableStream<Uint8Array>;
+        return Readable.toWeb(createReadStream(absolute)) as unknown as ReadableStream<Uint8Array>;
     }
 
     async head(key: string): Promise<StorageObjectInfo> {

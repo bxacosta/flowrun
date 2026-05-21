@@ -11,8 +11,8 @@ export type {
     Locator,
     Page,
 } from "playwright-core";
-export type { BrowserRootScope, BrowserScope, NewPageOptions, NewSessionOptions } from "./api/define.ts";
-// Define namespace
+export type { BrowserShape, NewPageOptions, NewSessionOptions } from "./api/define.ts";
+// Public API namespace
 export { browser } from "./api/define.ts";
 export type { BrowserEngine, CreateBrowserEngineConfig } from "./api/engine.ts";
 // Engine
