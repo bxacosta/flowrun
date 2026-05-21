@@ -1,0 +1,17 @@
+{
+  "$schema": "https://www.schemastore.org/tsconfig",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Emit
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rewriteRelativeImportExtensions": true,
+
+    // Project
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}
