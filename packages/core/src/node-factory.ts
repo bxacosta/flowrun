@@ -9,17 +9,17 @@ import type {
     RetryConfig,
     TaskErrorMode,
 } from "./node.ts";
-import type { AnyScope, IterationScope, WithProvided } from "./scope.ts";
+import type { Shape, WithIteration, WithProvided } from "./shape.ts";
 import type { MergeStrategy } from "./state.ts";
 import type { MaybePromise } from "./utils.ts";
 import { assertUniqueNodeNames } from "./validation.ts";
 
-export interface TaskConfig<TScope extends AnyScope> {
-    middleware?: NoInfer<Middleware<TaskContext<TScope>>>[];
+export interface TaskConfig<TShape extends Shape> {
+    middleware?: NoInfer<Middleware<TaskContext<TShape>>>[];
     name: string;
     onError?: TaskErrorMode;
     retry?: RetryConfig;
-    run: (context: TaskContext<TScope>) => MaybePromise<void>;
+    run: (context: TaskContext<TShape>) => MaybePromise<void>;
 }
 
 export interface ParallelOptions {
@@ -27,21 +27,21 @@ export interface ParallelOptions {
     onError?: ContainerErrorMode;
 }
 
-export interface ParallelResourceConfig<TScope extends AnyScope, TLocal extends object> {
-    cleanup?: (context: ItemsContext<WithProvided<TScope, TLocal>>, meta: ParallelMeta) => MaybePromise<void>;
-    provide: (context: ItemsContext<TScope>, meta: ParallelMeta) => MaybePromise<TLocal>;
+export interface ParallelResourceConfig<TShape extends Shape, TLocal extends object> {
+    cleanup?: (context: ItemsContext<WithProvided<TShape, TLocal>>, meta: ParallelMeta) => MaybePromise<void>;
+    provide: (context: ItemsContext<TShape>, meta: ParallelMeta) => MaybePromise<TLocal>;
 }
 
-export type ParallelConfig<TScope extends AnyScope> = ParallelOptions & {
+export type ParallelConfig<TShape extends Shape> = ParallelOptions & {
     name: string;
-    nodes: NodesSpec<TScope>;
+    nodes: NodesSpec<TShape>;
     resource?: never;
 };
 
-export type ParallelConfigWithResource<TScope extends AnyScope, TLocal extends object> = ParallelOptions & {
+export type ParallelConfigWithResource<TShape extends Shape, TLocal extends object> = ParallelOptions & {
     name: string;
-    nodes: NodesSpec<WithProvided<TScope, TLocal>>;
-    resource: ParallelResourceConfig<TScope, TLocal>;
+    nodes: NodesSpec<WithProvided<TShape, TLocal>>;
+    resource: ParallelResourceConfig<TShape, TLocal>;
 };
 
 export interface EveryOptions {
@@ -50,38 +50,38 @@ export interface EveryOptions {
     onError?: ContainerErrorMode;
 }
 
-export interface EveryResourceConfig<TScope extends AnyScope, TItem, TLocal extends object> {
+export interface EveryResourceConfig<TShape extends Shape, TItem, TLocal extends object> {
     cleanup?: (
-        context: ItemsContext<WithProvided<IterationScope<TScope, TItem>, TLocal>>,
+        context: ItemsContext<WithProvided<WithIteration<TShape, TItem>, TLocal>>,
         meta: EveryMeta<TItem>
     ) => MaybePromise<void>;
-    provide: (context: ItemsContext<IterationScope<TScope, TItem>>, meta: EveryMeta<TItem>) => MaybePromise<TLocal>;
+    provide: (context: ItemsContext<WithIteration<TShape, TItem>>, meta: EveryMeta<TItem>) => MaybePromise<TLocal>;
 }
 
-export type EveryConfig<TScope extends AnyScope, TItem> = EveryOptions & {
-    items: (context: ItemsContext<TScope>) => readonly TItem[];
+export type EveryConfig<TShape extends Shape, TItem> = EveryOptions & {
+    items: (context: ItemsContext<TShape>) => readonly TItem[];
     name: string;
-    nodes: NodesSpec<IterationScope<TScope, TItem>>;
+    nodes: NodesSpec<WithIteration<TShape, TItem>>;
     resource?: never;
 };
 
-export type EveryConfigWithResource<TScope extends AnyScope, TItem, TLocal extends object> = EveryOptions & {
-    items: (context: ItemsContext<TScope>) => readonly TItem[];
+export type EveryConfigWithResource<TShape extends Shape, TItem, TLocal extends object> = EveryOptions & {
+    items: (context: ItemsContext<TShape>) => readonly TItem[];
     name: string;
-    nodes: NodesSpec<WithProvided<IterationScope<TScope, TItem>, TLocal>>;
-    resource: EveryResourceConfig<TScope, TItem, TLocal>;
+    nodes: NodesSpec<WithProvided<WithIteration<TShape, TItem>, TLocal>>;
+    resource: EveryResourceConfig<TShape, TItem, TLocal>;
 };
 
-export type NodesSpec<TScope extends AnyScope> =
-    | readonly Node<TScope>[]
-    | ((nodes: NodeFactory<TScope>) => readonly Node<TScope>[]);
+export type NodesSpec<TShape extends Shape> =
+    | readonly Node<TShape>[]
+    | ((nodes: NodeFactory<TShape>) => readonly Node<TShape>[]);
 
-export interface NodeFactory<TScope extends AnyScope> {
-    every<TItem>(config: EveryConfig<TScope, TItem>): Node<TScope>;
-    every<TItem, TLocal extends object>(config: EveryConfigWithResource<TScope, TItem, TLocal>): Node<TScope>;
-    parallel(config: ParallelConfig<TScope>): Node<TScope>;
-    parallel<TLocal extends object>(config: ParallelConfigWithResource<TScope, TLocal>): Node<TScope>;
-    task(config: TaskConfig<TScope>): Node<TScope>;
+export interface NodeFactory<TShape extends Shape> {
+    every<TItem>(config: EveryConfig<TShape, TItem>): Node<TShape>;
+    every<TItem, TLocal extends object>(config: EveryConfigWithResource<TShape, TItem, TLocal>): Node<TShape>;
+    parallel(config: ParallelConfig<TShape>): Node<TShape>;
+    parallel<TLocal extends object>(config: ParallelConfigWithResource<TShape, TLocal>): Node<TShape>;
+    task(config: TaskConfig<TShape>): Node<TShape>;
 }
 
 export interface MiddlewareConfig<TContext> {
@@ -89,12 +89,12 @@ export interface MiddlewareConfig<TContext> {
     run: (context: TContext, next: () => Promise<void>) => MaybePromise<void>;
 }
 
-export function resolveNodes<TScope extends AnyScope>(spec: NodesSpec<TScope>): Node<TScope>[] {
-    const nodes = typeof spec === "function" ? spec(createNodeFactory<TScope>()) : spec;
+export function resolveNodes<TShape extends Shape>(spec: NodesSpec<TShape>): Node<TShape>[] {
+    const nodes = typeof spec === "function" ? spec(createNodeFactory<TShape>()) : spec;
     return [...nodes];
 }
 
-export function buildTask<TScope extends AnyScope>(config: TaskConfig<TScope>): Node<TScope> {
+export function buildTask<TShape extends Shape>(config: TaskConfig<TShape>): Node<TShape> {
     return {
         middleware: config.middleware ?? [],
         name: config.name,
@@ -105,11 +105,11 @@ export function buildTask<TScope extends AnyScope>(config: TaskConfig<TScope>): 
     };
 }
 
-export function buildParallel<TScope extends AnyScope>(
-    config: ParallelConfig<TScope> | ParallelConfigWithResource<TScope, object>
-): Node<TScope> {
-    type ChildScope = TScope | WithProvided<TScope, object>;
-    const childNodes = resolveNodes(config.nodes as NodesSpec<ChildScope>);
+export function buildParallel<TShape extends Shape>(
+    config: ParallelConfig<TShape> | ParallelConfigWithResource<TShape, object>
+): Node<TShape> {
+    type ChildShape = TShape | WithProvided<TShape, object>;
+    const childNodes = resolveNodes(config.nodes as NodesSpec<ChildShape>);
     assertUniqueNodeNames(childNodes, config.name);
     return {
         merge: config.merge ?? "overwrite",
@@ -121,11 +121,11 @@ export function buildParallel<TScope extends AnyScope>(
     };
 }
 
-export function buildEvery<TScope extends AnyScope, TItem>(
-    config: EveryConfig<TScope, TItem> | EveryConfigWithResource<TScope, TItem, object>
-): Node<TScope> {
-    type ChildScope = IterationScope<TScope, TItem> | WithProvided<IterationScope<TScope, TItem>, object>;
-    const childNodes = resolveNodes(config.nodes as NodesSpec<ChildScope>);
+export function buildEvery<TShape extends Shape, TItem>(
+    config: EveryConfig<TShape, TItem> | EveryConfigWithResource<TShape, TItem, object>
+): Node<TShape> {
+    type ChildShape = WithIteration<TShape, TItem> | WithProvided<WithIteration<TShape, TItem>, object>;
+    const childNodes = resolveNodes(config.nodes as NodesSpec<ChildShape>);
     assertUniqueNodeNames(childNodes, config.name);
     return {
         concurrency: config.concurrency ?? Number.POSITIVE_INFINITY,
@@ -139,17 +139,17 @@ export function buildEvery<TScope extends AnyScope, TItem>(
     };
 }
 
-export function buildMiddleware<TContext>(config: MiddlewareConfig<TContext>): Middleware<TContext> {
+export function middleware<TContext>(config: MiddlewareConfig<TContext>): Middleware<TContext> {
     return { name: config.name, run: config.run };
 }
 
-export function createNodeFactory<TScope extends AnyScope>(): NodeFactory<TScope> {
+export function createNodeFactory<TShape extends Shape>(): NodeFactory<TShape> {
     return {
         every: buildEvery,
         parallel: buildParallel,
         task: buildTask,
-    };
+    } as unknown as NodeFactory<TShape>;
 }
 
-export type FlowMiddleware<TScope extends AnyScope> = Middleware<FlowContext<TScope>>;
-export type TaskMiddleware<TScope extends AnyScope> = Middleware<TaskContext<TScope>>;
+export type FlowMiddleware<TShape extends Shape> = Middleware<FlowContext<TShape>>;
+export type TaskMiddleware<TShape extends Shape> = Middleware<TaskContext<TShape>>;

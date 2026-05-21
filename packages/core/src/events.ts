@@ -88,7 +88,7 @@ export interface SystemInternalEvents {
     "request:cancelled": {
         flowName: string;
         id: string;
-        key?: string;
+        dedupeKey?: string;
         name: string;
         nodeName?: string;
         path: readonly string[];
@@ -98,7 +98,7 @@ export interface SystemInternalEvents {
     "request:created": {
         flowName: string;
         id: string;
-        key?: string;
+        dedupeKey?: string;
         metadata?: Record<string, unknown>;
         name: string;
         nodeName?: string;
@@ -110,7 +110,7 @@ export interface SystemInternalEvents {
     "request:expired": {
         flowName: string;
         id: string;
-        key?: string;
+        dedupeKey?: string;
         name: string;
         nodeName?: string;
         path: readonly string[];
@@ -120,7 +120,7 @@ export interface SystemInternalEvents {
     "request:responded": {
         flowName: string;
         id: string;
-        key?: string;
+        dedupeKey?: string;
         name: string;
         nodeName?: string;
         path: readonly string[];

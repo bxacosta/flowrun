@@ -4,6 +4,7 @@ import { assertPlainObject } from "./validation.ts";
 export type MergeStrategy = "append" | "overwrite" | "strict";
 
 export interface FlowStateStore<TState extends object> {
+    append<K extends keyof TState & string>(key: K, value: TState[K] extends (infer I)[] ? I : never): void;
     fork(): FlowStateStore<TState>;
     get<K extends keyof TState & string>(key: K): TState[K];
     getWrittenValues(): Map<string, unknown>;
@@ -11,6 +12,7 @@ export interface FlowStateStore<TState extends object> {
     patch(values: Partial<TState>): void;
     set<K extends keyof TState & string>(key: K, value: TState[K]): void;
     snapshot(): Readonly<TState>;
+    update<K extends keyof TState & string>(key: K, updater: (current: TState[K]) => TState[K]): void;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased state store for runtime orchestration
@@ -37,6 +39,12 @@ function createStore<TState extends object>(
     const writtenKeys = new Set<string>();
 
     const store: FlowStateStore<TState> = {
+        append(key, value) {
+            const current = store.get(key);
+            const next = Array.isArray(current) ? [...current, value] : [value];
+            store.set(key, next as TState[typeof key]);
+        },
+
         fork() {
             return createStore<TState>(new Map(), store);
         },
@@ -76,6 +84,10 @@ function createStore<TState extends object>(
         set(key, value) {
             data.set(key, structuredClone(value));
             writtenKeys.add(key);
+        },
+
+        update(key, updater) {
+            store.set(key, updater(store.get(key)));
         },
 
         snapshot() {

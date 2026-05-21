@@ -5,7 +5,7 @@ import type { Logger } from "./logger.ts";
 import type { TaskResult } from "./node.ts";
 import type { ContextRequest, RequestDefinition, RequestOptions } from "./request.ts";
 import type { RequestManager } from "./request-manager.ts";
-import type { AnyScope, Scope } from "./scope.ts";
+import type { AllEventsOf, IterationOf, ParamsOf, ProvidedOf, PublicEventsOf, Shape, StateOf } from "./shape.ts";
 import type { PauseGate } from "./signal.ts";
 import type { AnyFlowStateStore, FlowStateStore } from "./state.ts";
 import type { EmptyObject } from "./utils.ts";
@@ -19,16 +19,16 @@ export type ContextPublish<TPublicEvents extends EventMap> = <K extends keyof Do
     options?: { correlationId?: string; source?: string }
 ) => Promise<void>;
 
-export type BaseContext<TScope extends AnyScope = Scope> = TScope["_provided"] & {
-    bus: PublishableBus<TScope["_publicEvents"], TScope["_allEvents"]>;
+export type BaseContext<TShape extends Shape = Shape> = ProvidedOf<TShape> & {
+    bus: PublishableBus<PublicEventsOf<TShape>, AllEventsOf<TShape>>;
     flowName: string;
     log: Logger;
-    params: Readonly<TScope["_params"]>;
-    publish: ContextPublish<TScope["_publicEvents"]>;
+    params: Readonly<ParamsOf<TShape>>;
+    publish: ContextPublish<PublicEventsOf<TShape>>;
     request: ContextRequest;
     runId: string;
     signal: AbortSignal;
-    state: FlowStateStore<TScope["_state"]>;
+    state: FlowStateStore<StateOf<TShape>>;
 };
 
 type TaskExtras<TIteration = never> = {
@@ -37,9 +37,9 @@ type TaskExtras<TIteration = never> = {
     skip: (reason?: string) => never;
 } & IterationField<TIteration>;
 
-export type FlowContext<TScope extends AnyScope = Scope> = BaseContext<TScope>;
-export type ItemsContext<TScope extends AnyScope = Scope> = BaseContext<TScope> & IterationField<TScope["_iteration"]>;
-export type TaskContext<TScope extends AnyScope = Scope> = BaseContext<TScope> & TaskExtras<TScope["_iteration"]>;
+export type FlowContext<TShape extends Shape = Shape> = BaseContext<TShape>;
+export type ItemsContext<TShape extends Shape = Shape> = BaseContext<TShape> & IterationField<IterationOf<TShape>>;
+export type TaskContext<TShape extends Shape = Shape> = BaseContext<TShape> & TaskExtras<IterationOf<TShape>>;
 
 export interface FlowRuntime {
     bus: InternalBus<EventMap>;

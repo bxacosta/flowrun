@@ -20,21 +20,13 @@ import type {
     RunArgs,
 } from "./flow-runner.ts";
 import { runFlow, startFlow } from "./flow-runner.ts";
-import type {
-    AnyModuleDefinition,
-    ModuleDefinition,
-    ModuleInternalEvents,
-    ModuleProvided,
-    ModulePublicEvents,
-} from "./module.ts";
 import type { EngineRequests } from "./request.ts";
 import { createRequestManager } from "./request-manager.ts";
-import type { AnyScope } from "./scope.ts";
+import type { ParamsOf, ProvidedOf, Shape, StateOf } from "./shape.ts";
 import type { EmptyObject, MergeObjects } from "./utils.ts";
 
-type CompatibleFlow<TProvided extends object, TScope extends AnyScope> = TProvided extends TScope["_provided"]
-    ? FlowDefinition<TScope>
-    : never;
+type CompatibleFlow<TProvided extends object, TShape extends Shape> =
+    TProvided extends ProvidedOf<TShape> ? FlowDefinition<TShape> : never;
 
 export interface EngineConfig {
     events?: EventBusConfig;
@@ -43,25 +35,23 @@ export interface EngineConfig {
 export interface Engine<TProvided extends object, TPublicEvents extends EventMap, TAllEvents extends EventMap> {
     bus: ReadableBus<TAllEvents>;
 
-    flow(name: string): Flow<Record<string, unknown>, Record<string, unknown>>;
-
     flows(): readonly string[];
 
-    register<TScope extends AnyScope>(
-        flow: CompatibleFlow<TProvided, TScope>
-    ): Flow<TScope["_params"], TScope["_state"]>;
+    getFlow(name: string): Flow<Record<string, unknown>, Record<string, unknown>>;
+
+    register<TShape extends Shape>(flow: CompatibleFlow<TProvided, TShape>): Flow<ParamsOf<TShape>, StateOf<TShape>>;
 
     requests: EngineRequests;
 
-    run<TScope extends AnyScope>(
-        flow: CompatibleFlow<TProvided, TScope>,
-        ...args: RunArgs<TScope["_params"]>
-    ): Promise<FlowResult<TScope["_state"]>>;
+    run<TShape extends Shape>(
+        flow: CompatibleFlow<TProvided, TShape>,
+        ...args: RunArgs<ParamsOf<TShape>>
+    ): Promise<FlowResult<StateOf<TShape>>>;
 
-    start<TScope extends AnyScope>(
-        flow: CompatibleFlow<TProvided, TScope>,
-        ...args: RunArgs<TScope["_params"]>
-    ): Promise<FlowHandle<TScope["_state"]>>;
+    start<TShape extends Shape>(
+        flow: CompatibleFlow<TProvided, TShape>,
+        ...args: RunArgs<ParamsOf<TShape>>
+    ): Promise<FlowHandle<StateOf<TShape>>>;
 
     use<TExtension extends ExtensionDefinition<object, object, object>>(
         extension: TExtension
@@ -69,14 +59,6 @@ export interface Engine<TProvided extends object, TPublicEvents extends EventMap
         MergeObjects<TProvided, ExtensionProvided<TExtension>>,
         MergePublicEvents<TPublicEvents, ExtensionPublicEvents<TExtension>>,
         MergeAllEvents<TAllEvents, ExtensionInternalEvents<TExtension>, ExtensionPublicEvents<TExtension>>
-    >;
-
-    use<TModule extends ModuleDefinition<object, object, object>>(
-        module: TModule
-    ): Engine<
-        MergeObjects<TProvided, ModuleProvided<TModule>>,
-        MergePublicEvents<TPublicEvents, ModulePublicEvents<TModule>>,
-        MergeAllEvents<TAllEvents, ModuleInternalEvents<TModule>, ModulePublicEvents<TModule>>
     >;
 }
 
@@ -127,16 +109,16 @@ export function createEngine(config?: EngineConfig): Engine<EmptyObject, SystemP
     const engine: AnyEngine = {
         bus,
 
-        flow(name: string) {
+        flows() {
+            return [...flows.keys()];
+        },
+
+        getFlow(name: string) {
             const registered = flows.get(name);
             if (!registered) {
                 throw new FlowNotRegisteredError(name);
             }
             return createRunnable(registered, extensions, bus, requests);
-        },
-
-        flows() {
-            return [...flows.keys()];
         },
 
         register(flow: AnyFlowDefinition) {
@@ -154,16 +136,7 @@ export function createEngine(config?: EngineConfig): Engine<EmptyObject, SystemP
             return createRunnable(flow, extensions, bus, requests).start(...args);
         },
 
-        use(definition: AnyExtensionDefinition | AnyModuleDefinition) {
-            if (definition.kind === "module") {
-                for (const extension of definition.extensions) {
-                    installExtension(extension);
-                }
-                for (const flow of definition.flows) {
-                    installFlow(flow);
-                }
-                return engine;
-            }
+        use(definition: AnyExtensionDefinition) {
             installExtension(definition);
             return engine;
         },

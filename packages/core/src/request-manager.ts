@@ -101,18 +101,18 @@ function safelyRedact(record: AnyRequestRecord, definition: AnyRequestDefinition
 }
 
 function buildEventBase(record: AnyRequestRecord): {
+    dedupeKey?: string;
     flowName: string;
     id: string;
-    key?: string;
     name: string;
     nodeName?: string;
     path: readonly string[];
     runId: string;
 } {
     return {
+        dedupeKey: record.dedupeKey,
         flowName: record.flowName,
         id: record.id,
-        key: record.key,
         name: record.name,
         nodeName: record.nodeName,
         path: record.path,
@@ -136,10 +136,10 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
             cancel(reason?: string) {
                 return cancelById(id, reason);
             },
+            dedupeKey: record.dedupeKey,
             flowName: record.flowName,
             id: record.id,
             iteration: record.iteration,
-            key: record.key,
             metadata: record.metadata,
             name: record.name,
             nodeName: record.nodeName,
@@ -344,10 +344,10 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
             return Promise.reject(new RequestCancelledError(args.definition.name, "<unopened>", "task aborted"));
         }
 
-        const idempotencyKey = args.options?.key
+        const idempotencyKey = args.options?.dedupeKey
             ? computeIdempotencyKey({
                   definitionName: args.definition.name,
-                  key: args.options.key,
+                  key: args.options.dedupeKey,
                   path: args.path,
                   runId: args.runId,
               })
@@ -362,14 +362,14 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
 
         const id = crypto.randomUUID();
         const createdAt = Date.now();
-        const timeoutAt = args.options?.timeout ? createdAt + args.options.timeout : undefined;
+        const timeoutAt = args.options?.timeoutMs ? createdAt + args.options.timeoutMs : undefined;
         const record: AnyRequestRecord = {
             attempt: args.attempt,
             createdAt,
+            dedupeKey: args.options?.dedupeKey,
             flowName: args.flowName,
             id,
             iteration: args.iteration,
-            key: args.options?.key,
             metadata: args.options?.metadata,
             name: args.definition.name,
             nodeName: args.nodeName,
@@ -398,10 +398,10 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
             rejectFn = reject;
         });
 
-        const timer = args.options?.timeout
+        const timer = args.options?.timeoutMs
             ? setTimeout(() => {
                   expireById(id);
-              }, args.options.timeout)
+              }, args.options.timeoutMs)
             : undefined;
 
         const entry: PendingEntry = {
@@ -461,10 +461,10 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
         for (const [id, record] of [...records.entries()]) {
             if (record.runId === runId && record.status !== "pending") {
                 records.delete(id);
-                if (record.key) {
+                if (record.dedupeKey) {
                     const idempotencyKey = computeIdempotencyKey({
                         definitionName: record.name,
-                        key: record.key,
+                        key: record.dedupeKey,
                         path: record.path,
                         runId: record.runId,
                     });

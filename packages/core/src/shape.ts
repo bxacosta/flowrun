@@ -1,65 +1,54 @@
-import { createFlowBuilder, type FlowBuilder } from "./builder.ts";
-import type { FlowContext, TaskContext } from "./context.ts";
-import type { SystemEvents, SystemPublicEvents } from "./events.ts";
-import type { Middleware } from "./middleware.ts";
-import type { Node } from "./node.ts";
-import {
-    buildEvery,
-    buildMiddleware,
-    buildParallel,
-    buildTask,
-    type EveryConfig,
-    type EveryConfigWithResource,
-    type MiddlewareConfig,
-    type ParallelConfig,
-    type ParallelConfigWithResource,
-    type TaskConfig,
-} from "./node-factory.ts";
-import type { AnyScope, Scope } from "./scope.ts";
-import type { EmptyObject } from "./utils.ts";
+import type { EventMap, SystemEvents, SystemPublicEvents } from "./events.ts";
+import type { EmptyObject, MergeObjects } from "./utils.ts";
 
-export interface ShapeContract {
-    events?: object;
-    internalEvents?: object;
+export interface IterationContext<TItem> {
+    index: number;
+    item: TItem;
+}
+
+export interface Shape {
+    events?: EventMap;
+    internalEvents?: EventMap;
+    iteration?: unknown;
     params?: object;
     provided?: object;
     state?: object;
 }
 
-type ContractField<TContract, TKey extends keyof ShapeContract, TFallback extends object> = TKey extends keyof TContract
-    ? NonNullable<TContract[TKey]> extends object
-        ? NonNullable<TContract[TKey]>
-        : TFallback
-    : TFallback;
+// biome-ignore lint/suspicious/noExplicitAny: type-erased shape for heterogeneous registries
+export type AnyShape = Shape & Record<string, any>;
 
-export type ScopeFromShape<TContract extends ShapeContract> = Scope<
-    ContractField<TContract, "provided", EmptyObject>,
-    ContractField<TContract, "params", EmptyObject>,
-    ContractField<TContract, "state", EmptyObject>,
-    SystemPublicEvents & ContractField<TContract, "events", EmptyObject>,
-    SystemEvents &
-        ContractField<TContract, "events", EmptyObject> &
-        ContractField<TContract, "internalEvents", EmptyObject>
->;
+export type ParamsOf<TShape extends Shape> = TShape extends { params: infer P extends object } ? P : EmptyObject;
 
-export interface Shape<TScope extends AnyScope> {
-    every<TItem>(config: EveryConfig<TScope, TItem>): Node<TScope>;
-    every<TItem, TLocal extends object>(config: EveryConfigWithResource<TScope, TItem, TLocal>): Node<TScope>;
-    flow(name: string): FlowBuilder<TScope>;
-    flowMiddleware(config: MiddlewareConfig<FlowContext<TScope>>): Middleware<FlowContext<TScope>>;
-    parallel(config: ParallelConfig<TScope>): Node<TScope>;
-    parallel<TLocal extends object>(config: ParallelConfigWithResource<TScope, TLocal>): Node<TScope>;
-    task(config: TaskConfig<TScope>): Node<TScope>;
-    taskMiddleware(config: MiddlewareConfig<TaskContext<TScope>>): Middleware<TaskContext<TScope>>;
-}
+export type StateOf<TShape extends Shape> = TShape extends { state: infer T extends object } ? T : EmptyObject;
 
-export function shape<TContract extends ShapeContract = EmptyObject>(): Shape<ScopeFromShape<TContract>> {
-    return {
-        every: buildEvery,
-        flow: (name) => createFlowBuilder(name),
-        flowMiddleware: buildMiddleware,
-        parallel: buildParallel,
-        task: buildTask,
-        taskMiddleware: buildMiddleware,
-    } as Shape<ScopeFromShape<TContract>>;
-}
+export type ProvidedOf<TShape extends Shape> = TShape extends { provided: infer P extends object } ? P : EmptyObject;
+
+export type IterationOf<TShape extends Shape> = TShape extends { iteration: infer I } ? I : never;
+
+export type PublicEventsOf<TShape extends Shape> = SystemPublicEvents &
+    (TShape extends { events: infer E extends EventMap } ? E : EmptyObject);
+
+export type AllEventsOf<TShape extends Shape> = SystemEvents &
+    (TShape extends { events: infer E extends EventMap } ? E : EmptyObject) &
+    (TShape extends { internalEvents: infer E extends EventMap } ? E : EmptyObject);
+
+type Equals<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+
+export type WithParams<TShape extends Shape, TParams extends object> =
+    Equals<TParams, ParamsOf<TShape>> extends true ? TShape : Omit<TShape, "params"> & { params: TParams };
+
+export type WithState<TShape extends Shape, TState extends object> =
+    Equals<TState, StateOf<TShape>> extends true ? TShape : Omit<TShape, "state"> & { state: TState };
+
+export type WithEvents<TShape extends Shape, TEvents extends EventMap> = Omit<TShape, "events"> & {
+    events: MergeObjects<TShape extends { events: infer E extends EventMap } ? E : EmptyObject, TEvents>;
+};
+
+export type WithProvided<TShape extends Shape, TLocal extends object> = Omit<TShape, "provided"> & {
+    provided: MergeObjects<ProvidedOf<TShape>, TLocal>;
+};
+
+export type WithIteration<TShape extends Shape, TItem> = Omit<TShape, "iteration"> & {
+    iteration: IterationContext<TItem>;
+};

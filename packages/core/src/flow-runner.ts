@@ -10,14 +10,14 @@ import type { AnyMiddleware } from "./middleware.ts";
 import { compose } from "./middleware.ts";
 import type { AnyStateFactory, NodeDefinition, TaskResult } from "./node.ts";
 import type { RequestManager } from "./request-manager.ts";
-import type { AnyScope } from "./scope.ts";
+import type { ParamsOf, Shape } from "./shape.ts";
 import { PauseGate } from "./signal.ts";
 import type { AnyFlowStateStore } from "./state.ts";
 import { createStateStore } from "./state.ts";
 import { assertPlainObject } from "./validation.ts";
 
-export interface FlowDefinition<TScope extends AnyScope = AnyScope> {
-    readonly _scope?: TScope;
+export interface FlowDefinition<TShape extends Shape = Shape> {
+    readonly _shape?: TShape;
     readonly kind: "flow";
     readonly middleware: readonly AnyMiddleware[];
     readonly name: string;
@@ -28,7 +28,7 @@ export interface FlowDefinition<TScope extends AnyScope = AnyScope> {
 // biome-ignore lint/suspicious/noExplicitAny: type-erased flow definition for registries
 export type AnyFlowDefinition = FlowDefinition<any>;
 
-export type FlowStatus = "cancelled" | "completed" | "failed" | "paused" | "running";
+export type FlowStatus = "cancelled" | "failed" | "paused" | "running" | "success";
 
 export interface FlowHandle<TState extends object> {
     cancel(reason?: string): void;
@@ -105,16 +105,16 @@ interface ExtensionSetupBaseContext {
     signal: AbortSignal;
 }
 
-export interface FlowRunArgs<TScope extends AnyScope = AnyScope> {
+export interface FlowRunArgs<TShape extends Shape = Shape> {
     bus: InternalBus<EventMap>;
     extensions: readonly AnyExtensionDefinition[];
-    flow: FlowDefinition<TScope>;
-    params: Readonly<TScope["_params"]>;
+    flow: FlowDefinition<TShape>;
+    params: Readonly<ParamsOf<TShape>>;
     requests: RequestManager;
 }
 
 function isTerminalStatus(status: FlowStatus): boolean {
-    return status === "cancelled" || status === "completed" || status === "failed";
+    return status === "cancelled" || status === "success" || status === "failed";
 }
 
 async function cleanupExtensions(instances: readonly ExtensionInstance[], outcome: FlowOutcome): Promise<void> {
@@ -135,7 +135,7 @@ async function provideExtensions(
 
     try {
         for (const extension of extensions) {
-            const result = await extension.resource.provide(baseContext);
+            const result = await extension.provide(baseContext);
             assertPlainObject(result, `Extension "${extension.name}" provide() must return a plain object`);
             assertPlainObject(
                 result.provided,
@@ -226,7 +226,7 @@ async function runPipeline(args: PipelineArgs): Promise<AnyFlowResult> {
     }
 }
 
-export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScope>): Promise<AnyFlowHandle> {
+export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>): Promise<AnyFlowHandle> {
     const { bus, extensions, flow, params, requests } = args;
     const flowName = flow.name;
 
@@ -290,7 +290,7 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
                 } else if (result.status === "failed") {
                     currentStatus = "failed";
                 } else {
-                    currentStatus = "completed";
+                    currentStatus = "success";
                 }
             }
             cleanupOutcome = toCleanupOutcome(result);
@@ -343,7 +343,7 @@ export async function startFlow<TScope extends AnyScope>(args: FlowRunArgs<TScop
     };
 }
 
-export async function runFlow<TScope extends AnyScope>(args: FlowRunArgs<TScope>): Promise<AnyFlowResult> {
+export async function runFlow<TShape extends Shape>(args: FlowRunArgs<TShape>): Promise<AnyFlowResult> {
     const handle = await startFlow(args);
     return handle.join();
 }

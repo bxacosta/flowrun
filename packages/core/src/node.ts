@@ -1,5 +1,5 @@
 import type { AnyMiddleware } from "./middleware.ts";
-import type { AnyScope } from "./scope.ts";
+import type { Shape } from "./shape.ts";
 import type { MergeStrategy } from "./state.ts";
 import type { MaybePromise } from "./utils.ts";
 
@@ -65,8 +65,8 @@ export interface EveryNodeDefinition {
 
 export type NodeDefinition = EveryNodeDefinition | ParallelNodeDefinition | TaskNodeDefinition;
 
-export type Node<TScope extends AnyScope = AnyScope> = NodeDefinition & {
-    readonly _scope?: TScope;
+export type Node<TShape extends Shape = Shape> = NodeDefinition & {
+    readonly _shape?: TShape;
 };
 
 export interface TaskResult {

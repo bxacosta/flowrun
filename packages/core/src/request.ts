@@ -11,11 +11,11 @@ export interface RequestRecord<TPayload = unknown, TResponse = unknown> {
     readonly attempt?: number;
     readonly cancelledAt?: number;
     readonly createdAt: number;
+    readonly dedupeKey?: string;
     readonly expiredAt?: number;
     readonly flowName: string;
     readonly id: string;
     readonly iteration?: { index: number; item: unknown };
-    readonly key?: string;
     readonly metadata?: Record<string, unknown>;
     readonly name: string;
     readonly nodeName?: string;
@@ -52,9 +52,9 @@ export interface RequestConfig<TPayload, TResponse> {
 }
 
 export interface RequestOptions {
-    key?: string;
+    dedupeKey?: string;
     metadata?: Record<string, unknown>;
-    timeout?: number;
+    timeoutMs?: number;
 }
 
 export interface RequestResponseOptions {
@@ -63,10 +63,10 @@ export interface RequestResponseOptions {
 
 export interface PendingRequest<TPayload, TResponse> {
     cancel(reason?: string): Promise<void>;
+    readonly dedupeKey?: string;
     readonly flowName: string;
     readonly id: string;
     readonly iteration?: { index: number; item: unknown };
-    readonly key?: string;
     readonly metadata?: Record<string, unknown>;
     readonly name: string;
     readonly nodeName?: string;
@@ -125,7 +125,7 @@ export interface EngineRequests {
     ): Promise<void>;
 }
 
-export function defineRequest<TPayload, TResponse>(
+export function request<TPayload, TResponse>(
     config: RequestConfig<TPayload, TResponse>
 ): RequestDefinition<TPayload, TResponse> {
     return {

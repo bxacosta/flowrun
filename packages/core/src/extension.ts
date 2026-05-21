@@ -63,20 +63,12 @@ export interface ExtensionSetupContext<TEvents extends EventMap> {
     signal: AbortSignal;
 }
 
-export interface ExtensionResourceConfig<TDefinitions extends EventDefinitions, TProvided extends object> {
-    provide: (
-        context: ExtensionSetupContext<UnwrapEvents<TDefinitions>>
-    ) => MaybePromise<ExtensionProvideResult<TProvided>>;
-}
-
 export interface ExtensionConfig<TDefinitions extends EventDefinitions, TProvided extends object> {
     events?: TDefinitions;
     name: string;
-    resource: ExtensionResourceConfig<TDefinitions, TProvided>;
-}
-
-export interface ExtensionResource {
-    provide: AnyExtensionProvide;
+    provide: (
+        context: ExtensionSetupContext<UnwrapEvents<TDefinitions>>
+    ) => MaybePromise<ExtensionProvideResult<TProvided>>;
 }
 
 export interface ExtensionDefinition<
@@ -89,7 +81,7 @@ export interface ExtensionDefinition<
     readonly _publicEvents?: TPublicEvents;
     readonly kind: "extension";
     readonly name: string;
-    readonly resource: ExtensionResource;
+    readonly provide: AnyExtensionProvide;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased extension for runtime registries
@@ -113,6 +105,6 @@ export function extension<TDefinitions extends EventDefinitions, TProvided exten
     return {
         kind: "extension",
         name: config.name,
-        resource: { provide: config.resource.provide as AnyExtensionProvide },
+        provide: config.provide as AnyExtensionProvide,
     };
 }

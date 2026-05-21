@@ -4,17 +4,17 @@ import type { FlowDefinition } from "./flow-runner.ts";
 import type { AnyMiddleware, Middleware } from "./middleware.ts";
 import type { AnyStateFactory } from "./node.ts";
 import { type NodesSpec, resolveNodes } from "./node-factory.ts";
-import type { AnyScope, RootScope, WithEvents, WithParams, WithState } from "./scope.ts";
+import type { ParamsOf, Shape, WithEvents, WithParams, WithState } from "./shape.ts";
 import { assertUniqueNodeNames } from "./validation.ts";
 
-export interface FlowBuilder<TScope extends AnyScope> {
-    events<TPublicEvents extends EventMap>(): FlowBuilder<WithEvents<TScope, TPublicEvents>>;
-    middleware(list: NoInfer<Middleware<FlowContext<TScope>>>[]): FlowBuilder<TScope>;
-    nodes(spec: NodesSpec<TScope>): FlowDefinition<TScope>;
-    params<TParams extends object>(): FlowBuilder<WithParams<TScope, TParams>>;
-    state<TState extends object, TParams extends TScope["_params"] = TScope["_params"]>(
+export interface FlowBuilder<TShape extends Shape> {
+    events<TEvents extends EventMap>(): FlowBuilder<WithEvents<TShape, TEvents>>;
+    middleware(list: NoInfer<Middleware<FlowContext<TShape>>>[]): FlowBuilder<TShape>;
+    nodes(spec: NodesSpec<TShape>): FlowDefinition<TShape>;
+    params<TParams extends object>(): FlowBuilder<WithParams<TShape, TParams>>;
+    state<TState extends object, TParams extends ParamsOf<TShape> = ParamsOf<TShape>>(
         initial: TState | ((params: Readonly<TParams>) => TState)
-    ): FlowBuilder<WithState<WithParams<TScope, TParams>, TState>>;
+    ): FlowBuilder<WithState<WithParams<TShape, TParams>, TState>>;
 }
 
 interface BuilderState {
@@ -23,21 +23,21 @@ interface BuilderState {
     stateFactory?: AnyStateFactory;
 }
 
-function instantiate<TScope extends AnyScope>(state: BuilderState): FlowBuilder<TScope> {
+function instantiate<TShape extends Shape>(state: BuilderState): FlowBuilder<TShape> {
     return {
-        events<TPublicEvents extends EventMap>() {
-            return instantiate<WithEvents<TScope, TPublicEvents>>(state);
+        events<TEvents extends EventMap>() {
+            return instantiate<WithEvents<TShape, TEvents>>(state);
         },
 
         middleware(list) {
-            return instantiate<TScope>({
+            return instantiate<TShape>({
                 ...state,
                 middleware: [...state.middleware, ...list],
             });
         },
 
         nodes(spec) {
-            const resolved = resolveNodes<TScope>(spec);
+            const resolved = resolveNodes<TShape>(spec);
             assertUniqueNodeNames(resolved, state.name);
             return {
                 kind: "flow",
@@ -49,23 +49,23 @@ function instantiate<TScope extends AnyScope>(state: BuilderState): FlowBuilder<
         },
 
         params<TParams extends object>() {
-            return instantiate<WithParams<TScope, TParams>>(state);
+            return instantiate<WithParams<TShape, TParams>>(state);
         },
 
-        state<TState extends object, TParams extends TScope["_params"] = TScope["_params"]>(
+        state<TState extends object, TParams extends ParamsOf<TShape> = ParamsOf<TShape>>(
             initial: TState | ((params: Readonly<TParams>) => TState)
         ) {
             const stateFactory: AnyStateFactory =
                 typeof initial === "function" ? (initial as AnyStateFactory) : () => initial;
-            return instantiate<WithState<WithParams<TScope, TParams>, TState>>({ ...state, stateFactory });
+            return instantiate<WithState<WithParams<TShape, TParams>, TState>>({ ...state, stateFactory });
         },
     };
 }
 
-export function createFlowBuilder<TScope extends AnyScope>(name: string): FlowBuilder<TScope> {
-    return instantiate<TScope>({ middleware: [], name });
+export function createFlowBuilder<TShape extends Shape>(name: string): FlowBuilder<TShape> {
+    return instantiate<TShape>({ middleware: [], name });
 }
 
-export function flow(name: string): FlowBuilder<RootScope> {
-    return createFlowBuilder<RootScope>(name);
+export function flow(name: string): FlowBuilder<Shape> {
+    return createFlowBuilder<Shape>(name);
 }

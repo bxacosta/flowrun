@@ -57,8 +57,6 @@ export type {
     ExtensionConfig,
     ExtensionDefinition,
     ExtensionProvideResult,
-    ExtensionResource,
-    ExtensionResourceConfig,
     ExtensionSetupContext,
     FlowOutcome,
     Internal,
@@ -79,8 +77,6 @@ export type {
 } from "./flow-runner.ts";
 export type { Logger } from "./logger.ts";
 export type { Middleware, MiddlewareRun } from "./middleware.ts";
-export type { ModuleConfig, ModuleDefinition } from "./module.ts";
-export { defineModule } from "./module.ts";
 export type {
     BackoffStrategy,
     ContainerErrorMode,
@@ -108,6 +104,7 @@ export type {
     TaskConfig,
     TaskMiddleware,
 } from "./node-factory.ts";
+export { middleware } from "./node-factory.ts";
 export type {
     ContextRequest,
     EngineRequests,
@@ -122,19 +119,24 @@ export type {
     RequestSubscribeOptions,
     RequestSubscription,
 } from "./request.ts";
-export { defineRequest } from "./request.ts";
+export { request } from "./request.ts";
 export type {
-    AnyScope,
+    AllEventsOf,
+    AnyShape,
     IterationContext,
-    IterationScope,
-    RootScope,
-    Scope,
+    IterationOf,
+    ParamsOf,
+    ProvidedOf,
+    PublicEventsOf,
+    Shape,
+    StateOf,
     WithEvents,
+    WithIteration,
     WithParams,
     WithProvided,
     WithState,
-} from "./scope.ts";
-export type { ScopeFromShape, Shape, ShapeContract } from "./shape.ts";
-export { shape } from "./shape.ts";
+} from "./shape.ts";
+export type { ShapeFactory } from "./shape-factory.ts";
+export { shape } from "./shape-factory.ts";
 export type { FlowStateStore, MergeStrategy } from "./state.ts";
 export type { EmptyObject, MaybePromise } from "./utils.ts";
