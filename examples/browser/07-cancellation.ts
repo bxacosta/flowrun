@@ -31,25 +31,22 @@ const tightEngine = createBrowserEngine({
     defaultNavigationTimeout: 500,
 });
 
-const slowFlow = browser.flow({
-    name: "slow-nav",
-    nodes: ({ task }) => [
-        task({
-            name: "visit-slow-page",
-            run: async (context) => {
-                try {
-                    await context.navigate(`${BASE_URL}/slow?delay=5000`);
-                } catch (error) {
-                    if (error instanceof NavigationError) {
-                        context.log.warn(`navigation aborted: ${error.message}`);
-                        return;
-                    }
-                    throw error;
+const slowFlow = browser.flow("slow-nav").nodes(({ task }) => [
+    task({
+        name: "visit-slow-page",
+        run: async (context) => {
+            try {
+                await context.navigate(`${BASE_URL}/slow?delay=5000`);
+            } catch (error) {
+                if (error instanceof NavigationError) {
+                    context.log.warn(`navigation aborted: ${error.message}`);
+                    return;
                 }
-            },
-        }),
-    ],
-});
+                throw error;
+            }
+        },
+    }),
+]);
 const r1 = await tightEngine.run(slowFlow);
 log(`status: ${r1.status}`);
 
@@ -64,22 +61,19 @@ const engine = createBrowserEngine({
     defaultTimeout: 30_000,
 });
 
-const longFlow = browser.flow({
-    name: "long-running",
-    nodes: ({ task }) => [
-        task({
-            name: "kick-off-report",
-            run: async (context) => {
-                await context.navigate(`${BASE_URL}/dashboard/reports`);
-                await context.page.click("[data-testid='report-generate']");
-                // Wait long enough that we know cancellation interrupted us.
-                await context.page.waitForSelector("[data-testid='report-download']", {
-                    timeout: 30_000,
-                });
-            },
-        }),
-    ],
-});
+const longFlow = browser.flow("long-running").nodes(({ task }) => [
+    task({
+        name: "kick-off-report",
+        run: async (context) => {
+            await context.navigate(`${BASE_URL}/dashboard/reports`);
+            await context.page.click("[data-testid='report-generate']");
+            // Wait long enough that we know cancellation interrupted us.
+            await context.page.waitForSelector("[data-testid='report-download']", {
+                timeout: 30_000,
+            });
+        },
+    }),
+]);
 
 const handle = await engine.start(longFlow);
 setTimeout(() => {
@@ -94,10 +88,10 @@ if (r2.status === "cancelled") {
 // ── Demo 3: cooperative cancellation via context.signal ─────────────
 
 title("3 - cooperative cancellation via context.signal");
-const coopFlow = browser.flow({
-    name: "coop-signal",
-    state: () => ({ stepsExecuted: 0 }),
-    nodes: ({ task }) => [
+const coopFlow = browser
+    .flow("coop-signal")
+    .state({ stepsExecuted: 0 })
+    .nodes(({ task }) => [
         task({
             name: "respect-signal",
             run: async (context) => {
@@ -109,8 +103,7 @@ const coopFlow = browser.flow({
                 }
             },
         }),
-    ],
-});
+    ]);
 
 const handle3 = await engine.start(coopFlow);
 setTimeout(() => handle3.cancel("budget exhausted"), 700);
@@ -127,23 +120,20 @@ const looseEngine = createBrowserEngine({
     cancelStrategy: "none",
 });
 
-const looseFlow = browser.flow({
-    name: "loose",
-    nodes: ({ task }) => [
-        task({
-            name: "navigate-then-loop",
-            run: async (context) => {
-                await context.navigate(`${BASE_URL}/`);
-                // With "none", the page stays alive on cancel. The task must
-                // honour context.signal itself or the run hangs.
-                for (let index = 0; index < 10; index++) {
-                    context.signal.throwIfAborted();
-                    await new Promise((resolve) => setTimeout(resolve, 150));
-                }
-            },
-        }),
-    ],
-});
+const looseFlow = browser.flow("loose").nodes(({ task }) => [
+    task({
+        name: "navigate-then-loop",
+        run: async (context) => {
+            await context.navigate(`${BASE_URL}/`);
+            // With "none", the page stays alive on cancel. The task must
+            // honour context.signal itself or the run hangs.
+            for (let index = 0; index < 10; index++) {
+                context.signal.throwIfAborted();
+                await new Promise((resolve) => setTimeout(resolve, 150));
+            }
+        },
+    }),
+]);
 
 const handle4 = await looseEngine.start(looseFlow);
 setTimeout(() => handle4.cancel(), 400);
