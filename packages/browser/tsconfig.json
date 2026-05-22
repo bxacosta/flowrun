@@ -10,14 +10,8 @@
     "types": ["bun"],
 
     // Emit
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "rewriteRelativeImportExtensions": true,
-
-    // Project
-    "rootDir": "src",
-    "outDir": "dist"
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
-  "include": ["src"]
+  "include": ["src", "examples"]
 }

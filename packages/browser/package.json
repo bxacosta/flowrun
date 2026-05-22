@@ -7,7 +7,7 @@
   },
   "scripts": {
     "fix": "ultracite fix",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc"
   },
   "dependencies": {
     "@flowrun/core": "workspace:*",
