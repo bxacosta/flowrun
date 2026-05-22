@@ -18,8 +18,8 @@
  */
 
 import { browser, createBrowserEngine, NavigationError } from "@flowrun/browser";
-import { log, title } from "../core/shared/helpers.ts";
 import { BASE_URL, provider, selectors, storage } from "./shared/env.ts";
+import { log, title } from "./shared/helpers.ts";
 
 // ── Demo 1: defaultNavigationTimeout produces NavigationError ───────
 

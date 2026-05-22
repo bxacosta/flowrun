@@ -4,11 +4,10 @@
   "compilerOptions": {
     // Module system
     "module": "Preserve",
-    "noEmit": true,
-    "allowImportingTsExtensions": true,
 
-    // Project
-    "rootDir": "."
+    // Emit
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
-  "include": ["core", "browser"]
+  "include": ["src"]
 }

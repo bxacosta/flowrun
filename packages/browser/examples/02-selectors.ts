@@ -13,8 +13,8 @@
 
 import { join } from "node:path";
 import { browser, createBrowserEngine, JsonSelectorRegistry, SelectorNotFoundError } from "@flowrun/browser";
-import { log, title } from "../core/shared/helpers.ts";
 import { BASE_URL, provider, storage } from "./shared/env.ts";
+import { log, title } from "./shared/helpers.ts";
 
 // ── Inline registry — handy for tests and small flows ───────────────
 

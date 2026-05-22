@@ -16,8 +16,8 @@
  */
 
 import { browser, createBrowserEngine, type TraceConfig } from "@flowrun/browser";
-import { log, title } from "../core/shared/helpers.ts";
 import { BASE_URL, provider, STORAGE_ROOT, selectors, storage } from "./shared/env.ts";
+import { log, title } from "./shared/helpers.ts";
 
 // Helper: build an engine with a given trace config and a subscriber.
 function makeEngine(trace: TraceConfig) {

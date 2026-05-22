@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "fix": "ultracite fix",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc"
   },
   "dependencies": {
     "@flowrun/browser": "workspace:*",

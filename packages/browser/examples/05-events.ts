@@ -22,8 +22,8 @@
 
 import { browser, createBrowserEngine } from "@flowrun/browser";
 import type { Envelope } from "@flowrun/core";
-import { log, title } from "../core/shared/helpers.ts";
 import { BASE_URL, provider, selectors, storage } from "./shared/env.ts";
+import { log, title } from "./shared/helpers.ts";
 
 const engine = createBrowserEngine({
     provider,
