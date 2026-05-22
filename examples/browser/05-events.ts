@@ -20,8 +20,8 @@
  *      emitNavigateEvent  / emitStorageEvent
  */
 
-import type { Envelope } from "@flowrun/core";
 import { browser, createBrowserEngine } from "@flowrun/browser";
+import type { Envelope } from "@flowrun/core";
 import { log, title } from "../core/shared/helpers.ts";
 import { BASE_URL, provider, selectors, storage } from "./shared/env.ts";
 
@@ -87,44 +87,38 @@ engine.bus.subscribe("browser:closed", () => log("  [closed]   (run finished)"),
 
 // ── Flow 1: trigger navigated, page-error, console-error, storage-saved ─
 
-const observability = browser.flow({
-    name: "observability",
-    nodes: ({ task }) => [
-        task({
-            name: "land",
-            run: async (context) => {
-                await context.navigate(`${BASE_URL}/`);
-            },
-        }),
-        task({
-            name: "trigger-page-error",
-            run: async (context) => {
-                // The fixture page throws an uncaught error in useEffect.
-                // browser:page-error fires for the runtime exception.
-                await context.navigate(`${BASE_URL}/test/page-error`);
-            },
-        }),
-        task({
-            name: "trigger-console-error",
-            run: async (context) => {
-                // The fixture page calls console.error() on mount.
-                // browser:console-error fires.
-                await context.navigate(`${BASE_URL}/test/console-error`);
-            },
-        }),
-        task({
-            name: "trigger-storage-event",
-            run: async (context) => {
-                // Any save / saveStream through context.storage emits
-                // browser:storage-saved (gated by emitStorageEvent).
-                await context.storage.save(
-                    "05-events/probe.txt",
-                    new TextEncoder().encode("hello")
-                );
-            },
-        }),
-    ],
-});
+const observability = browser.flow("observability").nodes(({ task }) => [
+    task({
+        name: "land",
+        run: async (context) => {
+            await context.navigate(`${BASE_URL}/`);
+        },
+    }),
+    task({
+        name: "trigger-page-error",
+        run: async (context) => {
+            // The fixture page throws an uncaught error in useEffect.
+            // browser:page-error fires for the runtime exception.
+            await context.navigate(`${BASE_URL}/test/page-error`);
+        },
+    }),
+    task({
+        name: "trigger-console-error",
+        run: async (context) => {
+            // The fixture page calls console.error() on mount.
+            // browser:console-error fires.
+            await context.navigate(`${BASE_URL}/test/console-error`);
+        },
+    }),
+    task({
+        name: "trigger-storage-event",
+        run: async (context) => {
+            // Any save / saveStream through context.storage emits
+            // browser:storage-saved (gated by emitStorageEvent).
+            await context.storage.save("05-events/probe.txt", new TextEncoder().encode("hello"));
+        },
+    }),
+]);
 
 title("1 - Trigger every event-emitting code path");
 const r1 = await engine.run(observability);
@@ -132,30 +126,27 @@ log(`status: ${r1.status}`);
 
 // ── Flow 2: per-tab events via browser.newPage() ────────────────────
 
-const tabsFlow = browser.flow({
-    name: "tabs-events",
-    nodes: ({ parallel }) => [
-        parallel({
-            name: "two-tabs",
-            merge: "overwrite",
-            resource: browser.newPage(),
-            nodes: ({ task }) => [
-                task({
-                    name: "tab-a",
-                    run: async (context) => {
-                        await context.navigate(`${BASE_URL}/about`);
-                    },
-                }),
-                task({
-                    name: "tab-b",
-                    run: async (context) => {
-                        await context.navigate(`${BASE_URL}/pricing`);
-                    },
-                }),
-            ],
-        }),
-    ],
-});
+const tabsFlow = browser.flow("tabs-events").nodes(({ parallel }) => [
+    parallel({
+        name: "two-tabs",
+        merge: "overwrite",
+        resource: browser.newPage(),
+        nodes: ({ task }) => [
+            task({
+                name: "tab-a",
+                run: async (context) => {
+                    await context.navigate(`${BASE_URL}/about`);
+                },
+            }),
+            task({
+                name: "tab-b",
+                run: async (context) => {
+                    await context.navigate(`${BASE_URL}/pricing`);
+                },
+            }),
+        ],
+    }),
+]);
 
 title("2 - page-opened / page-closed (from browser.newPage)");
 const r2 = await engine.run(tabsFlow);

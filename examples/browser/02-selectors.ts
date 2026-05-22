@@ -12,12 +12,7 @@
  */
 
 import { join } from "node:path";
-import {
-    browser,
-    createBrowserEngine,
-    JsonSelectorRegistry,
-    SelectorNotFoundError,
-} from "@flowrun/browser";
+import { browser, createBrowserEngine, JsonSelectorRegistry, SelectorNotFoundError } from "@flowrun/browser";
 import { log, title } from "../core/shared/helpers.ts";
 import { BASE_URL, provider, storage } from "./shared/env.ts";
 
@@ -48,31 +43,28 @@ log(`description: ${titleDef.description ?? "(none)"}`);
 
 // ── Demo 2: resolve against the Page scope (top-level locators) ─────
 
-const loginFlow = browser.flow({
-    name: "selectors-page-scope",
-    nodes: ({ task }) => [
-        task({
-            name: "fill-login",
-            run: async (context) => {
-                await context.navigate(`${BASE_URL}/login`);
+const loginFlow = browser.flow("selectors-page-scope").nodes(({ task }) => [
+    task({
+        name: "fill-login",
+        run: async (context) => {
+            await context.navigate(`${BASE_URL}/login`);
 
-                // Each resolve(name, scope) -> Locator. scope = Page here.
-                const user = await context.selectors.resolve("loginUser", context.page);
-                const pass = await context.selectors.resolve("loginPass", context.page);
-                const submit = await context.selectors.resolve("loginSubmit", context.page);
+            // Each resolve(name, scope) -> Locator. scope = Page here.
+            const user = await context.selectors.resolve("loginUser", context.page);
+            const pass = await context.selectors.resolve("loginPass", context.page);
+            const submit = await context.selectors.resolve("loginSubmit", context.page);
 
-                await user.fill("lockout");
-                await pass.fill("nope");
-                await submit.click();
+            await user.fill("lockout");
+            await pass.fill("nope");
+            await submit.click();
 
-                // Resolve against the same scope to assert an error appeared.
-                const error = await context.selectors.resolve("loginError", context.page);
-                const message = await error.textContent();
-                context.log.info(`error displayed: ${message ?? "(empty)"}`);
-            },
-        }),
-    ],
-});
+            // Resolve against the same scope to assert an error appeared.
+            const error = await context.selectors.resolve("loginError", context.page);
+            const message = await error.textContent();
+            context.log.info(`error displayed: ${message ?? "(empty)"}`);
+        },
+    }),
+]);
 
 title("2 - resolve(name, page) for top-level selectors");
 const r2 = await engine.run(loginFlow);
@@ -80,31 +72,26 @@ log(`status: ${r2.status}`);
 
 // ── Demo 3: resolve against a Frame scope (iframe content) ──────────
 
-const iframeFlow = browser.flow({
-    name: "selectors-frame-scope",
-    nodes: ({ task }) => [
-        task({
-            name: "fill-payment-widget",
-            run: async (context) => {
-                await context.navigate(`${BASE_URL}/dashboard/invoices/1/pay`);
+const iframeFlow = browser.flow("selectors-frame-scope").nodes(({ task }) => [
+    task({
+        name: "fill-payment-widget",
+        run: async (context) => {
+            await context.navigate(`${BASE_URL}/dashboard/invoices/1/pay`);
 
-                // Wait for the iframe to be present, then locate the Frame.
-                await context.page.waitForSelector("[data-testid='payment-frame']");
-                const frame = context.page
-                    .frames()
-                    .find((candidate) => candidate.url().includes("/widgets/payment"));
-                if (!frame) {
-                    throw new Error("payment frame not attached yet");
-                }
+            // Wait for the iframe to be present, then locate the Frame.
+            await context.page.waitForSelector("[data-testid='payment-frame']");
+            const frame = context.page.frames().find((candidate) => candidate.url().includes("/widgets/payment"));
+            if (!frame) {
+                throw new Error("payment frame not attached yet");
+            }
 
-                // LocatorScope accepts Frame — resolve runs scope.locator(selector).
-                const cardNumber = await context.selectors.resolve("paymentCardNumber", frame);
-                await cardNumber.fill("4111 1111 1111 1111");
-                context.log.info("filled card number inside iframe");
-            },
-        }),
-    ],
-});
+            // LocatorScope accepts Frame — resolve runs scope.locator(selector).
+            const cardNumber = await context.selectors.resolve("paymentCardNumber", frame);
+            await cardNumber.fill("4111 1111 1111 1111");
+            context.log.info("filled card number inside iframe");
+        },
+    }),
+]);
 
 title("3 - resolve(name, frame) for selectors inside an iframe");
 const r3 = await engine.run(iframeFlow);

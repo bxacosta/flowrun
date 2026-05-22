@@ -1,8 +1,11 @@
 {
-    "pageTitle": { "selector": "[data-testid='page-title']", "description": "Page-unique heading" },
-    "loginUser": { "selector": "[name='username']" },
-    "loginPass": { "selector": "[name='password']" },
-    "loginSubmit": { "selector": "[data-testid='login-submit']" },
-    "loginError": { "selector": "[data-testid='login-error']" },
-    "twoFactorCode": { "selector": "[name='code']" }
+  "pageTitle": {
+    "selector": "[data-testid='page-title']",
+    "description": "Page-unique heading"
+  },
+  "loginUser": { "selector": "[name='username']" },
+  "loginPass": { "selector": "[name='password']" },
+  "loginSubmit": { "selector": "[data-testid='login-submit']" },
+  "loginError": { "selector": "[data-testid='login-error']" },
+  "twoFactorCode": { "selector": "[name='code']" }
 }

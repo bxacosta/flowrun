@@ -18,14 +18,17 @@ import { BASE_URL, provider, selectors, storage } from "./shared/env.ts";
 
 const engine = createBrowserEngine({ provider, selectors, storage });
 
+const DASHBOARD_URL_PATTERN = /\/dashboard/;
+const LOGIN_CODE_URL_PATTERN = /\/login\/code/;
+
 // ── Flow 1: every() + browser.newPage() — one tab per iteration ─────
 
 const months = ["2024-01", "2024-02", "2024-03", "2024-04"];
 
-const scrapeMonths = browser.flow({
-    name: "scrape-months",
-    state: () => ({ results: [] as { month: string; url: string }[] }),
-    nodes: ({ every }) => [
+const scrapeMonths = browser
+    .flow("scrape-months")
+    .state({ results: [] as { month: string; url: string }[] })
+    .nodes(({ every }) => [
         every({
             name: "by-month",
             items: () => months,
@@ -41,18 +44,13 @@ const scrapeMonths = browser.flow({
                 task({
                     name: "visit",
                     run: async (context) => {
-                        await context.navigate(
-                            `${BASE_URL}/dashboard/invoices?search=${context.iteration.item}`
-                        );
-                        context.state.set("results", [
-                            { month: context.iteration.item, url: context.page.url() },
-                        ]);
+                        await context.navigate(`${BASE_URL}/dashboard/invoices?search=${context.iteration.item}`);
+                        context.state.set("results", [{ month: context.iteration.item, url: context.page.url() }]);
                     },
                 }),
             ],
         }),
-    ],
-});
+    ]);
 
 title("1 - every() + browser.newPage() (per-iteration tabs)");
 const r1 = await engine.run(scrapeMonths);
@@ -63,10 +61,10 @@ for (const entry of r1.state.results) {
 
 // ── Flow 2: parallel() + browser.newPage() — one tab per branch ─────
 
-const splitWork = browser.flow({
-    name: "split-work",
-    state: () => ({ invoicesUrl: "", reportsUrl: "" }),
-    nodes: ({ parallel }) => [
+const splitWork = browser
+    .flow("split-work")
+    .state({ invoicesUrl: "", reportsUrl: "" })
+    .nodes(({ parallel }) => [
         parallel({
             name: "fan-out-tabs",
             merge: "overwrite",
@@ -88,8 +86,7 @@ const splitWork = browser.flow({
                 }),
             ],
         }),
-    ],
-});
+    ]);
 
 title("2 - parallel() + browser.newPage() (per-branch tabs, same context)");
 const r2 = await engine.run(splitWork);
@@ -99,10 +96,10 @@ log(`reports tab: ${r2.state.reportsUrl}`);
 
 // ── Flow 3: parallel() + browser.newSession() — one context per branch ─
 
-const multiAccount = browser.flow({
-    name: "multi-account",
-    state: () => ({ acmeFinalUrl: "", twofaFinalUrl: "" }),
-    nodes: ({ parallel }) => [
+const multiAccount = browser
+    .flow("multi-account")
+    .state({ acmeFinalUrl: "", twofaFinalUrl: "" })
+    .nodes(({ parallel }) => [
         parallel({
             name: "per-account",
             merge: "overwrite",
@@ -127,7 +124,7 @@ const multiAccount = browser.flow({
                         await user.fill("acme");
                         await pass.fill("acme");
                         await submit.click();
-                        await context.page.waitForURL(/\/dashboard/);
+                        await context.page.waitForURL(DASHBOARD_URL_PATTERN);
                         context.state.set("acmeFinalUrl", context.page.url());
                     },
                 }),
@@ -141,14 +138,13 @@ const multiAccount = browser.flow({
                         await user.fill("2fa");
                         await pass.fill("2fa");
                         await submit.click();
-                        await context.page.waitForURL(/\/login\/code/);
+                        await context.page.waitForURL(LOGIN_CODE_URL_PATTERN);
                         context.state.set("twofaFinalUrl", context.page.url());
                     },
                 }),
             ],
         }),
-    ],
-});
+    ]);
 
 title("3 - parallel() + browser.newSession() (per-branch contexts)");
 const r3 = await engine.run(multiAccount);

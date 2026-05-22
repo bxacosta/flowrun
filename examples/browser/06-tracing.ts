@@ -17,7 +17,7 @@
 
 import { browser, createBrowserEngine, type TraceConfig } from "@flowrun/browser";
 import { log, title } from "../core/shared/helpers.ts";
-import { BASE_URL, provider, selectors, storage, STORAGE_ROOT } from "./shared/env.ts";
+import { BASE_URL, provider, STORAGE_ROOT, selectors, storage } from "./shared/env.ts";
 
 // Helper: build an engine with a given trace config and a subscriber.
 function makeEngine(trace: TraceConfig) {
@@ -32,32 +32,26 @@ function makeEngine(trace: TraceConfig) {
 
 // Two fixture flows: one that succeeds, one that throws.
 
-const okFlow = browser.flow({
-    name: "trace-ok",
-    nodes: ({ task }) => [
-        task({
-            name: "visit-some-pages",
-            run: async (context) => {
-                await context.navigate(`${BASE_URL}/`);
-                await context.navigate(`${BASE_URL}/about`);
-                await context.navigate(`${BASE_URL}/pricing`);
-            },
-        }),
-    ],
-});
+const okFlow = browser.flow("trace-ok").nodes(({ task }) => [
+    task({
+        name: "visit-some-pages",
+        run: async (context) => {
+            await context.navigate(`${BASE_URL}/`);
+            await context.navigate(`${BASE_URL}/about`);
+            await context.navigate(`${BASE_URL}/pricing`);
+        },
+    }),
+]);
 
-const failFlow = browser.flow({
-    name: "trace-fail",
-    nodes: ({ task }) => [
-        task({
-            name: "visit-then-throw",
-            run: async (context) => {
-                await context.navigate(`${BASE_URL}/`);
-                throw new Error("intentional failure for tracing");
-            },
-        }),
-    ],
-});
+const failFlow = browser.flow("trace-fail").nodes(({ task }) => [
+    task({
+        name: "visit-then-throw",
+        run: async (context) => {
+            await context.navigate(`${BASE_URL}/`);
+            throw new Error("intentional failure for tracing");
+        },
+    }),
+]);
 
 const sharedTraceOpts: Omit<TraceConfig, "mode"> = {
     screenshots: true,

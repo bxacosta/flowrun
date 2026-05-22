@@ -29,29 +29,27 @@ const engine = createBrowserEngine({
 
 // ── Flow 1: simplest possible browser flow ──────────────────────────
 
-const home = browser.flow({
-    name: "home",
-    nodes: ({ task }) => [
-        task({
-            name: "visit",
-            run: async (context) => {
-                await context.navigate(`${BASE_URL}/`);
-                const pageTitle = await context.page.title();
-                context.log.info(`landed on: ${pageTitle}`);
-            },
-        }),
-    ],
-});
+const home = browser.flow("home").nodes(({ task }) => [
+    task({
+        name: "visit",
+        run: async (context) => {
+            await context.navigate(`${BASE_URL}/`);
+            const pageTitle = await context.page.title();
+            context.log.info(`landed on: ${pageTitle}`);
+        },
+    }),
+]);
 
 // ── Flow 2: typed params + state, uses every provided context key ───
 
-const inspect = browser.flow<{ path: string }>({
-    name: "inspect",
-    state: () => ({
+const inspect = browser
+    .flow("inspect")
+    .params<{ path: string }>()
+    .state({
         finalUrl: "",
         userAgent: "",
-    }),
-    nodes: ({ task }) => [
+    })
+    .nodes(({ task }) => [
         task({
             name: "visit-and-record",
             run: async (context) => {
@@ -92,8 +90,7 @@ const inspect = browser.flow<{ path: string }>({
                 context.log.info("screenshot persisted to storage");
             },
         }),
-    ],
-});
+    ]);
 
 // ── Run ─────────────────────────────────────────────────────────────
 
@@ -111,7 +108,7 @@ if (r2.status === "success") {
 title("3 - engine.register() + by-name lookup");
 const registered = engine.register(home);
 log(`registered: ${registered.name}, all flows: ${engine.flows().join(", ")}`);
-const r3 = await engine.flow("home").run({});
+const r3 = await engine.getFlow("home").run({});
 log(`run by name: ${r3.status}`);
 
 // Shared chromium process is reused across flows; dispose at the very end.
