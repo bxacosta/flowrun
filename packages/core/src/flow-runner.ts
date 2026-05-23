@@ -135,13 +135,16 @@ async function provideExtensions(
 
     try {
         for (const extension of extensions) {
-            const result = await extension.provide(baseContext);
+            const setupContext = { ...baseContext, provided };
+            const result = await extension.provide(setupContext);
             assertPlainObject(result, `Extension "${extension.name}" provide() must return a plain object`);
-            assertPlainObject(
-                result.provided,
-                `Extension "${extension.name}" provide() must return { provided } as a plain object`
-            );
-            Object.assign(provided, result.provided);
+            if (result.provided !== undefined) {
+                assertPlainObject(
+                    result.provided,
+                    `Extension "${extension.name}" provide() must return { provided } as a plain object`
+                );
+                Object.assign(provided, result.provided);
+            }
             instances.push({ cleanup: result.cleanup, extension });
         }
     } catch (error) {

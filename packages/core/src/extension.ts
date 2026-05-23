@@ -52,26 +52,32 @@ export type ExtensionCleanup = (outcome: FlowOutcome) => MaybePromise<void>;
 
 export interface ExtensionProvideResult<TProvided extends object> {
     cleanup?: ExtensionCleanup;
-    provided: TProvided;
+    provided?: TProvided;
 }
 
-export interface ExtensionSetupContext<TEvents extends EventMap> {
+export interface ExtensionSetupContext<TRequired extends object, TEvents extends EventMap> {
     bus: PublishableBus<SystemPublicEvents & TEvents, SystemEvents & TEvents>;
     flowName: string;
     log: Logger;
+    provided: TRequired;
     runId: string;
     signal: AbortSignal;
 }
 
-export interface ExtensionConfig<TDefinitions extends EventDefinitions, TProvided extends object> {
+export interface ExtensionConfig<
+    TRequired extends object,
+    TDefinitions extends EventDefinitions,
+    TProvided extends object,
+> {
     events?: TDefinitions;
     name: string;
     provide: (
-        context: ExtensionSetupContext<UnwrapEvents<TDefinitions>>
+        context: ExtensionSetupContext<TRequired, UnwrapEvents<TDefinitions>>
     ) => MaybePromise<ExtensionProvideResult<TProvided>>;
 }
 
 export interface ExtensionDefinition<
+    TRequired extends object = EmptyObject,
     TProvided extends object = EmptyObject,
     TInternalEvents extends object = EmptyObject,
     TPublicEvents extends object = EmptyObject,
@@ -79,29 +85,39 @@ export interface ExtensionDefinition<
     readonly _internalEvents?: TInternalEvents;
     readonly _provided?: TProvided;
     readonly _publicEvents?: TPublicEvents;
+    readonly _required?: TRequired;
     readonly kind: "extension";
     readonly name: string;
     readonly provide: AnyExtensionProvide;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased extension for runtime registries
-export type AnyExtensionDefinition = ExtensionDefinition<any, any, any>;
+export type AnyExtensionDefinition = ExtensionDefinition<any, any, any, any>;
 
 // biome-ignore lint/suspicious/noExplicitAny: typed at the extension factory boundary
 export type AnyExtensionProvide = (context: any) => MaybePromise<ExtensionProvideResult<object>>;
 
+export type ExtensionRequired<TDefinition> =
+    TDefinition extends ExtensionDefinition<infer TRequired, object, object, object> ? TRequired : EmptyObject;
+
 export type ExtensionProvided<TDefinition> =
-    TDefinition extends ExtensionDefinition<infer TProvided, object, object> ? TProvided : EmptyObject;
+    TDefinition extends ExtensionDefinition<object, infer TProvided, object, object> ? TProvided : EmptyObject;
 
 export type ExtensionInternalEvents<TDefinition> =
-    TDefinition extends ExtensionDefinition<object, infer TInternal, object> ? AsEventMap<TInternal> : EmptyObject;
+    TDefinition extends ExtensionDefinition<object, object, infer TInternal, object>
+        ? AsEventMap<TInternal>
+        : EmptyObject;
 
 export type ExtensionPublicEvents<TDefinition> =
-    TDefinition extends ExtensionDefinition<object, object, infer TPublic> ? AsEventMap<TPublic> : EmptyObject;
+    TDefinition extends ExtensionDefinition<object, object, object, infer TPublic> ? AsEventMap<TPublic> : EmptyObject;
 
-export function extension<TDefinitions extends EventDefinitions, TProvided extends object>(
-    config: ExtensionConfig<TDefinitions, TProvided>
-): ExtensionDefinition<TProvided, ExtractInternalEvents<TDefinitions>, ExtractPublicEvents<TDefinitions>> {
+export function extension<
+    TRequired extends object = EmptyObject,
+    TDefinitions extends EventDefinitions = EventDefinitions,
+    TProvided extends object = EmptyObject,
+>(
+    config: ExtensionConfig<TRequired, TDefinitions, TProvided>
+): ExtensionDefinition<TRequired, TProvided, ExtractInternalEvents<TDefinitions>, ExtractPublicEvents<TDefinitions>> {
     return {
         kind: "extension",
         name: config.name,

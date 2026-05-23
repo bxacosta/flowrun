@@ -16,7 +16,12 @@ import {
 
 export const BROWSER_EXTENSION_NAME = "browser";
 
-export type BrowserExtensionDefinition = ExtensionDefinition<BrowserProvidedContext, object, BrowserEventPayloads>;
+export type BrowserExtensionDefinition = ExtensionDefinition<
+    object,
+    BrowserProvidedContext,
+    object,
+    BrowserEventPayloads
+>;
 
 export function createBrowserExtension(config: BrowserExtensionConfig): BrowserExtensionDefinition {
     const resolved = resolveConfig(config);

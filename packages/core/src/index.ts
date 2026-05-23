@@ -8,7 +8,7 @@ export type {
     ItemsContext,
     TaskContext,
 } from "./context.ts";
-export type { Engine, EngineConfig, EngineEvents, InferEngine } from "./engine.ts";
+export type { Engine, EngineConfig, EngineEvents, InferEngine, MissingExtensionDependency } from "./engine.ts";
 export { createEngine } from "./engine.ts";
 export {
     DuplicateExtensionError,
@@ -57,7 +57,11 @@ export type {
     ExtensionCleanup,
     ExtensionConfig,
     ExtensionDefinition,
+    ExtensionInternalEvents,
+    ExtensionProvided,
     ExtensionProvideResult,
+    ExtensionPublicEvents,
+    ExtensionRequired,
     ExtensionSetupContext,
     FlowOutcome,
     Internal,

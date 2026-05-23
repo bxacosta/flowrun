@@ -8,6 +8,7 @@ import type {
     ExtensionInternalEvents,
     ExtensionProvided,
     ExtensionPublicEvents,
+    ExtensionRequired,
 } from "./extension.ts";
 import type {
     AnyFlow,
@@ -27,6 +28,24 @@ import type { EmptyObject, MergeObjects } from "./utils.ts";
 
 type CompatibleFlow<TProvided extends object, TShape extends Shape> =
     TProvided extends ProvidedOf<TShape> ? FlowDefinition<TShape> : never;
+
+declare const missingExtensionDependencyBrand: unique symbol;
+
+export interface MissingExtensionDependency<TMissing extends string> {
+    readonly [missingExtensionDependencyBrand]: TMissing;
+}
+
+type MissingDependencyKeys<TExtension extends AnyExtensionDefinition, TProvided extends object> = Exclude<
+    keyof ExtensionRequired<TExtension>,
+    keyof TProvided
+> &
+    string;
+
+type CompatibleExtension<TExtension extends AnyExtensionDefinition, TProvided extends object> = [
+    MissingDependencyKeys<TExtension, TProvided>,
+] extends [never]
+    ? TExtension
+    : MissingExtensionDependency<MissingDependencyKeys<TExtension, TProvided>>;
 
 export interface EngineConfig {
     events?: EventBusConfig;
@@ -53,8 +72,8 @@ export interface Engine<TProvided extends object, TPublicEvents extends EventMap
         ...args: RunArgs<ParamsOf<TShape>>
     ): Promise<FlowHandle<StateOf<TShape>>>;
 
-    use<TExtension extends ExtensionDefinition<object, object, object>>(
-        extension: TExtension
+    use<TExtension extends ExtensionDefinition<object, object, object, object>>(
+        extension: CompatibleExtension<TExtension, TProvided>
     ): Engine<
         MergeObjects<TProvided, ExtensionProvided<TExtension>>,
         MergePublicEvents<TPublicEvents, ExtensionPublicEvents<TExtension>>,
@@ -136,8 +155,8 @@ export function createEngine(config?: EngineConfig): Engine<EmptyObject, SystemP
             return createRunnable(flow, extensions, bus, requests).start(...args);
         },
 
-        use(definition: AnyExtensionDefinition) {
-            installExtension(definition);
+        use(definition: AnyExtensionDefinition | MissingExtensionDependency<string>) {
+            installExtension(definition as AnyExtensionDefinition);
             return engine;
         },
     };

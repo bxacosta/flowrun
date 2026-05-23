@@ -1,6 +1,6 @@
 import { DuplicateNodeNameError, InvalidPlainObjectError } from "./errors.ts";
 
-export function assertPlainObject(value: unknown, message: string): asserts value is Record<string, unknown> {
+export function assertPlainObject(value: unknown, message: string): asserts value is object {
     if (value === null || typeof value !== "object" || Array.isArray(value)) {
         throw new InvalidPlainObjectError(message);
     }
