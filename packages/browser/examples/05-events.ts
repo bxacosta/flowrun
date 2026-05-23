@@ -97,17 +97,21 @@ const observability = browser.flow("observability").nodes(({ task }) => [
     task({
         name: "trigger-page-error",
         run: async (context) => {
-            // The fixture page throws an uncaught error in useEffect.
-            // browser:page-error fires for the runtime exception.
+            // The fixture page throws an uncaught error in useEffect on mount.
+            // browser:page-error fires for the runtime exception. We wait a
+            // moment after the load event so React has time to mount and run
+            // the effect before the flow moves on.
             await context.navigate(`${BASE_URL}/test/page-error`);
+            await context.page.waitForTimeout(300);
         },
     }),
     task({
         name: "trigger-console-error",
         run: async (context) => {
-            // The fixture page calls console.error() on mount.
-            // browser:console-error fires.
+            // The fixture page calls console.error() on mount; same timing
+            // caveat as trigger-page-error above.
             await context.navigate(`${BASE_URL}/test/console-error`);
+            await context.page.waitForTimeout(300);
         },
     }),
     task({

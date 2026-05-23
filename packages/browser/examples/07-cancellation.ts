@@ -66,7 +66,7 @@ const longFlow = browser.flow("long-running").nodes(({ task }) => [
         name: "kick-off-report",
         run: async (context) => {
             await context.navigate(`${BASE_URL}/dashboard/reports`);
-            await context.page.click("[data-testid='report-generate']");
+            await context.page.click("[data-testid='generate-btn']");
             // Wait long enough that we know cancellation interrupted us.
             await context.page.waitForSelector("[data-testid='report-download']", {
                 timeout: 30_000,

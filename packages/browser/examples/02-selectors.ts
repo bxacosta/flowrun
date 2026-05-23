@@ -11,10 +11,15 @@
  *  - registry.reload() — reread the source file after edits (no-op for fromObject)
  */
 
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { browser, createBrowserEngine, JsonSelectorRegistry, SelectorNotFoundError } from "@flowrun/browser";
 import { BASE_URL, provider, storage } from "./shared/env.ts";
 import { log, title } from "./shared/helpers.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+const DASHBOARD_URL_PATTERN = /\/dashboard/;
 
 // ── Inline registry — handy for tests and small flows ───────────────
 
@@ -74,6 +79,21 @@ log(`status: ${r2.status}`);
 
 const iframeFlow = browser.flow("selectors-frame-scope").nodes(({ task }) => [
     task({
+        name: "sign-in",
+        run: async (context) => {
+            // /dashboard/* requires a session; log in with the seeded acme account
+            // before navigating to the page that hosts the payment iframe.
+            await context.navigate(`${BASE_URL}/login`);
+            const user = await context.selectors.resolve("loginUser", context.page);
+            const pass = await context.selectors.resolve("loginPass", context.page);
+            const submit = await context.selectors.resolve("loginSubmit", context.page);
+            await user.fill("acme");
+            await pass.fill("acme");
+            await submit.click();
+            await context.page.waitForURL(DASHBOARD_URL_PATTERN);
+        },
+    }),
+    task({
         name: "fill-payment-widget",
         run: async (context) => {
             await context.navigate(`${BASE_URL}/dashboard/invoices/1/pay`);
@@ -113,7 +133,7 @@ try {
 // ── Demo 5: load definitions from a JSON file + reload() ────────────
 
 title("5 - JsonSelectorRegistry.load(file) and registry.reload()");
-const filePath = join(import.meta.dir, "shared/selectors.json");
+const filePath = join(HERE, "shared/selectors.json");
 const fileRegistry = await JsonSelectorRegistry.load(filePath);
 log(`loaded 'twoFactorCode' from file: ${fileRegistry.get("twoFactorCode").selector}`);
 

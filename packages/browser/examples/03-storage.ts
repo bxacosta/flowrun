@@ -21,10 +21,26 @@ import { log, title } from "./shared/helpers.ts";
 const engine = createBrowserEngine({ provider, selectors, storage });
 
 const PREFIX = "03-storage/";
+const DASHBOARD_URL_PATTERN = /\/dashboard/;
 
 // ── Flow 1: save() bytes + saveStream() from a Playwright download ──
 
 const captureFlow = browser.flow("capture").nodes(({ task }) => [
+    task({
+        name: "sign-in",
+        run: async (context) => {
+            // The download demo below targets /dashboard/reports, which
+            // requires a session. Log in once at the start of the flow.
+            await context.navigate(`${BASE_URL}/login`);
+            const user = await context.selectors.resolve("loginUser", context.page);
+            const pass = await context.selectors.resolve("loginPass", context.page);
+            const submit = await context.selectors.resolve("loginSubmit", context.page);
+            await user.fill("acme");
+            await pass.fill("acme");
+            await submit.click();
+            await context.page.waitForURL(DASHBOARD_URL_PATTERN);
+        },
+    }),
     task({
         name: "save-screenshot",
         run: async (context) => {
@@ -63,10 +79,18 @@ const captureFlow = browser.flow("capture").nodes(({ task }) => [
         run: async (context) => {
             // Real-world: capture a download from the test app and pipe it
             // into the StorageProvider without buffering through memory.
+            //
+            // The reports page generates via SSE: clicking "Generate" starts
+            // a progress stream and only renders the `report-download` link
+            // when the stream completes. The actual download event fires
+            // when that link is clicked.
             await context.navigate(`${BASE_URL}/dashboard/reports`);
+            await context.page.click("[data-testid='generate-btn']");
+            await context.page.waitForSelector("[data-testid='report-download']", { timeout: 30_000 });
+
             const [download] = await Promise.all([
                 context.page.waitForEvent("download"),
-                context.page.click("[data-testid='report-generate']"),
+                context.page.click("[data-testid='report-download']"),
             ]);
 
             const readable = await download.createReadStream();
