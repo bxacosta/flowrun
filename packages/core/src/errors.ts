@@ -84,6 +84,16 @@ export class SkipSignal extends Error {
     }
 }
 
+export class FlowCancellationSignal extends Error {
+    override readonly name = "FlowCancellationSignal";
+    readonly reason: string | undefined;
+
+    constructor(reason?: string) {
+        super(reason ?? "Flow cancelled");
+        this.reason = reason;
+    }
+}
+
 export class RequestError extends FlowEngineError {
     override readonly name: string = "RequestError";
     readonly requestId: string | undefined;

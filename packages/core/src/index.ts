@@ -14,6 +14,7 @@ export {
     DuplicateExtensionError,
     DuplicateFlowError,
     DuplicateNodeNameError,
+    FlowCancellationSignal,
     FlowEngineError,
     FlowNotRegisteredError,
     InvalidItemsError,

@@ -1,6 +1,6 @@
 import type { ExecutionContext, FlowProgress, FlowRuntime } from "./context.ts";
 import { buildFlowContext } from "./context.ts";
-import { normalizeError } from "./errors.ts";
+import { FlowCancellationSignal, normalizeError } from "./errors.ts";
 import type { InternalBus, PublishableBus } from "./event-bus.ts";
 import type { EventMap } from "./events.ts";
 import { executeNodes } from "./execute.ts";
@@ -213,7 +213,6 @@ async function runPipeline(args: PipelineArgs): Promise<AnyFlowResult> {
             return { ...resultBase(), reason: cancellation.reason, status: "cancelled" };
         }
 
-        controller.abort(error);
         const normalized = normalizeError(error);
         if (flowStarted) {
             await bus.publish(
@@ -314,7 +313,7 @@ export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>)
             cancellation.reason = reason;
             currentStatus = "cancelled";
             pauseGate.resume();
-            controller.abort(reason ? new Error(reason) : undefined);
+            controller.abort(new FlowCancellationSignal(reason));
         },
         flowName,
         join() {

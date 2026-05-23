@@ -15,7 +15,7 @@ export const BASE_URL = process.env["TEST_APP_URL"] ?? "http://localhost:5173";
  */
 export const provider = new LocalBrowserProvider({
     // biome-ignore lint/complexity/useLiteralKeys: TS strict mode requires bracket access for env index signature
-    headless: process.env["HEADLESS"] !== "0",
+    headless: false,
 });
 
 /**
@@ -29,15 +29,14 @@ export const selectors = JsonSelectorRegistry.fromObject({
     loginPass: { selector: "[name='password']" },
     loginSubmit: { selector: "[data-testid='login-submit']" },
     loginError: { selector: "[data-testid='login-error']" },
-    invoiceRow: { selector: "[data-testid='invoice-row']" },
-    invoiceStatusFilter: { selector: "[data-testid='invoice-status-filter']" },
-    invoiceSearch: { selector: "[data-testid='invoice-search']" },
-    downloadPdf: { selector: "[data-testid='download-pdf']" },
+    invoiceStatusFilter: { selector: "[data-testid='status-filter']" },
+    invoiceSearch: { selector: "[data-testid='search-input']" },
+    downloadPdf: { selector: "[data-testid='download-btn']" },
     paymentFrame: { selector: "[data-testid='payment-frame']" },
     paymentCardNumber: { selector: "[name='cardNumber']" },
     paymentExpiry: { selector: "[name='expiry']" },
     paymentCvv: { selector: "[name='cvv']" },
-    reportGenerate: { selector: "[data-testid='report-generate']" },
+    reportGenerate: { selector: "[data-testid='generate-btn']" },
     reportProgress: { selector: "[data-testid='report-progress']" },
     reportDownload: { selector: "[data-testid='report-download']" },
     twoFactorCode: { selector: "[name='code']" },

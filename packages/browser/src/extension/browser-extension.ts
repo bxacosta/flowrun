@@ -1,4 +1,4 @@
-import { type ExtensionDefinition, eventPublic, extension } from "@flowrun/core";
+import { type ExtensionDefinition, eventPublic, extension, FlowCancellationSignal } from "@flowrun/core";
 
 import type { BrowserSession } from "../contracts/provider.ts";
 import { BrowserSessionError } from "../errors.ts";
@@ -53,9 +53,10 @@ export function createBrowserExtension(config: BrowserExtensionConfig): BrowserE
                 context.signal.addEventListener(
                     "abort",
                     () => {
-                        session.context.close().catch(() => {
-                            /* idempotent */
-                        });
+                        if (!(context.signal.reason instanceof FlowCancellationSignal)) {
+                            return;
+                        }
+                        session.context.close().catch(() => undefined);
                     },
                     { once: true }
                 );
