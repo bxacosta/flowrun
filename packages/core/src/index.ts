@@ -66,8 +66,9 @@ export type {
     FlowOutcome,
     Internal,
     Public,
+    RequiresMarker,
 } from "./extension.ts";
-export { eventInternal, eventPublic, extension } from "./extension.ts";
+export { eventInternal, eventPublic, extension, requires } from "./extension.ts";
 export type {
     BaseFlowResult,
     CancelledFlowResult,

@@ -1,10 +1,7 @@
-import type { EventMap, PublishableBus } from "@flowrun/core";
 import type { Page } from "playwright-core";
 
-import { NavigationError } from "../errors.ts";
-import { type BrowserEventPayloads, EVENT_SOURCE, type NavigateFn, type NavigateOptions } from "./types.ts";
-
-export type BrowserBus = PublishableBus<BrowserEventPayloads, EventMap>;
+import { NavigationError } from "../../errors.ts";
+import { type BrowserBus, EVENT_SOURCE, type NavigateFn, type NavigateOptions } from "./types.ts";
 
 export interface CreateNavigateOptions {
     emitEvent: boolean;

@@ -4,6 +4,17 @@ import type { Logger } from "./logger.ts";
 import type { EmptyObject, MaybePromise } from "./utils.ts";
 
 declare const visibility: unique symbol;
+declare const requiredBrand: unique symbol;
+
+export interface RequiresMarker<TRequired extends object> {
+    readonly [requiredBrand]: TRequired;
+}
+
+export function requires<TRequired extends object>(): RequiresMarker<TRequired> {
+    return undefined as unknown as RequiresMarker<TRequired>;
+}
+
+export type UnwrapRequires<TMarker> = TMarker extends RequiresMarker<infer TRequired> ? TRequired : EmptyObject;
 
 export interface Internal<TPayload> {
     readonly _type: TPayload;
@@ -65,15 +76,16 @@ export interface ExtensionSetupContext<TRequired extends object, TEvents extends
 }
 
 export interface ExtensionConfig<
-    TRequired extends object,
+    TRequires extends RequiresMarker<object> | undefined,
     TDefinitions extends EventDefinitions,
     TProvided extends object,
 > {
     events?: TDefinitions;
     name: string;
     provide: (
-        context: ExtensionSetupContext<TRequired, UnwrapEvents<TDefinitions>>
+        context: ExtensionSetupContext<UnwrapRequires<TRequires>, UnwrapEvents<TDefinitions>>
     ) => MaybePromise<ExtensionProvideResult<TProvided>>;
+    requires?: TRequires;
 }
 
 export interface ExtensionDefinition<
@@ -112,12 +124,17 @@ export type ExtensionPublicEvents<TDefinition> =
     TDefinition extends ExtensionDefinition<object, object, object, infer TPublic> ? AsEventMap<TPublic> : EmptyObject;
 
 export function extension<
-    TRequired extends object = EmptyObject,
-    TDefinitions extends EventDefinitions = EventDefinitions,
-    TProvided extends object = EmptyObject,
+    TRequires extends RequiresMarker<object> | undefined,
+    TDefinitions extends EventDefinitions,
+    TProvided extends object,
 >(
-    config: ExtensionConfig<TRequired, TDefinitions, TProvided>
-): ExtensionDefinition<TRequired, TProvided, ExtractInternalEvents<TDefinitions>, ExtractPublicEvents<TDefinitions>> {
+    config: ExtensionConfig<TRequires, TDefinitions, TProvided>
+): ExtensionDefinition<
+    UnwrapRequires<TRequires>,
+    TProvided,
+    ExtractInternalEvents<TDefinitions>,
+    ExtractPublicEvents<TDefinitions>
+> {
     return {
         kind: "extension",
         name: config.name,

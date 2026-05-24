@@ -32,7 +32,7 @@ type CompatibleFlow<TProvided extends object, TShape extends Shape> =
 declare const missingExtensionDependencyBrand: unique symbol;
 
 export interface MissingExtensionDependency<TMissing extends string> {
-    readonly [missingExtensionDependencyBrand]: TMissing;
+    readonly [missingExtensionDependencyBrand]: `extension requires "${TMissing}" in provided context, but no prior .use() supplied it`;
 }
 
 type MissingDependencyKeys<TExtension extends AnyExtensionDefinition, TProvided extends object> = Exclude<

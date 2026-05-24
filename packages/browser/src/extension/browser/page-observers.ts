@@ -1,7 +1,6 @@
 import type { ConsoleMessage, Page } from "playwright-core";
 
-import type { BrowserBus } from "./navigate.ts";
-import { EVENT_SOURCE } from "./types.ts";
+import { type BrowserBus, EVENT_SOURCE } from "./types.ts";
 
 export interface ObserverOptions {
     consoleErrors: boolean;
@@ -21,9 +20,7 @@ export function attachPageObservers(page: Page, bus: BrowserBus, options: Observ
                 "browser:page-error",
                 { message: error.message, stack: error.stack },
                 { source: EVENT_SOURCE }
-            ).catch(() => {
-                /* swallow: bus.onError already handles publish failures */
-            });
+            ).catch(() => undefined);
         };
         page.on("pageerror", handler);
         detachers.push(() => page.off("pageerror", handler));
@@ -48,9 +45,7 @@ export function attachPageObservers(page: Page, bus: BrowserBus, options: Observ
                         : undefined,
                 },
                 { source: EVENT_SOURCE }
-            ).catch(() => {
-                /* swallow: bus.onError already handles publish failures */
-            });
+            ).catch(() => undefined);
         };
         page.on("console", handler);
         detachers.push(() => page.off("console", handler));

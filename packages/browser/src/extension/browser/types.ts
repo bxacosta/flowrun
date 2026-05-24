@@ -1,18 +1,8 @@
-import type { BrowserProvider, BrowserSession, OpenOptions } from "../contracts/provider.ts";
-import type { SelectorRegistry } from "../contracts/selectors.ts";
-import type { StorageProvider } from "../contracts/storage.ts";
+import type { EventMap, PublishableBus } from "@flowrun/core";
 
-export type TraceMode = "off" | "on" | "on-failure" | "retain-on-failure";
+import type { BrowserProvider, BrowserSession, OpenOptions } from "../../contracts/provider.ts";
 
-export type TraceReason = "always" | "on-failure" | "retained";
-
-export interface TraceConfig {
-    mode: TraceMode;
-    screenshots?: boolean;
-    snapshots?: boolean;
-    sources?: boolean;
-    storageKey?: (context: { runId: string; flowName: string }) => string;
-}
+export const EVENT_SOURCE = "browser";
 
 export type CancelStrategy = "close-context" | "none";
 
@@ -21,14 +11,10 @@ export interface BrowserExtensionConfig {
     defaultNavigationTimeout?: number;
     defaultTimeout?: number;
     emitNavigateEvent?: boolean;
-    emitStorageEvent?: boolean;
     observeConsoleErrors?: boolean;
     observePageErrors?: boolean;
     openOptions?: OpenOptions;
     provider: BrowserProvider;
-    selectors: SelectorRegistry;
-    storage: StorageProvider;
-    trace?: TraceConfig;
 }
 
 export interface ResolvedBrowserExtensionConfig {
@@ -36,30 +22,22 @@ export interface ResolvedBrowserExtensionConfig {
     defaultNavigationTimeout: number | undefined;
     defaultTimeout: number | undefined;
     emitNavigateEvent: boolean;
-    emitStorageEvent: boolean;
     observeConsoleErrors: boolean;
     observePageErrors: boolean;
     openOptions: OpenOptions | undefined;
     provider: BrowserProvider;
-    selectors: SelectorRegistry;
-    storage: StorageProvider;
-    trace: TraceConfig;
 }
 
-export function resolveConfig(config: BrowserExtensionConfig): ResolvedBrowserExtensionConfig {
+export function resolveBrowserConfig(config: BrowserExtensionConfig): ResolvedBrowserExtensionConfig {
     return {
-        provider: config.provider,
-        selectors: config.selectors,
-        storage: config.storage,
-        openOptions: config.openOptions,
-        defaultTimeout: config.defaultTimeout,
-        defaultNavigationTimeout: config.defaultNavigationTimeout,
-        observePageErrors: config.observePageErrors ?? true,
-        observeConsoleErrors: config.observeConsoleErrors ?? true,
-        emitNavigateEvent: config.emitNavigateEvent ?? true,
-        emitStorageEvent: config.emitStorageEvent ?? true,
-        trace: config.trace ?? { mode: "off" },
         cancelStrategy: config.cancelStrategy ?? "close-context",
+        defaultNavigationTimeout: config.defaultNavigationTimeout,
+        defaultTimeout: config.defaultTimeout,
+        emitNavigateEvent: config.emitNavigateEvent ?? true,
+        observeConsoleErrors: config.observeConsoleErrors ?? true,
+        observePageErrors: config.observePageErrors ?? true,
+        openOptions: config.openOptions,
+        provider: config.provider,
     };
 }
 
@@ -81,9 +59,7 @@ export interface BrowserProvidedContext {
     navigate: NavigateFn;
     page: BrowserSession["page"];
     provider: BrowserProvider;
-    selectors: SelectorRegistry;
     session: BrowserSession;
-    storage: StorageProvider;
 }
 
 export interface ConsoleLocation {
@@ -102,8 +78,6 @@ export interface BrowserEventPayloads {
     "browser:page-opened": BranchMeta;
     "browser:session-closed": BranchMeta;
     "browser:session-opened": BranchMeta;
-    "browser:storage-saved": { key: string; size: number };
-    "browser:tracing-saved": { key: string; size: number; reason: TraceReason };
 }
 
-export const EVENT_SOURCE = "browser";
+export type BrowserBus = PublishableBus<BrowserEventPayloads, EventMap>;

@@ -1,17 +1,16 @@
 import { type ExtensionDefinition, eventPublic, extension, FlowCancellationSignal } from "@flowrun/core";
 
-import type { BrowserSession } from "../contracts/provider.ts";
-import { BrowserSessionError } from "../errors.ts";
-import { type BrowserBus, createNavigate } from "./navigate.ts";
+import type { BrowserSession } from "../../contracts/provider.ts";
+import { BrowserSessionError } from "../../errors.ts";
+import { createNavigate } from "./navigate.ts";
 import { attachPageObservers } from "./page-observers.ts";
-import { wrapStorage } from "./storage-wrap.ts";
-import { createTracingLifecycle, type FlowOutcome as TracingOutcome } from "./tracing.ts";
 import {
+    type BrowserBus,
     type BrowserEventPayloads,
     type BrowserExtensionConfig,
     type BrowserProvidedContext,
     EVENT_SOURCE,
-    resolveConfig,
+    resolveBrowserConfig,
 } from "./types.ts";
 
 export const BROWSER_EXTENSION_NAME = "browser";
@@ -24,7 +23,7 @@ export type BrowserExtensionDefinition = ExtensionDefinition<
 >;
 
 export function createBrowserExtension(config: BrowserExtensionConfig): BrowserExtensionDefinition {
-    const resolved = resolveConfig(config);
+    const resolved = resolveBrowserConfig(config);
 
     return extension({
         name: BROWSER_EXTENSION_NAME,
@@ -38,8 +37,6 @@ export function createBrowserExtension(config: BrowserExtensionConfig): BrowserE
             "browser:page-closed": eventPublic<BrowserEventPayloads["browser:page-closed"]>(),
             "browser:session-opened": eventPublic<BrowserEventPayloads["browser:session-opened"]>(),
             "browser:session-closed": eventPublic<BrowserEventPayloads["browser:session-closed"]>(),
-            "browser:tracing-saved": eventPublic<BrowserEventPayloads["browser:tracing-saved"]>(),
-            "browser:storage-saved": eventPublic<BrowserEventPayloads["browser:storage-saved"]>(),
         },
         provide: async (context) => {
             const bus: BrowserBus = context.bus;
@@ -79,14 +76,7 @@ export function createBrowserExtension(config: BrowserExtensionConfig): BrowserE
                 consoleErrors: resolved.observeConsoleErrors,
             });
 
-            const tracing = createTracingLifecycle(session.context, bus, resolved.storage, resolved.trace, {
-                runId: context.runId,
-                flowName: context.flowName,
-            });
-            await tracing.start();
-
             const navigate = createNavigate(session.page, bus, { emitEvent: resolved.emitNavigateEvent });
-            const wrappedStorage = wrapStorage(resolved.storage, bus, { emitEvent: resolved.emitStorageEvent });
 
             await bus.publish("browser:opened", {}, { source: EVENT_SOURCE });
 
@@ -94,15 +84,12 @@ export function createBrowserExtension(config: BrowserExtensionConfig): BrowserE
                 session,
                 page: session.page,
                 provider: resolved.provider,
-                selectors: resolved.selectors,
-                storage: wrappedStorage,
                 navigate,
             };
 
             return {
                 provided,
-                cleanup: async (outcome) => {
-                    await tracing.finish(outcome.status as TracingOutcome);
+                cleanup: async () => {
                     observers.detach();
 
                     let closeError: Error | undefined;

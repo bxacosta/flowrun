@@ -3,9 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BrowserContext } from "playwright-core";
 
-import type { StorageProvider } from "../contracts/storage.ts";
-import type { BrowserBus } from "./navigate.ts";
-import { EVENT_SOURCE, type TraceConfig, type TraceReason } from "./types.ts";
+import type { StorageProvider } from "../../contracts/storage.ts";
+import { TRACING_EVENT_SOURCE, type TraceReason, type TracingBus, type TracingExtensionConfig } from "./types.ts";
 
 export type FlowOutcome = "cancelled" | "failed" | "success";
 
@@ -31,9 +30,9 @@ const NOOP_LIFECYCLE: TracingLifecycle = {
 
 export function createTracingLifecycle(
     context: BrowserContext,
-    bus: BrowserBus,
+    bus: TracingBus,
     storage: StorageProvider,
-    config: TraceConfig,
+    config: TracingExtensionConfig,
     meta: TracingMeta
 ): TracingLifecycle {
     if (config.mode === "off") {
@@ -68,9 +67,7 @@ export function createTracingLifecycle(
             const reason = decideReason(config.mode, failed);
 
             if (reason === null) {
-                await context.tracing.stop().catch(() => {
-                    /* noop */
-                });
+                await context.tracing.stop().catch(() => undefined);
                 return;
             }
 
@@ -79,20 +76,18 @@ export function createTracingLifecycle(
                 const buffer = await readFile(state.tempZipPath);
                 const result = await storage.save(storageKey, buffer);
                 await bus.publish(
-                    "browser:tracing-saved",
+                    "tracing:saved",
                     { key: result.key, size: result.size, reason },
-                    { source: EVENT_SOURCE }
+                    { source: TRACING_EVENT_SOURCE }
                 );
             } finally {
-                await rm(state.tempZipPath, { force: true }).catch(() => {
-                    /* noop */
-                });
+                await rm(state.tempZipPath, { force: true }).catch(() => undefined);
             }
         },
     };
 }
 
-function decideReason(mode: TraceConfig["mode"], failed: boolean): TraceReason | null {
+function decideReason(mode: TracingExtensionConfig["mode"], failed: boolean): TraceReason | null {
     if (mode === "on") {
         return "always";
     }

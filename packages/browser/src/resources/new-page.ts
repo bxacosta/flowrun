@@ -1,8 +1,8 @@
 import type { ContainerMeta, ResourceFactory } from "@flowrun/core";
 
 import type { BrowserSession } from "../contracts/provider.ts";
-import { type BrowserBus, createNavigate } from "../extension/navigate.ts";
-import { EVENT_SOURCE, type NavigateFn } from "../extension/types.ts";
+import { createNavigate } from "../extension/browser/navigate.ts";
+import { type BrowserBus, EVENT_SOURCE, type NavigateFn } from "../extension/browser/types.ts";
 
 export interface NewPageLocal {
     navigate: NavigateFn;

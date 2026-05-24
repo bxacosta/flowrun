@@ -8,8 +8,8 @@ import {
     type WithProvided,
 } from "@flowrun/core";
 
-import { createBrowserExtension } from "../extension/browser-extension.ts";
-import type { BrowserEventPayloads, BrowserProvidedContext } from "../extension/types.ts";
+import { createBrowserExtension } from "../extension/browser/index.ts";
+import type { BrowserEventPayloads, BrowserProvidedContext } from "../extension/browser/types.ts";
 import { newPage } from "../resources/new-page.ts";
 import { newSession } from "../resources/new-session.ts";
 
@@ -21,7 +21,10 @@ export interface BrowserShape extends Shape {
     provided: BrowserProvidedContext;
 }
 
-type WithBrowser<TShape extends Shape> = WithProvided<WithEvents<TShape, BrowserEventPayloads>, BrowserProvidedContext>;
+export type WithBrowser<TShape extends Shape = Shape> = WithProvided<
+    WithEvents<TShape, BrowserEventPayloads>,
+    BrowserProvidedContext
+>;
 
 function browserFlow(name: string): FlowBuilder<BrowserShape> {
     return coreFlow<BrowserShape>(name);

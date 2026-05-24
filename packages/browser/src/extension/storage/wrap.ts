@@ -1,18 +1,17 @@
-import type { StorageProvider, StorageResult } from "../contracts/storage.ts";
-import type { BrowserBus } from "./navigate.ts";
-import { EVENT_SOURCE } from "./types.ts";
+import type { StorageProvider, StorageResult } from "../../contracts/storage.ts";
+import { STORAGE_EVENT_SOURCE, type StorageBus } from "./types.ts";
 
 export interface WrapStorageOptions {
     emitEvent: boolean;
 }
 
-export function wrapStorage(inner: StorageProvider, bus: BrowserBus, options: WrapStorageOptions): StorageProvider {
+export function wrapStorage(inner: StorageProvider, bus: StorageBus, options: WrapStorageOptions): StorageProvider {
     if (!options.emitEvent) {
         return inner;
     }
 
     const emit = async (result: StorageResult): Promise<void> => {
-        await bus.publish("browser:storage-saved", { key: result.key, size: result.size }, { source: EVENT_SOURCE });
+        await bus.publish("storage:saved", { key: result.key, size: result.size }, { source: STORAGE_EVENT_SOURCE });
     };
 
     return {

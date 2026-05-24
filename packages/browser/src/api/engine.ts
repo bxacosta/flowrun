@@ -6,8 +6,12 @@ import {
     type SystemPublicEvents,
 } from "@flowrun/core";
 
-import { createBrowserExtension } from "../extension/browser-extension.ts";
-import type { BrowserEventPayloads, BrowserExtensionConfig, BrowserProvidedContext } from "../extension/types.ts";
+import { createBrowserExtension } from "../extension/browser/index.ts";
+import type {
+    BrowserEventPayloads,
+    BrowserExtensionConfig,
+    BrowserProvidedContext,
+} from "../extension/browser/types.ts";
 
 export type BrowserEngine = Engine<
     BrowserProvidedContext,

@@ -11,7 +11,7 @@ export type {
     Locator,
     Page,
 } from "playwright-core";
-export type { BrowserShape, NewPageOptions, NewSessionOptions } from "./api/define.ts";
+export type { BrowserShape, NewPageOptions, NewSessionOptions, WithBrowser } from "./api/define.ts";
 // Public API namespace
 export { browser } from "./api/define.ts";
 export type { BrowserEngine, CreateBrowserEngineConfig } from "./api/engine.ts";
@@ -38,8 +38,8 @@ export {
     SelectorNotFoundError,
     StorageError,
 } from "./errors.ts";
-export type { BrowserExtensionDefinition } from "./extension/browser-extension.ts";
-// Extension types
+// Extension factories + types
+export type { BrowserExtensionDefinition } from "./extension/browser/index.ts";
 export type {
     BrowserEventPayloads,
     BrowserExtensionConfig,
@@ -49,10 +49,32 @@ export type {
     NavigateFn,
     NavigateOptions,
     NavigateWaitUntil,
-    TraceConfig,
+} from "./extension/browser/types.ts";
+export type { SelectorsExtensionDefinition } from "./extension/selectors/index.ts";
+export { createSelectorsExtension as selectors } from "./extension/selectors/index.ts";
+export type {
+    SelectorsExtensionConfig,
+    SelectorsProvidedContext,
+    WithSelectors,
+} from "./extension/selectors/types.ts";
+export type { StorageExtensionDefinition } from "./extension/storage/index.ts";
+export { createStorageExtension as storage } from "./extension/storage/index.ts";
+export type {
+    StorageEventPayloads,
+    StorageExtensionConfig,
+    StorageProvidedContext,
+    WithStorage,
+} from "./extension/storage/types.ts";
+export type { TracingExtensionDefinition } from "./extension/tracing/index.ts";
+export { createTracingExtension as tracing } from "./extension/tracing/index.ts";
+export type {
     TraceMode,
     TraceReason,
-} from "./extension/types.ts";
+    TracingEventPayloads,
+    TracingExtensionConfig,
+    TracingRequiredContext,
+    WithTracing,
+} from "./extension/tracing/types.ts";
 export type { LocalLaunchOptions } from "./providers/local.ts";
 // Reference implementations
 export { LocalBrowserProvider } from "./providers/local.ts";
