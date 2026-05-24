@@ -11,9 +11,9 @@ export type {
     Locator,
     Page,
 } from "playwright-core";
-export type { BrowserShape, NewPageOptions, NewSessionOptions, WithBrowser } from "./api/define.ts";
-// Public API namespace
-export { browser } from "./api/define.ts";
+export type { BrowserShape, NewPageOptions, NewSessionOptions } from "./api/define.ts";
+// Resource factories (used as the `resource:` field of parallel/every nodes)
+export { resource } from "./api/define.ts";
 export type { BrowserEngine, CreateBrowserEngineConfig } from "./api/engine.ts";
 // Engine
 export { createBrowserEngine } from "./api/engine.ts";
@@ -55,6 +55,7 @@ export { createSelectorsExtension as selectors } from "./extension/selectors/ind
 export type {
     SelectorsExtensionConfig,
     SelectorsProvidedContext,
+    SelectorsShape,
     WithSelectors,
 } from "./extension/selectors/types.ts";
 export type { StorageExtensionDefinition } from "./extension/storage/index.ts";
@@ -63,6 +64,7 @@ export type {
     StorageEventPayloads,
     StorageExtensionConfig,
     StorageProvidedContext,
+    StorageShape,
     WithStorage,
 } from "./extension/storage/types.ts";
 export type { TracingExtensionDefinition } from "./extension/tracing/index.ts";
@@ -73,6 +75,7 @@ export type {
     TracingEventPayloads,
     TracingExtensionConfig,
     TracingRequiredContext,
+    TracingShape,
     WithTracing,
 } from "./extension/tracing/types.ts";
 export type { LocalLaunchOptions } from "./providers/local.ts";

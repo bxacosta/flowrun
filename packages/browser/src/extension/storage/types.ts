@@ -19,6 +19,11 @@ export interface StorageEventPayloads {
 
 export type StorageBus = PublishableBus<StorageEventPayloads, EventMap>;
 
+export interface StorageShape extends Shape {
+    events: StorageEventPayloads;
+    provided: StorageProvidedContext;
+}
+
 export type WithStorage<TShape extends Shape = Shape> = WithProvided<
     WithEvents<TShape, StorageEventPayloads>,
     StorageProvidedContext

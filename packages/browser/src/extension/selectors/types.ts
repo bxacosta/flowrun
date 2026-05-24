@@ -10,4 +10,8 @@ export interface SelectorsProvidedContext {
     selectors: SelectorRegistry;
 }
 
+export interface SelectorsShape extends Shape {
+    provided: SelectorsProvidedContext;
+}
+
 export type WithSelectors<TShape extends Shape = Shape> = WithProvided<TShape, SelectorsProvidedContext>;

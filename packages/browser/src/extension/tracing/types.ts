@@ -28,4 +28,8 @@ export interface TracingEventPayloads {
 
 export type TracingBus = PublishableBus<TracingEventPayloads, EventMap>;
 
+export interface TracingShape extends Shape {
+    events: TracingEventPayloads;
+}
+
 export type WithTracing<TShape extends Shape = Shape> = WithEvents<TShape, TracingEventPayloads>;
