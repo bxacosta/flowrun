@@ -1,4 +1,5 @@
 import type { MaybePromise } from "./utils.ts";
+import { assertValidName } from "./validation.ts";
 
 export type RequestStatus = "cancelled" | "expired" | "pending" | "responded";
 export type TerminalRequestStatus = Exclude<RequestStatus, "pending">;
@@ -11,10 +12,10 @@ export interface RequestRecord<TPayload = unknown, TResponse = unknown> {
     readonly attempt?: number;
     readonly cancelledAt?: number;
     readonly createdAt: number;
-    readonly dedupeKey?: string;
     readonly expiredAt?: number;
     readonly flowName: string;
     readonly id: string;
+    readonly idempotencyKey?: string;
     readonly iteration?: { index: number; item: unknown };
     readonly metadata?: Record<string, unknown>;
     readonly name: string;
@@ -52,7 +53,7 @@ export interface RequestConfig<TPayload, TResponse> {
 }
 
 export interface RequestOptions {
-    dedupeKey?: string;
+    idempotencyKey?: string;
     metadata?: Record<string, unknown>;
     timeoutMs?: number;
 }
@@ -63,9 +64,9 @@ export interface RequestResponseOptions {
 
 export interface PendingRequest<TPayload, TResponse> {
     cancel(reason?: string): Promise<void>;
-    readonly dedupeKey?: string;
     readonly flowName: string;
     readonly id: string;
+    readonly idempotencyKey?: string;
     readonly iteration?: { index: number; item: unknown };
     readonly metadata?: Record<string, unknown>;
     readonly name: string;
@@ -128,6 +129,7 @@ export interface EngineRequests {
 export function request<TPayload, TResponse>(
     config: RequestConfig<TPayload, TResponse>
 ): RequestDefinition<TPayload, TResponse> {
+    assertValidName("request", config.name);
     return {
         kind: "request",
         name: config.name,

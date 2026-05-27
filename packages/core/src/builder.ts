@@ -5,10 +5,10 @@ import type { AnyMiddleware, Middleware } from "./middleware.ts";
 import type { AnyStateFactory } from "./node.ts";
 import { type NodesSpec, resolveNodes } from "./node-factory.ts";
 import type { ParamsOf, Shape, WithEvents, WithParams, WithState } from "./shape.ts";
-import { assertUniqueNodeNames } from "./validation.ts";
+import { assertUniqueNodeNames, assertValidName } from "./validation.ts";
 
 export interface FlowBuilder<TShape extends Shape> {
-    events<TEvents extends EventMap>(): FlowBuilder<WithEvents<TShape, TEvents>>;
+    emits<TEvents extends EventMap>(): FlowBuilder<WithEvents<TShape, TEvents>>;
     middleware(list: NoInfer<Middleware<FlowContext<TShape>>>[]): FlowBuilder<TShape>;
     nodes(spec: NodesSpec<TShape>): FlowDefinition<TShape>;
     params<TParams extends object>(): FlowBuilder<WithParams<TShape, TParams>>;
@@ -25,7 +25,7 @@ interface BuilderState {
 
 function instantiate<TShape extends Shape>(state: BuilderState): FlowBuilder<TShape> {
     return {
-        events<TEvents extends EventMap>() {
+        emits<TEvents extends EventMap>() {
             return instantiate<WithEvents<TShape, TEvents>>(state);
         },
 
@@ -63,6 +63,7 @@ function instantiate<TShape extends Shape>(state: BuilderState): FlowBuilder<TSh
 }
 
 export function createFlowBuilder<TShape extends Shape>(name: string): FlowBuilder<TShape> {
+    assertValidName("flow", name);
     return instantiate<TShape>({ middleware: [], name });
 }
 

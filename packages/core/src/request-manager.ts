@@ -1,11 +1,12 @@
 import {
+    FlowEngineError,
+    normalizeError,
     RequestAlreadyResolvedError,
     RequestCancelledError,
     RequestNotFoundError,
     RequestTimeoutError,
 } from "./errors.ts";
-import type { InternalBus } from "./event-bus.ts";
-import type { EventMap } from "./events.ts";
+import type { AnyEventBus, EmitMeta } from "./event-bus.ts";
 import type {
     AnyPendingRequest,
     AnyRequestCreatedHandler,
@@ -57,7 +58,7 @@ export interface RequestManager extends EngineRequests {
     pruneRun(runId: string): void;
 }
 
-function computeIdempotencyKey(args: {
+function computeIdempotencyMapKey(args: {
     definitionName: string;
     key: string;
     path: readonly string[];
@@ -100,27 +101,30 @@ function safelyRedact(record: AnyRequestRecord, definition: AnyRequestDefinition
     }
 }
 
-function buildEventBase(record: AnyRequestRecord): {
-    dedupeKey?: string;
-    flowName: string;
-    id: string;
-    name: string;
-    nodeName?: string;
-    path: readonly string[];
-    runId: string;
-} {
+function recordToMeta(record: AnyRequestRecord): EmitMeta {
     return {
-        dedupeKey: record.dedupeKey,
         flowName: record.flowName,
-        id: record.id,
-        name: record.name,
+        iteration: record.iteration,
         nodeName: record.nodeName,
         path: record.path,
         runId: record.runId,
+        source: "runtime",
     };
 }
 
-export function createRequestManager(bus: InternalBus<EventMap>): RequestManager {
+function basePayload(record: AnyRequestRecord): {
+    id: string;
+    idempotencyKey?: string;
+    name: string;
+} {
+    return {
+        id: record.id,
+        idempotencyKey: record.idempotencyKey,
+        name: record.name,
+    };
+}
+
+export function createRequestManager(bus: AnyEventBus): RequestManager {
     const records = new Map<string, AnyRequestRecord>();
     const pending = new Map<string, PendingEntry>();
     const idempotency = new Map<string, string>();
@@ -136,9 +140,9 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
             cancel(reason?: string) {
                 return cancelById(id, reason);
             },
-            dedupeKey: record.dedupeKey,
             flowName: record.flowName,
             id: record.id,
+            idempotencyKey: record.idempotencyKey,
             iteration: record.iteration,
             metadata: record.metadata,
             name: record.name,
@@ -194,22 +198,10 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
         return { entry, record: newRecord };
     }
 
-    type RequestEventTopic = "request:cancelled" | "request:created" | "request:expired" | "request:responded";
-
-    function publishRequestEvent(
-        topic: RequestEventTopic,
-        record: AnyRequestRecord,
-        extras: (record: AnyRequestRecord) => object,
-        definition?: AnyRequestDefinition
-    ): void {
-        const safe = definition ? safelyRedact(record, definition) : record;
-        bus.publish(topic, { ...buildEventBase(safe), ...extras(safe) }, { source: "system" }).catch(() => undefined);
-    }
-
     function cancelById(id: string, reason?: string): Promise<void> {
         const existing = records.get(id);
         if (!existing) {
-            throw new RequestNotFoundError(id);
+            return Promise.reject(new RequestNotFoundError(id));
         }
         if (existing.status !== "pending") {
             return Promise.resolve();
@@ -218,7 +210,10 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
         if (!transitioned) {
             return Promise.resolve();
         }
-        publishRequestEvent("request:cancelled", transitioned.record, (s) => ({ reason: s.reason }));
+        const safe = transitioned.entry.definition.redact
+            ? safelyRedact(transitioned.record, transitioned.entry.definition)
+            : transitioned.record;
+        bus.emit("request:cancelled", { ...basePayload(safe), reason: safe.reason }, recordToMeta(safe));
         transitioned.entry.reject(new RequestCancelledError(transitioned.record.name, id, reason));
         return Promise.resolve();
     }
@@ -233,9 +228,14 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
         if (!transitioned) {
             return;
         }
-        publishRequestEvent("request:expired", transitioned.record, (s) => ({
-            timeoutAt: s.timeoutAt ?? Date.now(),
-        }));
+        const safe = transitioned.entry.definition.redact
+            ? safelyRedact(transitioned.record, transitioned.entry.definition)
+            : transitioned.record;
+        bus.emit(
+            "request:timeout",
+            { ...basePayload(safe), timeoutAt: safe.timeoutAt ?? Date.now() },
+            recordToMeta(safe)
+        );
         transitioned.entry.reject(
             new RequestTimeoutError(
                 transitioned.record.name,
@@ -253,12 +253,16 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
     ): Promise<void> {
         const existing = records.get(id);
         if (!existing) {
-            throw new RequestNotFoundError(id);
+            return Promise.reject(new RequestNotFoundError(id));
         }
         if (existing.status !== "pending") {
-            throw new RequestAlreadyResolvedError(existing.name, id, existing.status);
+            return Promise.reject(new RequestAlreadyResolvedError(existing.name, id, existing.status));
         }
-        assertPlainObject(response, "Request response must be a plain object");
+        try {
+            assertPlainObject(response, "Request response must be a plain object");
+        } catch (error) {
+            return Promise.reject(normalizeError(error));
+        }
         const transitioned = transitionToTerminal(id, "responded", {
             respondedAt: Date.now(),
             response,
@@ -268,27 +272,31 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
             const currentStatus = records.get(id)?.status;
             const finalStatus: TerminalRequestStatus =
                 currentStatus && isTerminalStatus(currentStatus) ? currentStatus : "responded";
-            throw new RequestAlreadyResolvedError(existing.name, id, finalStatus);
+            return Promise.reject(new RequestAlreadyResolvedError(existing.name, id, finalStatus));
         }
-        publishRequestEvent(
+        const safe = safelyRedact(transitioned.record, definition);
+        bus.emit(
             "request:responded",
-            transitioned.record,
-            (s) => ({ response: s.response, responseMetadata: s.responseMetadata }),
-            definition
+            { ...basePayload(safe), response: safe.response, responseMetadata: safe.responseMetadata },
+            recordToMeta(safe)
         );
         transitioned.entry.resolve(response);
         return Promise.resolve();
     }
 
-    function reuseExistingByKey<TResponse>(idempotencyKey: string): Promise<TResponse> | undefined {
-        const existingId = idempotency.get(idempotencyKey);
+    function reuseExistingByKey<TResponse>(
+        idempotencyMapKey: string,
+        definitionName: string,
+        newSignal: AbortSignal
+    ): Promise<TResponse> | undefined {
+        const existingId = idempotency.get(idempotencyMapKey);
         if (!existingId) {
-            return undefined;
+            return;
         }
         const existingRecord = records.get(existingId);
         if (!existingRecord) {
-            idempotency.delete(idempotencyKey);
-            return undefined;
+            idempotency.delete(idempotencyMapKey);
+            return;
         }
         if (existingRecord.status === "responded") {
             return Promise.resolve(existingRecord.response as TResponse);
@@ -296,41 +304,58 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
         if (existingRecord.status === "pending") {
             const entry = pending.get(existingId);
             if (!entry) {
-                return undefined;
+                return;
             }
             return new Promise<TResponse>((resolve, reject) => {
+                if (newSignal.aborted) {
+                    reject(new RequestCancelledError(definitionName, existingId, "task aborted"));
+                    return;
+                }
+                const onAbort = () => {
+                    reject(new RequestCancelledError(definitionName, existingId, "task aborted"));
+                };
+                newSignal.addEventListener("abort", onAbort, { once: true });
+                const detach = () => newSignal.removeEventListener("abort", onAbort);
+
                 const originalResolve = entry.resolve;
                 const originalReject = entry.reject;
                 entry.resolve = (value) => {
                     originalResolve(value);
+                    detach();
                     resolve(value as TResponse);
                 };
                 entry.reject = (error) => {
                     originalReject(error);
+                    detach();
                     reject(error);
                 };
             });
         }
-        idempotency.delete(idempotencyKey);
-        return undefined;
+        idempotency.delete(idempotencyMapKey);
+        return;
     }
 
     function open<TPayload, TResponse>(args: OpenRequestArgs<TPayload, TResponse>): Promise<TResponse> {
+        if (args.options?.timeoutMs !== undefined && args.options.timeoutMs <= 0) {
+            throw new FlowEngineError(
+                `request "${args.definition.name}": timeoutMs must be > 0 (omit it to wait indefinitely)`
+            );
+        }
         if (args.signal.aborted) {
             return Promise.reject(new RequestCancelledError(args.definition.name, "<unopened>", "task aborted"));
         }
 
-        const idempotencyKey = args.options?.dedupeKey
-            ? computeIdempotencyKey({
+        const idempotencyMapKey = args.options?.idempotencyKey
+            ? computeIdempotencyMapKey({
                   definitionName: args.definition.name,
-                  key: args.options.dedupeKey,
+                  key: args.options.idempotencyKey,
                   path: args.path,
                   runId: args.runId,
               })
             : undefined;
 
-        if (idempotencyKey) {
-            const reused = reuseExistingByKey<TResponse>(idempotencyKey);
+        if (idempotencyMapKey) {
+            const reused = reuseExistingByKey<TResponse>(idempotencyMapKey, args.definition.name, args.signal);
             if (reused) {
                 return reused;
             }
@@ -338,13 +363,13 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
 
         const id = crypto.randomUUID();
         const createdAt = Date.now();
-        const timeoutAt = args.options?.timeoutMs ? createdAt + args.options.timeoutMs : undefined;
+        const timeoutAt = args.options?.timeoutMs === undefined ? undefined : createdAt + args.options.timeoutMs;
         const record: AnyRequestRecord = {
             attempt: args.attempt,
             createdAt,
-            dedupeKey: args.options?.dedupeKey,
             flowName: args.flowName,
             id,
+            idempotencyKey: args.options?.idempotencyKey,
             iteration: args.iteration,
             metadata: args.options?.metadata,
             name: args.definition.name,
@@ -356,8 +381,8 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
             timeoutAt,
         };
         records.set(id, record);
-        if (idempotencyKey) {
-            idempotency.set(idempotencyKey, id);
+        if (idempotencyMapKey) {
+            idempotency.set(idempotencyMapKey, id);
         }
 
         const requestController = new AbortController();
@@ -374,11 +399,12 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
             rejectFn = reject;
         });
 
-        const timer = args.options?.timeoutMs
-            ? setTimeout(() => {
-                  expireById(id);
-              }, args.options.timeoutMs)
-            : undefined;
+        const timer =
+            args.options?.timeoutMs === undefined
+                ? undefined
+                : setTimeout(() => {
+                      expireById(id);
+                  }, args.options.timeoutMs);
 
         const entry: PendingEntry = {
             definition: args.definition,
@@ -391,13 +417,13 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
         };
         pending.set(id, entry);
 
-        publishRequestEvent(
+        const safe = safelyRedact(record, args.definition);
+        bus.emit(
             "request:created",
-            record,
-            (s) => ({ metadata: s.metadata, payload: s.payload, timeoutAt: s.timeoutAt }),
-            args.definition
+            { ...basePayload(safe), metadata: safe.metadata, payload: safe.payload, timeoutAt: safe.timeoutAt },
+            recordToMeta(safe)
         );
-        notifySubscribers(id);
+        queueMicrotask(() => notifySubscribers(id));
 
         return promise;
     }
@@ -439,20 +465,24 @@ export function createRequestManager(bus: InternalBus<EventMap>): RequestManager
                 cancelById(id, "run ended").catch(() => undefined);
             }
         }
-        for (const [id, record] of [...records.entries()]) {
-            if (record.runId === runId && record.status !== "pending") {
-                records.delete(id);
-                if (record.dedupeKey) {
-                    const idempotencyKey = computeIdempotencyKey({
-                        definitionName: record.name,
-                        key: record.dedupeKey,
-                        path: record.path,
-                        runId: record.runId,
-                    });
-                    idempotency.delete(idempotencyKey);
+        // Defer the delete so subscribers receiving the cancel/responded events
+        // (dispatched via microtask) can still look up the record via engine.requests.get().
+        queueMicrotask(() => {
+            for (const [id, record] of [...records.entries()]) {
+                if (record.runId === runId && record.status !== "pending") {
+                    records.delete(id);
+                    if (record.idempotencyKey) {
+                        const idempotencyMapKey = computeIdempotencyMapKey({
+                            definitionName: record.name,
+                            key: record.idempotencyKey,
+                            path: record.path,
+                            runId: record.runId,
+                        });
+                        idempotency.delete(idempotencyMapKey);
+                    }
                 }
             }
-        }
+        });
     }
 
     return {

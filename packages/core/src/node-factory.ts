@@ -1,4 +1,5 @@
 import type { FlowContext, ItemsContext, TaskContext } from "./context.ts";
+import { FlowEngineError } from "./errors.ts";
 import type { Middleware } from "./middleware.ts";
 import type {
     ContainerErrorMode,
@@ -12,7 +13,7 @@ import type {
 import type { Shape, WithIteration, WithProvided } from "./shape.ts";
 import type { MergeStrategy } from "./state.ts";
 import type { MaybePromise, MergeObjects } from "./utils.ts";
-import { assertUniqueNodeNames } from "./validation.ts";
+import { assertUniqueNodeNames, assertValidName } from "./validation.ts";
 
 export interface TaskConfig<TShape extends Shape> {
     middleware?: NoInfer<Middleware<TaskContext<TShape>>>[];
@@ -101,6 +102,10 @@ export function resolveNodes<TShape extends Shape>(spec: NodesSpec<TShape>): Nod
 }
 
 export function buildTask<TShape extends Shape>(config: TaskConfig<TShape>): Node<TShape> {
+    assertValidName("task", config.name);
+    if (config.retry && config.retry.attempts < 1) {
+        throw new FlowEngineError(`task "${config.name}": retry.attempts must be >= 1`);
+    }
     return {
         middleware: config.middleware ?? [],
         name: config.name,
@@ -114,6 +119,7 @@ export function buildTask<TShape extends Shape>(config: TaskConfig<TShape>): Nod
 export function buildParallel<TShape extends Shape>(
     config: ParallelConfig<TShape> | ParallelConfigWithResource<TShape, object>
 ): Node<TShape> {
+    assertValidName("parallel", config.name);
     type ChildShape = TShape | WithProvided<TShape, object>;
     const childNodes = resolveNodes(config.nodes as NodesSpec<ChildShape>);
     assertUniqueNodeNames(childNodes, config.name);
@@ -130,6 +136,7 @@ export function buildParallel<TShape extends Shape>(
 export function buildEvery<TShape extends Shape, TItem>(
     config: EveryConfig<TShape, TItem> | EveryConfigWithResource<TShape, TItem, object>
 ): Node<TShape> {
+    assertValidName("every", config.name);
     type ChildShape = WithIteration<TShape, TItem> | WithProvided<WithIteration<TShape, TItem>, object>;
     const childNodes = resolveNodes(config.nodes as NodesSpec<ChildShape>);
     assertUniqueNodeNames(childNodes, config.name);
@@ -146,6 +153,7 @@ export function buildEvery<TShape extends Shape, TItem>(
 }
 
 export function middleware<TContext>(config: MiddlewareConfig<TContext>): Middleware<TContext> {
+    assertValidName("middleware", config.name);
     return { name: config.name, run: config.run };
 }
 

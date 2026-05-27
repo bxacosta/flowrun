@@ -1,30 +1,22 @@
 import { SkipSignal } from "./errors.ts";
-import type { InternalBus, PublishableBus } from "./event-bus.ts";
-import type { EventMap, EventSource, SystemPublicEvents } from "./events.ts";
-import type { Logger } from "./logger.ts";
+import { type AnyEventBus, createEmitMeta, type EmitMeta } from "./event-bus.ts";
+import type { EmitOptions, EventEmitter, EventSource } from "./events.ts";
+import { createLogger, type Logger } from "./logger.ts";
 import type { TaskResult } from "./node.ts";
 import type { ContextRequest, RequestDefinition, RequestOptions } from "./request.ts";
 import type { RequestManager } from "./request-manager.ts";
-import type { AllEventsOf, IterationOf, ParamsOf, ProvidedOf, PublicEventsOf, Shape, StateOf } from "./shape.ts";
+import type { EmittableOf, IterationOf, ParamsOf, ProvidedOf, Shape, StateOf } from "./shape.ts";
 import type { PauseGate } from "./signal.ts";
 import type { AnyFlowStateStore, FlowStateStore } from "./state.ts";
 import type { EmptyObject } from "./utils.ts";
 
 type IterationField<TIteration> = [TIteration] extends [never] ? EmptyObject : { readonly iteration: TIteration };
-type DomainEvents<TPublicEvents extends EventMap> = Omit<TPublicEvents, keyof SystemPublicEvents>;
-
-export type ContextPublish<TPublicEvents extends EventMap> = <K extends keyof DomainEvents<TPublicEvents> & string>(
-    topic: K,
-    payload: DomainEvents<TPublicEvents>[K],
-    options?: { correlationId?: string; source?: string }
-) => Promise<void>;
 
 export type BaseContext<TShape extends Shape = Shape> = ProvidedOf<TShape> & {
-    bus: PublishableBus<PublicEventsOf<TShape>, AllEventsOf<TShape>>;
+    emit: EventEmitter<EmittableOf<TShape>>;
     flowName: string;
     log: Logger;
     params: Readonly<ParamsOf<TShape>>;
-    publish: ContextPublish<PublicEventsOf<TShape>>;
     request: ContextRequest;
     runId: string;
     signal: AbortSignal;
@@ -42,12 +34,11 @@ export type ItemsContext<TShape extends Shape = Shape> = BaseContext<TShape> & I
 export type TaskContext<TShape extends Shape = Shape> = BaseContext<TShape> & TaskExtras<IterationOf<TShape>>;
 
 export interface FlowRuntime {
-    bus: InternalBus<EventMap>;
+    bus: AnyEventBus;
     flowName: string;
     log: Logger;
     params: Readonly<Record<string, unknown>>;
     provided: Record<string, unknown>;
-    publicBus: PublishableBus<EventMap, EventMap>;
     requests: RequestManager;
     runId: string;
 }
@@ -68,6 +59,39 @@ export interface ExecutionContext {
     pauseGate: PauseGate;
     progress: FlowProgress;
     runtime: FlowRuntime;
+}
+
+interface ScopeLocation {
+    iteration?: { index: number; item: unknown };
+    nodeName?: string;
+    path?: readonly string[];
+}
+
+export function flowSource(flowName: string): EventSource {
+    return `flow:${flowName}`;
+}
+
+function buildEmitMeta(runtime: FlowRuntime, location: ScopeLocation, correlationId?: string): EmitMeta {
+    return createEmitMeta(flowSource(runtime.flowName), runtime, { ...location, correlationId });
+}
+
+function buildScopeEmitter(runtime: FlowRuntime, location: ScopeLocation): EventEmitter<Record<string, unknown>> {
+    const emit = (topic: string, payload?: unknown, options?: EmitOptions): void => {
+        runtime.bus.emit(topic, payload, buildEmitMeta(runtime, location, options?.correlationId));
+    };
+    return emit as unknown as EventEmitter<Record<string, unknown>>;
+}
+
+function buildScopeLogger(runtime: FlowRuntime, location: ScopeLocation): Logger {
+    return createLogger({
+        bus: runtime.bus,
+        flowName: runtime.flowName,
+        iteration: location.iteration,
+        nodeName: location.nodeName,
+        path: location.path,
+        runId: runtime.runId,
+        source: flowSource(runtime.flowName),
+    });
 }
 
 function createContextRequest(runtime: FlowRuntime, signal: AbortSignal, meta: RequestRuntimeMeta): ContextRequest {
@@ -94,18 +118,16 @@ function buildBaseContext(
     runtime: FlowRuntime,
     state: AnyFlowStateStore,
     signal: AbortSignal,
-    source: EventSource,
-    meta: RequestRuntimeMeta
+    location: ScopeLocation,
+    requestMeta: RequestRuntimeMeta
 ): Record<string, unknown> {
     return {
         ...runtime.provided,
-        bus: runtime.publicBus,
+        emit: buildScopeEmitter(runtime, location),
         flowName: runtime.flowName,
-        log: runtime.log,
+        log: buildScopeLogger(runtime, location),
         params: runtime.params,
-        publish: (topic: string, payload: unknown, options?: { correlationId?: string; source?: string }) =>
-            runtime.publicBus.publish(topic, payload, { source, ...options }),
-        request: createContextRequest(runtime, signal, meta),
+        request: createContextRequest(runtime, signal, requestMeta),
         runId: runtime.runId,
         signal,
         state,
@@ -117,7 +139,7 @@ export function buildFlowContext(
     state: AnyFlowStateStore,
     signal: AbortSignal
 ): Record<string, unknown> {
-    return buildBaseContext(runtime, state, signal, "flow", { path: [] });
+    return buildBaseContext(runtime, state, signal, {}, { path: [] });
 }
 
 export function buildItemsContext(
@@ -125,10 +147,15 @@ export function buildItemsContext(
     state: AnyFlowStateStore,
     signal: AbortSignal,
     pathSegments: readonly string[],
-    iteration?: { index: number; item: unknown },
-    source: EventSource = "container"
+    iteration?: { index: number; item: unknown }
 ): Record<string, unknown> {
-    const context = buildBaseContext(runtime, state, signal, source, { iteration, path: pathSegments });
+    const context = buildBaseContext(
+        runtime,
+        state,
+        signal,
+        { iteration, path: pathSegments },
+        { iteration, path: pathSegments }
+    );
     if (!iteration) {
         return context;
     }
@@ -147,9 +174,10 @@ export function buildTaskContext(
     attempt: number,
     iteration?: { index: number; item: unknown }
 ): Record<string, unknown> {
-    const meta: RequestRuntimeMeta = { attempt, iteration, nodeName, path: pathSegments };
+    const location: ScopeLocation = { iteration, nodeName, path: pathSegments };
+    const requestMeta: RequestRuntimeMeta = { attempt, iteration, nodeName, path: pathSegments };
     const context: Record<string, unknown> = {
-        ...buildBaseContext(runtime, state, signal, "task", meta),
+        ...buildBaseContext(runtime, state, signal, location, requestMeta),
         attempt,
         nodeName,
         skip: (reason?: string) => {

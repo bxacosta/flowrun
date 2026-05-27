@@ -1,5 +1,5 @@
-import type { InternalBus } from "./event-bus.ts";
-import type { EventMap, LogLevel } from "./events.ts";
+import type { AnyEventBus } from "./event-bus.ts";
+import type { EventSource, LogLevel } from "./events.ts";
 
 export interface Logger {
     debug(message: string, data?: unknown): void;
@@ -8,9 +8,27 @@ export interface Logger {
     warn(message: string, data?: unknown): void;
 }
 
-export function createLogger(flowName: string, runId: string, bus: InternalBus<EventMap>): Logger {
+export interface LoggerScope {
+    bus: AnyEventBus;
+    flowName: string;
+    iteration?: { index: number; item: unknown };
+    nodeName?: string;
+    path?: readonly string[];
+    runId: string;
+    source: EventSource;
+}
+
+export function createLogger(scope: LoggerScope): Logger {
     const write = (level: LogLevel, message: string, data?: unknown): void => {
-        bus.publish("log", { data, flowName, level, message, runId }, { source: "logger" });
+        const payload = data === undefined ? { level, message } : { data, level, message };
+        scope.bus.emit("log", payload, {
+            flowName: scope.flowName,
+            iteration: scope.iteration,
+            nodeName: scope.nodeName,
+            path: scope.path,
+            runId: scope.runId,
+            source: scope.source,
+        });
     };
 
     return {

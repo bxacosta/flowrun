@@ -48,6 +48,32 @@ export class InvalidPlainObjectError extends FlowEngineError {
     override readonly name = "InvalidPlainObjectError";
 }
 
+export class InvalidNameError extends FlowEngineError {
+    override readonly name = "InvalidNameError";
+
+    constructor(kind: string, value: string) {
+        super(
+            `Invalid ${kind} name "${value}": must start with a letter, contain only [A-Za-z0-9_-], not end with "_" or "-", and be 1-64 characters`
+        );
+    }
+}
+
+export class InvalidTopicKeyError extends FlowEngineError {
+    override readonly name = "InvalidTopicKeyError";
+
+    constructor(key: string, segment: string) {
+        super(`Invalid topic key "${key}": segment "${segment}" does not match identifier grammar`);
+    }
+}
+
+export class InvalidPatternError extends FlowEngineError {
+    override readonly name = "InvalidPatternError";
+
+    constructor(pattern: string, segment: string) {
+        super(`Invalid subscribe pattern "${pattern}": segment "${segment}" must be a valid identifier, "*", or "**"`);
+    }
+}
+
 export class InvalidMergeValueError extends FlowEngineError {
     override readonly name = "InvalidMergeValueError";
     readonly forkLabel: number | string;

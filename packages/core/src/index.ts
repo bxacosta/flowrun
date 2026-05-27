@@ -3,7 +3,6 @@ export type { FlowBuilder } from "./builder.ts";
 export { createFlowBuilder, flow } from "./builder.ts";
 export type {
     BaseContext,
-    ContextPublish,
     FlowContext,
     ItemsContext,
     TaskContext,
@@ -19,7 +18,10 @@ export {
     FlowNotRegisteredError,
     InvalidItemsError,
     InvalidMergeValueError,
+    InvalidNameError,
+    InvalidPatternError,
     InvalidPlainObjectError,
+    InvalidTopicKeyError,
     MergeConflictError,
     normalizeError,
     RequestAlreadyResolvedError,
@@ -30,45 +32,43 @@ export {
     SkipSignal,
 } from "./errors.ts";
 export type {
+    EventBus,
     EventBusConfig,
     EventBusErrorContext,
     EventBusErrorHandler,
-    EventBusReportedErrorContext,
-    Handler,
-    PublishableBus,
-    ReadableBus,
-    SubscribeOptions,
-    Subscription,
 } from "./event-bus.ts";
 export { createEventBus } from "./event-bus.ts";
 export type {
-    Envelope,
+    EmitOptions,
+    EventEmitter,
     EventMap,
     EventSource,
-    LogEventPayload,
+    EventStream,
+    FlowEvent,
     LogLevel,
-    SystemEvents,
-    SystemInternalEvents,
-    SystemPublicEvents,
+    OnOptions,
+    RuntimeEvents,
+    Subscription,
+    WaitForOptions,
 } from "./events.ts";
 export type {
     EventDefinitions,
     EventMarker,
-    ExtensionCleanup,
     ExtensionConfig,
+    ExtensionContext,
     ExtensionDefinition,
-    ExtensionInternalEvents,
-    ExtensionProvided,
-    ExtensionProvideResult,
-    ExtensionPublicEvents,
+    ExtensionDispose,
+    ExtensionEvents,
     ExtensionRequired,
     ExtensionSetupContext,
+    ExtensionSetupResult,
     FlowOutcome,
-    Internal,
-    Public,
+    Prefixed,
     RequiresMarker,
+    UnwrapEvents,
+    UnwrapRequires,
 } from "./extension.ts";
-export { eventInternal, eventPublic, extension, requires } from "./extension.ts";
+export { event, extension, requires } from "./extension.ts";
 export type {
     BaseFlowResult,
     CancelledFlowResult,
@@ -129,13 +129,12 @@ export type {
 } from "./request.ts";
 export { request } from "./request.ts";
 export type {
-    AllEventsOf,
     AnyShape,
+    EmittableOf,
     IterationContext,
     IterationOf,
     ParamsOf,
     ProvidedOf,
-    PublicEventsOf,
     Shape,
     StateOf,
     WithEvents,

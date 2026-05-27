@@ -1,13 +1,12 @@
 import { DuplicateExtensionError, DuplicateFlowError, FlowNotRegisteredError } from "./errors.ts";
-import type { EventBusConfig, ReadableBus } from "./event-bus.ts";
+import type { EventBusConfig } from "./event-bus.ts";
 import { createEventBus } from "./event-bus.ts";
-import type { EventMap, MergeAllEvents, MergePublicEvents, SystemEvents, SystemPublicEvents } from "./events.ts";
+import type { EventMap, EventStream, RuntimeEvents } from "./events.ts";
 import type {
     AnyExtensionDefinition,
+    ExtensionContext,
     ExtensionDefinition,
-    ExtensionInternalEvents,
-    ExtensionProvided,
-    ExtensionPublicEvents,
+    ExtensionEvents,
     ExtensionRequired,
 } from "./extension.ts";
 import type {
@@ -51,16 +50,16 @@ export interface EngineConfig {
     events?: EventBusConfig;
 }
 
-export interface Engine<TProvided extends object, TPublicEvents extends EventMap, TAllEvents extends EventMap> {
-    bus: ReadableBus<TAllEvents>;
+export interface Engine<TProvided extends object, TEvents extends EventMap> {
+    readonly events: EventStream<TEvents>;
 
     flows(): readonly string[];
 
-    getFlow(name: string): Flow<Record<string, unknown>, Record<string, unknown>>;
+    getFlow(name: string): Flow<object, Record<string, unknown>>;
 
     register<TShape extends Shape>(flow: CompatibleFlow<TProvided, TShape>): Flow<ParamsOf<TShape>, StateOf<TShape>>;
 
-    requests: EngineRequests;
+    readonly requests: EngineRequests;
 
     run<TShape extends Shape>(
         flow: CompatibleFlow<TProvided, TShape>,
@@ -72,17 +71,13 @@ export interface Engine<TProvided extends object, TPublicEvents extends EventMap
         ...args: RunArgs<ParamsOf<TShape>>
     ): Promise<FlowHandle<StateOf<TShape>>>;
 
-    use<TExtension extends ExtensionDefinition<object, object, object, object>>(
+    use<TExtension extends ExtensionDefinition<object, object, EventMap>>(
         extension: CompatibleExtension<TExtension, TProvided>
-    ): Engine<
-        MergeObjects<TProvided, ExtensionProvided<TExtension>>,
-        MergePublicEvents<TPublicEvents, ExtensionPublicEvents<TExtension>>,
-        MergeAllEvents<TAllEvents, ExtensionInternalEvents<TExtension>, ExtensionPublicEvents<TExtension>>
-    >;
+    ): Engine<MergeObjects<TProvided, ExtensionContext<TExtension>>, TEvents & ExtensionEvents<TExtension>>;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased engine implementation with typed public facade
-type AnyEngine = Engine<any, any, any>;
+type AnyEngine = Engine<any, any>;
 
 function createRunnable(
     flow: AnyFlowDefinition,
@@ -105,7 +100,7 @@ function createRunnable(
     };
 }
 
-export function createEngine(config?: EngineConfig): Engine<EmptyObject, SystemPublicEvents, SystemEvents> {
+export function createEngine(config?: EngineConfig): Engine<EmptyObject, RuntimeEvents> {
     const bus = createEventBus<EventMap>(config?.events);
     const requests = createRequestManager(bus);
     const extensions: AnyExtensionDefinition[] = [];
@@ -126,7 +121,7 @@ export function createEngine(config?: EngineConfig): Engine<EmptyObject, SystemP
     };
 
     const engine: AnyEngine = {
-        bus,
+        events: bus.asReadable(),
 
         flows() {
             return [...flows.keys()];
@@ -165,8 +160,6 @@ export function createEngine(config?: EngineConfig): Engine<EmptyObject, SystemP
 }
 
 export type InferEngine<T extends AnyEngine> =
-    T extends Engine<infer TProvided, infer TPublicEvents, infer TAllEvents>
-        ? { AllEvents: TAllEvents; Provided: TProvided; PublicEvents: TPublicEvents }
-        : never;
+    T extends Engine<infer TProvided, infer TEvents> ? { Events: TEvents; Provided: TProvided } : never;
 
-export type EngineEvents<TEngine extends AnyEngine> = InferEngine<TEngine>["AllEvents"];
+export type EngineEvents<TEngine extends AnyEngine> = InferEngine<TEngine>["Events"];

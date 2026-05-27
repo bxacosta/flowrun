@@ -1,11 +1,21 @@
 import type { ExecutionContext, FlowProgress, FlowRuntime } from "./context.ts";
 import { buildFlowContext } from "./context.ts";
 import { FlowCancellationSignal, normalizeError } from "./errors.ts";
-import type { InternalBus, PublishableBus } from "./event-bus.ts";
-import type { EventMap } from "./events.ts";
+import { type AnyEventBus, createEmitMeta, type EmitMeta } from "./event-bus.ts";
+import type {
+    EmitOptions,
+    EventEmitter,
+    EventMap,
+    EventSource,
+    EventStream,
+    FlowEvent,
+    OnOptions,
+    Subscription,
+    WaitForOptions,
+} from "./events.ts";
 import { executeNodes } from "./execute.ts";
-import type { AnyExtensionDefinition, ExtensionCleanup, FlowOutcome } from "./extension.ts";
-import { createLogger } from "./logger.ts";
+import type { AnyExtensionDefinition, ExtensionDispose, FlowOutcome } from "./extension.ts";
+import { createLogger, type Logger } from "./logger.ts";
 import type { AnyMiddleware } from "./middleware.ts";
 import { compose } from "./middleware.ts";
 import type { AnyStateFactory, NodeDefinition, TaskResult } from "./node.ts";
@@ -28,7 +38,7 @@ export interface FlowDefinition<TShape extends Shape = Shape> {
 // biome-ignore lint/suspicious/noExplicitAny: type-erased flow definition for registries
 export type AnyFlowDefinition = FlowDefinition<any>;
 
-export type FlowStatus = "cancelled" | "failed" | "paused" | "running" | "success";
+export type FlowStatus = "cancelled" | "failed" | "paused" | "pending" | "running" | "success";
 
 export interface FlowHandle<TState extends object> {
     cancel(reason?: string): void;
@@ -88,8 +98,9 @@ export type FlowResult<TState extends object> =
 export type AnyFlowResult = FlowResult<any>;
 
 interface ExtensionInstance {
-    cleanup?: ExtensionCleanup;
-    extension: AnyExtensionDefinition;
+    definition: AnyExtensionDefinition;
+    dispose?: ExtensionDispose;
+    tracked: Subscription[];
 }
 
 interface CancellationState {
@@ -97,16 +108,8 @@ interface CancellationState {
     requested: boolean;
 }
 
-interface ExtensionSetupBaseContext {
-    bus: InternalBus<EventMap>;
-    flowName: string;
-    log: ReturnType<typeof createLogger>;
-    runId: string;
-    signal: AbortSignal;
-}
-
 export interface FlowRunArgs<TShape extends Shape = Shape> {
-    bus: InternalBus<EventMap>;
+    bus: AnyEventBus;
     extensions: readonly AnyExtensionDefinition[];
     flow: FlowDefinition<TShape>;
     params: Readonly<ParamsOf<TShape>>;
@@ -117,64 +120,173 @@ function isTerminalStatus(status: FlowStatus): boolean {
     return status === "cancelled" || status === "success" || status === "failed";
 }
 
-async function cleanupExtensions(instances: readonly ExtensionInstance[], outcome: FlowOutcome): Promise<void> {
-    for (const { cleanup } of [...instances].reverse()) {
-        if (!cleanup) {
-            continue;
+function buildExtensionSetupContext(args: {
+    bus: AnyEventBus;
+    definition: AnyExtensionDefinition;
+    flowName: string;
+    provided: Record<string, unknown>;
+    runId: string;
+    signal: AbortSignal;
+    tracked: Subscription[];
+}): Record<string, unknown> {
+    const source: EventSource = `extension:${args.definition.name}`;
+    const buildMeta = (correlationId?: string): EmitMeta =>
+        createEmitMeta(source, { flowName: args.flowName, runId: args.runId }, { correlationId });
+
+    const emit: EventEmitter<EventMap> = ((topic: string, payload?: unknown, options?: EmitOptions): void => {
+        args.bus.emit(`${args.definition.name}:${topic}`, payload, buildMeta(options?.correlationId));
+    }) as EventEmitter<EventMap>;
+
+    const on: EventStream<EventMap>["on"] = ((
+        pattern: string,
+        handler: (event: FlowEvent<unknown>) => void | Promise<void>,
+        options?: OnOptions<unknown>
+    ): Subscription => {
+        const sub = args.bus.on(pattern, handler, options);
+        args.tracked.push(sub);
+        return sub;
+    }) as EventStream<EventMap>["on"];
+
+    const waitFor: EventStream<EventMap>["waitFor"] = <K extends string>(
+        topic: K,
+        options?: WaitForOptions<unknown>
+    ): Promise<FlowEvent<unknown>> => {
+        const signals: AbortSignal[] = [args.signal];
+        if (options?.signal) {
+            signals.push(options.signal);
         }
-        await cleanup(outcome);
-    }
+        // A local controller lets run-end teardown settle a still-pending waitFor by
+        // aborting it (rejecting the promise and unsubscribing) rather than leaking the
+        // underlying subscription. The bus owns filter/timeout/once handling.
+        const disposeController = new AbortController();
+        signals.push(disposeController.signal);
+
+        const promise = args.bus.waitFor(topic, {
+            filter: options?.filter,
+            signal: AbortSignal.any(signals),
+            timeout: options?.timeout,
+        });
+        args.tracked.push({
+            name: `wait_${args.definition.name}_${topic}`,
+            topic,
+            unsubscribe: () => disposeController.abort(new Error(`waitFor("${topic}") disposed at run end`)),
+        });
+        return promise;
+    };
+
+    return {
+        emit,
+        flowName: args.flowName,
+        history: (pattern?: string) => args.bus.history(pattern),
+        log: createLogger({
+            bus: args.bus,
+            flowName: args.flowName,
+            runId: args.runId,
+            source,
+        }),
+        on,
+        provided: args.provided,
+        runId: args.runId,
+        signal: args.signal,
+        waitFor,
+    };
 }
 
-async function provideExtensions(
-    extensions: readonly AnyExtensionDefinition[],
-    baseContext: ExtensionSetupBaseContext
-): Promise<{ instances: ExtensionInstance[]; provided: Record<string, unknown> }> {
+async function setupExtensions(args: {
+    bus: AnyEventBus;
+    extensions: readonly AnyExtensionDefinition[];
+    flowName: string;
+    logger: Logger;
+    runId: string;
+    signal: AbortSignal;
+}): Promise<{ instances: ExtensionInstance[]; provided: Record<string, unknown> }> {
     const instances: ExtensionInstance[] = [];
     const provided: Record<string, unknown> = {};
 
     try {
-        for (const extension of extensions) {
-            const setupContext = { ...baseContext, provided };
-            const result = await extension.provide(setupContext);
-            assertPlainObject(result, `Extension "${extension.name}" provide() must return a plain object`);
-            if (result.provided !== undefined) {
+        for (const definition of args.extensions) {
+            const tracked: Subscription[] = [];
+            const instance: ExtensionInstance = { definition, tracked };
+            instances.push(instance);
+            const setupContext = buildExtensionSetupContext({
+                bus: args.bus,
+                definition,
+                flowName: args.flowName,
+                provided: { ...provided },
+                runId: args.runId,
+                signal: args.signal,
+                tracked,
+            });
+            const result = await definition.setup(setupContext);
+            assertPlainObject(result, `Extension "${definition.name}" setup() must return a plain object`);
+            if (result.context !== undefined) {
                 assertPlainObject(
-                    result.provided,
-                    `Extension "${extension.name}" provide() must return { provided } as a plain object`
+                    result.context,
+                    `Extension "${definition.name}" setup() must return { context } as a plain object`
                 );
-                Object.assign(provided, result.provided);
+                Object.assign(provided, result.context);
             }
-            instances.push({ cleanup: result.cleanup, extension });
+            instance.dispose = result.dispose;
         }
     } catch (error) {
         const failure: FlowOutcome = { error: normalizeError(error), status: "failed" };
-        await cleanupExtensions(instances, failure);
+        await teardownExtensions(instances, failure, args.logger);
         throw error;
     }
 
     return { instances, provided };
 }
 
+async function teardownExtensions(
+    instances: readonly ExtensionInstance[],
+    outcome: FlowOutcome,
+    logger: Logger
+): Promise<void> {
+    for (const instance of [...instances].reverse()) {
+        if (!instance.dispose) {
+            continue;
+        }
+        try {
+            await instance.dispose(outcome);
+        } catch (error) {
+            logger.error(`extension "${instance.definition.name}" dispose failed`, {
+                error: normalizeError(error),
+            });
+        }
+    }
+    for (const instance of instances) {
+        for (const subscription of instance.tracked) {
+            subscription.unsubscribe();
+        }
+        instance.tracked.length = 0;
+    }
+}
+
 interface PipelineArgs {
-    bus: InternalBus<EventMap>;
+    bus: AnyEventBus;
     cancellation: CancellationState;
     controller: AbortController;
     executionContext: ExecutionContext;
     flow: AnyFlowDefinition;
     flowStart: number;
+    onPipelineStart: () => void;
     runId: string;
     state: AnyFlowStateStore;
 }
 
-async function runPipeline(args: PipelineArgs): Promise<AnyFlowResult> {
-    const { bus, cancellation, controller, executionContext, flow, flowStart, runId, state } = args;
+interface PipelineOutcome {
+    pipelineDurationMs: number;
+    result: AnyFlowResult;
+}
+
+async function runPipeline(args: PipelineArgs): Promise<PipelineOutcome> {
+    const { bus, cancellation, controller, executionContext, flow, flowStart, onPipelineStart, runId, state } = args;
     const flowName = flow.name;
     const flowContext = buildFlowContext(executionContext.runtime, state, controller.signal);
-    let flowStarted = false;
+    const meta = (): EmitMeta => ({ flowName, runId, source: "runtime" });
 
-    const resultBase = () => ({
-        duration: Date.now() - flowStart,
+    const buildBase = (durationMs: number) => ({
+        duration: durationMs,
         flowName,
         runId,
         state: state.snapshot(),
@@ -184,48 +296,68 @@ async function runPipeline(args: PipelineArgs): Promise<AnyFlowResult> {
     try {
         controller.signal.throwIfAborted();
         await compose(flow.middleware, flowContext, async () => {
-            flowStarted = true;
-            await bus.publish("flow:started", { flowName, runId }, { source: "system" });
+            bus.emit("flow:started", undefined, meta());
+            onPipelineStart();
             await executeNodes(flow.nodes, executionContext, state, controller.signal);
         });
-
-        if (flowStarted) {
-            await bus.publish(
-                "flow:ended",
-                { duration: Date.now() - flowStart, flowName, runId, status: "success" },
-                { source: "system" }
-            );
-        }
-
-        return { ...resultBase(), status: "success" };
+        const pipelineDurationMs = Date.now() - flowStart;
+        return {
+            pipelineDurationMs,
+            result: { ...buildBase(pipelineDurationMs), status: "success" },
+        };
     } catch (error) {
+        const pipelineDurationMs = Date.now() - flowStart;
         if (cancellation.requested) {
-            if (flowStarted) {
-                await bus.publish(
-                    "flow:ended",
-                    {
-                        duration: Date.now() - flowStart,
-                        flowName,
-                        reason: cancellation.reason,
-                        runId,
-                        status: "cancelled",
-                    },
-                    { source: "system" }
-                );
-            }
-            return { ...resultBase(), reason: cancellation.reason, status: "cancelled" };
+            return {
+                pipelineDurationMs,
+                result: { ...buildBase(pipelineDurationMs), reason: cancellation.reason, status: "cancelled" },
+            };
         }
-
-        const normalized = normalizeError(error);
-        if (flowStarted) {
-            await bus.publish(
-                "flow:ended",
-                { duration: Date.now() - flowStart, error: normalized, flowName, runId, status: "failed" },
-                { source: "system" }
-            );
-        }
-        return { ...resultBase(), error: normalized, status: "failed" };
+        return {
+            pipelineDurationMs,
+            result: { ...buildBase(pipelineDurationMs), error: normalizeError(error), status: "failed" },
+        };
     }
+}
+
+function emitFlowEnded(bus: AnyEventBus, meta: EmitMeta, pipelineDurationMs: number, result: AnyFlowResult): void {
+    if (result.status === "success") {
+        bus.emit("flow:ended", { durationMs: pipelineDurationMs, status: "success" }, meta);
+    } else if (result.status === "cancelled") {
+        bus.emit("flow:ended", { durationMs: pipelineDurationMs, reason: result.reason, status: "cancelled" }, meta);
+    } else {
+        bus.emit("flow:ended", { durationMs: pipelineDurationMs, error: result.error, status: "failed" }, meta);
+    }
+}
+
+function emitRunEnded(
+    bus: AnyEventBus,
+    meta: EmitMeta,
+    runDurationMs: number,
+    status: "cancelled" | "failed" | "success",
+    detail: { error?: Error; reason?: string }
+): void {
+    if (status === "success") {
+        bus.emit("run:ended", { durationMs: runDurationMs, status: "success" }, meta);
+    } else if (status === "cancelled") {
+        bus.emit("run:ended", { durationMs: runDurationMs, reason: detail.reason, status: "cancelled" }, meta);
+    } else {
+        bus.emit(
+            "run:ended",
+            { durationMs: runDurationMs, error: detail.error ?? new Error("unknown failure"), status: "failed" },
+            meta
+        );
+    }
+}
+
+function toFlowOutcome(result: AnyFlowResult): FlowOutcome {
+    if (result.status === "cancelled") {
+        return { reason: result.reason, status: "cancelled" };
+    }
+    if (result.status === "failed") {
+        return { error: result.error, status: "failed" };
+    }
+    return { status: "success" };
 }
 
 export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>): Promise<AnyFlowHandle> {
@@ -236,30 +368,43 @@ export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>)
 
     const frozenParams = Object.freeze(params);
     const runId = crypto.randomUUID();
-    const flowStart = Date.now();
-    const logger = createLogger(flowName, runId, bus);
+    const runStart = Date.now();
+    const runtimeLogger: Logger = createLogger({ bus, flowName, runId, source: "runtime" });
     const controller = new AbortController();
     const pauseGate = new PauseGate();
-    const extensionContext: ExtensionSetupBaseContext = {
-        bus,
-        flowName,
-        log: logger,
-        runId,
-        signal: controller.signal,
-    };
-    const { instances, provided } = await provideExtensions(extensions, extensionContext);
+    const runMeta: EmitMeta = { flowName, runId, source: "runtime" };
+
+    bus.emit("run:started", undefined, runMeta);
+
+    let instances: ExtensionInstance[];
+    let provided: Record<string, unknown>;
+    try {
+        const setupResult = await setupExtensions({
+            bus,
+            extensions,
+            flowName,
+            logger: runtimeLogger,
+            runId,
+            signal: controller.signal,
+        });
+        instances = setupResult.instances;
+        provided = setupResult.provided;
+    } catch (setupError) {
+        const normalized = normalizeError(setupError);
+        emitRunEnded(bus, runMeta, Date.now() - runStart, "failed", { error: normalized });
+        throw setupError;
+    }
+
     const initialState = flow.state ? flow.state(frozenParams) : {};
     const state = createStateStore(initialState);
-    const publicBus: PublishableBus<EventMap, EventMap> = bus.narrow();
     const progress: FlowProgress = { taskResults: [] };
 
     const runtime: FlowRuntime = {
         bus,
         flowName,
-        log: logger,
+        log: runtimeLogger,
         params: frozenParams,
         provided,
-        publicBus,
         requests,
         runId,
     };
@@ -271,9 +416,17 @@ export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>)
         runtime,
     };
 
-    let currentStatus: FlowStatus = "running";
+    let currentStatus: FlowStatus = "pending";
+    let pendingPause = false;
     const cancellation: CancellationState = { requested: false };
-    let cleanupOutcome: FlowOutcome = { status: "success" };
+    const pipelineState = { started: false };
+    const pipelineStart = Date.now();
+
+    const applyPause = () => {
+        currentStatus = "paused";
+        pauseGate.pause();
+        bus.emit("flow:paused", undefined, runMeta);
+    };
 
     const pipelinePromise = runPipeline({
         bus,
@@ -281,31 +434,41 @@ export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>)
         controller,
         executionContext,
         flow,
-        flowStart,
-        runId,
-        state,
-    })
-        .then((result) => {
+        flowStart: pipelineStart,
+        onPipelineStart: () => {
+            pipelineState.started = true;
             if (!isTerminalStatus(currentStatus)) {
-                if (result.status === "cancelled") {
-                    currentStatus = "cancelled";
-                } else if (result.status === "failed") {
-                    currentStatus = "failed";
-                } else {
-                    currentStatus = "success";
+                currentStatus = "running";
+                if (pendingPause) {
+                    pendingPause = false;
+                    applyPause();
                 }
             }
-            cleanupOutcome = toCleanupOutcome(result);
-            return result;
-        })
-        .finally(async () => {
-            requests.pruneRun(runId);
-            try {
-                return await cleanupExtensions(instances, cleanupOutcome);
-            } catch (error) {
-                logger.error("extension cleanup failed", { error });
-            }
+        },
+        runId,
+        state,
+    }).then(async (pipelineOutcome) => {
+        const { pipelineDurationMs, result } = pipelineOutcome;
+
+        if (!isTerminalStatus(currentStatus)) {
+            currentStatus = result.status;
+        }
+
+        if (pipelineState.started) {
+            emitFlowEnded(bus, runMeta, pipelineDurationMs, result);
+        }
+
+        requests.pruneRun(runId);
+
+        await teardownExtensions(instances, toFlowOutcome(result), runtimeLogger);
+
+        emitRunEnded(bus, runMeta, Date.now() - runStart, result.status, {
+            error: result.status === "failed" ? result.error : undefined,
+            reason: result.status === "cancelled" ? result.reason : undefined,
         });
+
+        return result;
+    });
 
     return {
         cancel(reason?: string) {
@@ -323,20 +486,28 @@ export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>)
             return pipelinePromise;
         },
         pause() {
+            // A pause requested before the pipeline starts (status "pending") is queued
+            // and applied at flow:started, rather than being silently dropped.
+            if (currentStatus === "pending") {
+                pendingPause = true;
+                return;
+            }
             if (currentStatus !== "running") {
                 return;
             }
-            currentStatus = "paused";
-            pauseGate.pause();
-            bus.publish("flow:paused", { flowName, runId }, { source: "system" });
+            applyPause();
         },
         resume() {
+            if (currentStatus === "pending") {
+                pendingPause = false;
+                return;
+            }
             if (currentStatus !== "paused") {
                 return;
             }
             currentStatus = "running";
             pauseGate.resume();
-            bus.publish("flow:resumed", { flowName, runId }, { source: "system" });
+            bus.emit("flow:resumed", undefined, runMeta);
         },
         runId,
         status() {
@@ -348,14 +519,4 @@ export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>)
 export async function runFlow<TShape extends Shape>(args: FlowRunArgs<TShape>): Promise<AnyFlowResult> {
     const handle = await startFlow(args);
     return handle.join();
-}
-
-function toCleanupOutcome(result: AnyFlowResult): FlowOutcome {
-    if (result.status === "cancelled") {
-        return { reason: result.reason, status: "cancelled" };
-    }
-    if (result.status === "failed") {
-        return { error: result.error, status: "failed" };
-    }
-    return { status: "success" };
 }
