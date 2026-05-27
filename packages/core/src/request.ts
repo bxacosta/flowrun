@@ -39,9 +39,9 @@ export type RequestRedact = (record: AnyRequestRecord) => AnyRequestRecord;
 export interface RequestDefinition<TPayload, TResponse> {
     readonly _payload?: TPayload;
     readonly _response?: TResponse;
-    readonly kind: "request";
     readonly name: string;
     readonly redact?: RequestRedact;
+    readonly type: "request";
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased definition for runtime registries
@@ -131,7 +131,7 @@ export function request<TPayload, TResponse>(
 ): RequestDefinition<TPayload, TResponse> {
     assertValidName("request", config.name);
     return {
-        kind: "request",
+        type: "request",
         name: config.name,
         redact: config.redact as RequestRedact | undefined,
     };

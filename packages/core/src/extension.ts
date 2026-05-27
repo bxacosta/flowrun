@@ -1,5 +1,6 @@
 import type { EventEmitter, EventMap, EventStream, RuntimeEvents } from "./events.ts";
 import type { Logger } from "./logger.ts";
+import type { TerminalFlowStatus } from "./status.ts";
 import type { EmptyObject, MaybePromise } from "./utils.ts";
 import { assertValidName, assertValidTopicKey } from "./validation.ts";
 
@@ -37,7 +38,7 @@ export type Prefixed<TName extends string, TEvents extends EventMap> = {
 export interface FlowOutcome {
     error?: Error;
     reason?: string;
-    status: "cancelled" | "failed" | "success";
+    status: TerminalFlowStatus;
 }
 
 export type ExtensionDispose = (outcome: FlowOutcome) => MaybePromise<void>;
@@ -89,9 +90,9 @@ export interface ExtensionDefinition<
     readonly _context?: TContext;
     readonly _events?: TEvents;
     readonly _required?: TRequired;
-    readonly kind: "extension";
     readonly name: string;
     readonly setup: AnyExtensionSetup;
+    readonly type: "extension";
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased extension for runtime registries
@@ -124,7 +125,7 @@ export function extension<
         }
     }
     return {
-        kind: "extension",
+        type: "extension",
         name: config.name,
         setup: config.setup as AnyExtensionSetup,
     };

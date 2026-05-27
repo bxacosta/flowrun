@@ -40,7 +40,7 @@ function instantiate<TShape extends Shape>(state: BuilderState): FlowBuilder<TSh
             const resolved = resolveNodes<TShape>(spec);
             assertUniqueNodeNames(resolved, state.name);
             return {
-                kind: "flow",
+                type: "flow",
                 middleware: state.middleware,
                 name: state.name,
                 nodes: resolved,

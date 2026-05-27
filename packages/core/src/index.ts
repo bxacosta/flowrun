@@ -1,6 +1,6 @@
 export type { FlowBuilder } from "./builder.ts";
 // biome-ignore lint/performance/noBarrelFile: public library entry point
-export { createFlowBuilder, flow } from "./builder.ts";
+export { flow } from "./builder.ts";
 export type {
     BaseContext,
     FlowContext,
@@ -77,14 +77,19 @@ export type {
     FlowDefinition,
     FlowHandle,
     FlowResult,
-    FlowStatus,
     RunArgs,
     SuccessFlowResult,
 } from "./flow-runner.ts";
 export type { Logger } from "./logger.ts";
-export type { Middleware, MiddlewareRun } from "./middleware.ts";
 export type {
-    BackoffStrategy,
+    FlowMiddleware,
+    Middleware,
+    MiddlewareConfig,
+    MiddlewareRun,
+    TaskMiddleware,
+} from "./middleware.ts";
+export { middleware } from "./middleware.ts";
+export type {
     ContainerErrorMode,
     ContainerResource,
     EveryMeta,
@@ -100,8 +105,6 @@ export type {
     EveryConfigWithResource,
     EveryOptions,
     EveryResourceConfig,
-    FlowMiddleware,
-    MiddlewareConfig,
     NodeFactory,
     NodesSpec,
     ParallelConfig,
@@ -110,9 +113,7 @@ export type {
     ParallelResourceConfig,
     ResourceFactory,
     TaskConfig,
-    TaskMiddleware,
 } from "./node-factory.ts";
-export { middleware } from "./node-factory.ts";
 export type {
     ContextRequest,
     EngineRequests,
@@ -130,7 +131,7 @@ export type {
 export { request } from "./request.ts";
 export type {
     AnyShape,
-    EmittableOf,
+    EventsOf,
     IterationContext,
     IterationOf,
     ParamsOf,
@@ -146,4 +147,5 @@ export type {
 export type { ShapeFactory } from "./shape-factory.ts";
 export { shape } from "./shape-factory.ts";
 export type { FlowStateStore, MergeStrategy } from "./state.ts";
+export type { FlowStatus, TerminalFlowStatus } from "./status.ts";
 export type { EmptyObject, MaybePromise } from "./utils.ts";

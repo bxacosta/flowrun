@@ -25,7 +25,7 @@ export type ProvidedOf<TShape extends Shape> = TShape extends { provided: infer 
 
 export type IterationOf<TShape extends Shape> = TShape extends { iteration: infer I } ? I : never;
 
-export type EmittableOf<TShape extends Shape> = TShape extends { events: infer E extends EventMap } ? E : EmptyObject;
+export type EventsOf<TShape extends Shape> = TShape extends { events: infer E extends EventMap } ? E : EmptyObject;
 
 type Equals<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
@@ -36,7 +36,7 @@ export type WithState<TShape extends Shape, TState extends object> =
     Equals<TState, StateOf<TShape>> extends true ? TShape : Omit<TShape, "state"> & { state: TState };
 
 export type WithEvents<TShape extends Shape, TEvents extends EventMap> = Omit<TShape, "events"> & {
-    events: MergeObjects<EmittableOf<TShape>, TEvents>;
+    events: MergeObjects<EventsOf<TShape>, TEvents>;
 };
 
 export type WithProvided<TShape extends Shape, TLocal extends object> = Omit<TShape, "provided"> & {

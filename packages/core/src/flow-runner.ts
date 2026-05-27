@@ -24,21 +24,20 @@ import type { ParamsOf, Shape } from "./shape.ts";
 import { PauseGate } from "./signal.ts";
 import type { AnyFlowStateStore } from "./state.ts";
 import { createStateStore } from "./state.ts";
+import type { FlowStatus, TerminalFlowStatus } from "./status.ts";
 import { assertPlainObject } from "./validation.ts";
 
 export interface FlowDefinition<TShape extends Shape = Shape> {
     readonly _shape?: TShape;
-    readonly kind: "flow";
     readonly middleware: readonly AnyMiddleware[];
     readonly name: string;
     readonly nodes: readonly NodeDefinition[];
     readonly state?: AnyStateFactory;
+    readonly type: "flow";
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased flow definition for registries
 export type AnyFlowDefinition = FlowDefinition<any>;
-
-export type FlowStatus = "cancelled" | "failed" | "paused" | "pending" | "running" | "success";
 
 export interface FlowHandle<TState extends object> {
     cancel(reason?: string): void;
@@ -68,7 +67,7 @@ export interface Flow<TParams extends object, TState extends object> {
 export type AnyFlow = Flow<any, any>;
 
 export interface BaseFlowResult<TState extends object> {
-    duration: number;
+    durationMs: number;
     flowName: string;
     runId: string;
     state: Readonly<TState>;
@@ -286,7 +285,7 @@ async function runPipeline(args: PipelineArgs): Promise<PipelineOutcome> {
     const meta = (): EmitMeta => ({ flowName, runId, source: "runtime" });
 
     const buildBase = (durationMs: number) => ({
-        duration: durationMs,
+        durationMs,
         flowName,
         runId,
         state: state.snapshot(),
@@ -334,7 +333,7 @@ function emitRunEnded(
     bus: AnyEventBus,
     meta: EmitMeta,
     runDurationMs: number,
-    status: "cancelled" | "failed" | "success",
+    status: TerminalFlowStatus,
     detail: { error?: Error; reason?: string }
 ): void {
     if (status === "success") {

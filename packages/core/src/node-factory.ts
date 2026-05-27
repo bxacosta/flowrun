@@ -1,4 +1,4 @@
-import type { FlowContext, ItemsContext, TaskContext } from "./context.ts";
+import type { ItemsContext, TaskContext } from "./context.ts";
 import { FlowEngineError } from "./errors.ts";
 import type { Middleware } from "./middleware.ts";
 import type {
@@ -66,14 +66,14 @@ export type EveryResourceConfig<TShape extends Shape, TItem, TLocal extends obje
 >;
 
 export type EveryConfig<TShape extends Shape, TItem> = EveryOptions & {
-    items: (context: ItemsContext<TShape>) => readonly TItem[];
+    items: (context: ItemsContext<TShape>) => MaybePromise<readonly TItem[]>;
     name: string;
     nodes: NodesSpec<WithIteration<TShape, TItem>>;
     resource?: never;
 };
 
 export type EveryConfigWithResource<TShape extends Shape, TItem, TLocal extends object> = EveryOptions & {
-    items: (context: ItemsContext<TShape>) => readonly TItem[];
+    items: (context: ItemsContext<TShape>) => MaybePromise<readonly TItem[]>;
     name: string;
     nodes: NodesSpec<WithProvided<WithIteration<TShape, TItem>, TLocal>>;
     resource: EveryResourceConfig<TShape, TItem, TLocal>;
@@ -91,11 +91,6 @@ export interface NodeFactory<TShape extends Shape> {
     task(config: TaskConfig<TShape>): Node<TShape>;
 }
 
-export interface MiddlewareConfig<TContext> {
-    name: string;
-    run: (context: TContext, next: () => Promise<void>) => MaybePromise<void>;
-}
-
 export function resolveNodes<TShape extends Shape>(spec: NodesSpec<TShape>): Node<TShape>[] {
     const nodes = typeof spec === "function" ? spec(createNodeFactory<TShape>()) : spec;
     return [...nodes];
@@ -103,8 +98,8 @@ export function resolveNodes<TShape extends Shape>(spec: NodesSpec<TShape>): Nod
 
 export function buildTask<TShape extends Shape>(config: TaskConfig<TShape>): Node<TShape> {
     assertValidName("task", config.name);
-    if (config.retry && config.retry.attempts < 1) {
-        throw new FlowEngineError(`task "${config.name}": retry.attempts must be >= 1`);
+    if (config.retry && config.retry.maxAttempts < 1) {
+        throw new FlowEngineError(`task "${config.name}": retry.maxAttempts must be >= 1`);
     }
     return {
         middleware: config.middleware ?? [],
@@ -152,11 +147,6 @@ export function buildEvery<TShape extends Shape, TItem>(
     };
 }
 
-export function middleware<TContext>(config: MiddlewareConfig<TContext>): Middleware<TContext> {
-    assertValidName("middleware", config.name);
-    return { name: config.name, run: config.run };
-}
-
 export function createNodeFactory<TShape extends Shape>(): NodeFactory<TShape> {
     return {
         every: buildEvery,
@@ -164,6 +154,3 @@ export function createNodeFactory<TShape extends Shape>(): NodeFactory<TShape> {
         task: buildTask,
     } as unknown as NodeFactory<TShape>;
 }
-
-export type FlowMiddleware<TShape extends Shape> = Middleware<FlowContext<TShape>>;
-export type TaskMiddleware<TShape extends Shape> = Middleware<TaskContext<TShape>>;

@@ -50,7 +50,7 @@ function recordTaskResult(
     node: TaskNodeDefinition,
     path: string,
     attempts: number,
-    duration: number,
+    durationMs: number,
     status: "failed" | "skipped" | "success",
     error: Error | null,
     reason: string | undefined,
@@ -58,7 +58,7 @@ function recordTaskResult(
 ): void {
     const result: TaskResult = {
         attempts,
-        duration,
+        durationMs,
         nodeName: node.name,
         path,
         status,
@@ -177,7 +177,7 @@ async function executeTask(
     const taskPathSegments = [...executionContext.pathSegments, node.name];
     const path = taskPathSegments.join("/");
     const meta = runtimeMeta(runtime, { iteration, nodeName: node.name, path: taskPathSegments });
-    const maxAttempts = node.retry?.attempts ?? 1;
+    const maxAttempts = node.retry?.maxAttempts ?? 1;
     const taskStart = Date.now();
 
     bus.emit("node:task:started", { maxAttempts }, meta);
@@ -436,7 +436,7 @@ async function executeEvery(
     const meta = runtimeMeta(runtime, { iteration, nodeName: node.name, path: containerPathSegments });
 
     const itemsContext = buildItemsContext(runtime, state, signal, containerPathSegments, iteration);
-    const items = node.items(itemsContext);
+    const items = await node.items(itemsContext);
 
     if (!Array.isArray(items)) {
         throw new InvalidItemsError(node.name);

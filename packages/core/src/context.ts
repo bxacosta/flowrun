@@ -5,7 +5,7 @@ import { createLogger, type Logger } from "./logger.ts";
 import type { TaskResult } from "./node.ts";
 import type { ContextRequest, RequestDefinition, RequestOptions } from "./request.ts";
 import type { RequestManager } from "./request-manager.ts";
-import type { EmittableOf, IterationOf, ParamsOf, ProvidedOf, Shape, StateOf } from "./shape.ts";
+import type { EventsOf, IterationOf, ParamsOf, ProvidedOf, Shape, StateOf } from "./shape.ts";
 import type { PauseGate } from "./signal.ts";
 import type { AnyFlowStateStore, FlowStateStore } from "./state.ts";
 import type { EmptyObject } from "./utils.ts";
@@ -13,7 +13,7 @@ import type { EmptyObject } from "./utils.ts";
 type IterationField<TIteration> = [TIteration] extends [never] ? EmptyObject : { readonly iteration: TIteration };
 
 export type BaseContext<TShape extends Shape = Shape> = ProvidedOf<TShape> & {
-    emit: EventEmitter<EmittableOf<TShape>>;
+    emit: EventEmitter<EventsOf<TShape>>;
     flowName: string;
     log: Logger;
     params: Readonly<ParamsOf<TShape>>;

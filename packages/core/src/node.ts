@@ -5,12 +5,11 @@ import type { MaybePromise } from "./utils.ts";
 
 export type TaskErrorMode = "fail" | "skip";
 export type ContainerErrorMode = "continue" | "fail";
-export type BackoffStrategy = "constant" | "exponential";
 
 interface RetryBase {
-    attempts: number;
     delayMs: number;
     jitter?: boolean;
+    maxAttempts: number;
     maxDelayMs?: number;
     retryOn?: (error: Error, attempt: number) => boolean;
 }
@@ -71,7 +70,7 @@ export type Node<TShape extends Shape = Shape> = NodeDefinition & {
 
 export interface TaskResult {
     attempts: number;
-    duration: number;
+    durationMs: number;
     error?: Error;
     iteration?: { index: number; item: unknown };
     nodeName: string;
@@ -90,7 +89,7 @@ export type AnyProvide = (context: any, meta: any) => MaybePromise<object>;
 export type AnyCleanup = (context: any, meta: any) => MaybePromise<void>;
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased items callback, typed at definition boundary
-export type AnyItemsFunction = (context: any) => readonly unknown[];
+export type AnyItemsFunction = (context: any) => MaybePromise<readonly unknown[]>;
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased state factory, typed at definition boundary
 export type AnyStateFactory = (params: any) => object;
