@@ -217,5 +217,5 @@ title("8 - engine.register() + engine.getFlow(name) for by-name dispatch");
 const registeredHealth = engine.register(healthCheck);
 log(`Registered: ${registeredHealth.name}`);
 log("All registered flows:", engine.flows());
-const runByName = await engine.getFlow("health-check").run({});
+const runByName = await engine.getFlow("health-check").run();
 log(`Run by name: ${runByName.status}`);

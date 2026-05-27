@@ -267,7 +267,7 @@ const everyShowcase = flow("every-showcase")
 // ── Engine ──────────────────────────────────────────────────────────
 
 const engine = createEngine();
-subscriber(engine.bus);
+subscriber(engine.events);
 
 // ── Run ─────────────────────────────────────────────────────────────
 

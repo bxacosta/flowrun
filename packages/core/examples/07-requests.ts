@@ -9,7 +9,7 @@
  *  - Discriminated response types (multi-shape responses)
  *  - redact() hides secrets in bus events while keeping the actual response
  *  - timeout -> RequestTimeoutError
- *  - options.dedupeKey for idempotent prompts across task retries
+ *  - options.idempotencyKey for idempotent prompts across task retries
  *  - handle.cancel() rejects pending requests with RequestCancelledError
  *
  * Demos 1 and 3 prompt the user interactively on a TTY; in non-interactive
@@ -153,7 +153,7 @@ const flakyDecisionFlow = flow("flaky-decision")
                 const decision = await context.request(
                     routingDecision,
                     { question: "deploy to production?" },
-                    { dedupeKey: "deploy" }
+                    { idempotencyKey: "deploy" }
                 );
                 context.state.patch({ answered: decision.route, finalAttempt: context.attempt });
                 if (context.attempt < 3) {
@@ -178,7 +178,7 @@ const blockedFlow = flow("blocked").nodes(({ task }) => [
 // ── Engine ─────────────────────────────────────────────────────────
 
 const engine = createEngine();
-subscriber(engine.bus);
+subscriber(engine.events);
 
 // ── Responders ─────────────────────────────────────────────────────
 // Responders are registered with the typed token, so payload and response
@@ -244,7 +244,7 @@ if (result2.status === "success") {
 
 title("Demo 3 - redact: secrets hidden in events, real value in code");
 let observedResponse: unknown;
-const responseSubscription = engine.bus.subscribe("request:responded", (envelope) => {
+const responseSubscription = engine.events.on("request:responded", (envelope) => {
     if (envelope.payload.name === "credentials") {
         observedResponse = envelope.payload.response;
     }
@@ -264,7 +264,7 @@ if (result4.status === "success") {
 
 title("Demo 5 - idempotent key: one prompt across 3 retries");
 let promptCount = 0;
-const promptSubscription = engine.bus.subscribe("request:created", (envelope) => {
+const promptSubscription = engine.events.on("request:created", (envelope) => {
     if (envelope.payload.name === "routing") {
         promptCount++;
     }

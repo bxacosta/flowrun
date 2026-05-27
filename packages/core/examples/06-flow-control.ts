@@ -22,10 +22,10 @@ import { subscriber } from "./shared/subscriber.ts";
 const browserExtension = (browser: Browser) =>
     extension({
         name: "browser",
-        provide() {
+        setup() {
             return {
-                provided: { browser },
-                cleanup: (outcome) => {
+                context: { browser },
+                dispose: (outcome) => {
                     log(`  [browser] extension disposed (run ended ${outcome.status})`);
                 },
             };
@@ -42,7 +42,7 @@ interface BrowserShape {
 
 const browser = createBrowser();
 const engine = createEngine().use(browserExtension(browser));
-subscriber(engine.bus);
+subscriber(engine.events);
 
 // ── Flow: data pipeline — used for FlowHandle demos ─────────────────
 

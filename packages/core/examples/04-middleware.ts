@@ -169,7 +169,7 @@ const orderPipeline = order
 // ── Engine ─────────────────────────────────────────────────────────
 
 const engine = createEngine();
-subscriber(engine.bus);
+subscriber(engine.events);
 
 // register() returns a typed Flow handle and adds order-pipeline to the registry,
 // so Run 2 below can dispatch by name.

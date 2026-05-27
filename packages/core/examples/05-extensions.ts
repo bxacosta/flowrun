@@ -2,44 +2,39 @@
  * 05-extensions.ts — Extensions, Modules & Event Bus
  *
  * Covers:
- *  - extension() with public and internal events
- *  - eventPublic<T>() vs eventInternal<T>() (visibility markers)
- *  - Extension config factory, provided context, cleanup()
+ *  - extension() with a single event<T>() marker (auto-prefixed by extension name)
+ *  - setup(context) returns { context, dispose } — replaces provide/provided/cleanup
  *  - engine.use() chains extensions; bufferSize via engine config
- *  - subscribe(), on() (pattern: *, **), waitFor(), history()
- *  - Subscription options: priority, filter, subscriberId, once
+ *  - engine.events.on() (typed key or wildcard pattern), waitFor(), history()
+ *  - Subscription options: priority, filter, name, once
  *  - subscription.unsubscribe()
- *  - context.publish() with correlationId
+ *  - context.emit() (flow domain events declared via .emits<T>())
  */
 
-import type { EngineEvents, Envelope, ReadableBus, Subscription } from "@flowrun/core";
-import { createEngine, eventInternal, eventPublic, extension, shape } from "@flowrun/core";
+import type { EngineEvents, EventStream, FlowEvent, Subscription } from "@flowrun/core";
+import { createEngine, event, extension, shape } from "@flowrun/core";
 import { log, title } from "./shared/helpers.ts";
 
-// ── Extension 1: database — config factory + provided context ───────
+// ── Extension 1: database — config factory + injected context ───────
 
 const databaseExtension = (config: { connectionString: string }) =>
     extension({
         name: "database",
         events: {
-            "db:connected": eventInternal<{ poolSize: number }>(),
-            "db:query": eventPublic<{ duration: number; sql: string }>(),
+            connected: event<{ poolSize: number }>(),
+            query: event<{ durationMs: number; sql: string }>(),
         },
-        provide: async (context) => {
+        setup: async (context) => {
             context.log.info(`Connecting to ${config.connectionString}`);
-            await context.bus.publish("db:connected", { poolSize: 10 }, { source: "database" });
+            await context.emit("connected", { poolSize: 10 });
 
             return {
-                provided: {
+                context: {
                     db: {
                         query: async <TRow>(sql: string): Promise<TRow[]> => {
                             const start = Date.now();
                             const result: TRow[] = [];
-                            await context.bus.publish(
-                                "db:query",
-                                { duration: Date.now() - start, sql },
-                                { source: "database" }
-                            );
+                            await context.emit("query", { durationMs: Date.now() - start, sql });
                             return result;
                         },
                     },
@@ -48,26 +43,29 @@ const databaseExtension = (config: { connectionString: string }) =>
         },
     });
 
-// ── Extension 2: metrics — cross-extension listening + cleanup ──────
+// ── Extension 2: metrics — cross-extension listening + dispose ──────
 
 const metricsExtension = () =>
     extension({
         name: "metrics",
         events: {
-            "metrics:flushed": eventPublic<{ count: number }>(),
+            flushed: event<{ count: number }>(),
         },
-        provide(context) {
+        setup(context) {
             const counters = new Map<string, number>();
 
-            // Cross-extension listening: react to db:query events from the database extension
-            const subscription = context.bus.on("db:query", (envelope) => {
+            // Cross-extension listening: react to database:query events.
+            // Other extensions' events aren't in this extension's typed set,
+            // so we cast the payload at the use site.
+            // The subscription is auto-cleaned up at the end of the run.
+            context.on("database:query", (envelope) => {
+                const payload = envelope.payload as { durationMs: number; sql: string };
                 counters.set("db.queries", (counters.get("db.queries") ?? 0) + 1);
-                const payload = envelope.payload as { sql: string };
                 context.log.info(`metric recorded for query: ${payload.sql}`);
             });
 
             return {
-                provided: {
+                context: {
                     metrics: {
                         counter: (name: string, value = 1) => {
                             counters.set(name, (counters.get(name) ?? 0) + value);
@@ -75,12 +73,11 @@ const metricsExtension = () =>
                         flush: async () => {
                             const count = counters.size;
                             context.log.info(`Flushed ${count} metrics`);
-                            await context.bus.publish("metrics:flushed", { count }, { source: "metrics" });
+                            await context.emit("flushed", { count });
                         },
                     },
                 },
-                cleanup: (outcome) => {
-                    subscription.unsubscribe();
+                dispose: (outcome) => {
                     log(`  [metrics] disposed (run ended ${outcome.status})`);
                 },
             };
@@ -90,10 +87,7 @@ const metricsExtension = () =>
 // ── Flow: uses extension-provided context ───────────────────────────
 
 interface SyncShape {
-    events: {
-        "db:query": { duration: number; sql: string };
-        "metrics:flushed": { count: number };
-    };
+    events: { "order:fetched": { id: string } };
     params: { source: string };
     provided: {
         db: { query<TRow>(sql: string): Promise<TRow[]> };
@@ -116,11 +110,8 @@ const syncFlow = sync
             run: async (context) => {
                 const rows = await context.db.query<{ id: string }>(`SELECT * FROM ${context.params.source}`);
                 context.state.set("fetched", rows.length);
-                await context.publish(
-                    "db:query",
-                    { duration: 42, sql: "manual publish" },
-                    { correlationId: "trace-001" }
-                );
+                // context.emit publishes a flow-domain event declared in SyncShape.events
+                await context.emit("order:fetched", { id: "row-1" }, { correlationId: "trace-001" });
             },
         }),
         task({
@@ -147,18 +138,18 @@ const engine = createEngine({
 
 // ── Standalone subscriber — reusable, externalizable ────────────────
 
-function dbActivitySubscriber(bus: ReadableBus<EngineEvents<typeof engine>>) {
+function dbActivitySubscriber(events: EventStream<EngineEvents<typeof engine>>) {
     const subscriptions: Subscription[] = [];
 
     subscriptions.push(
-        bus.subscribe("db:query", (envelope) => {
-            log(`  [db-subscriber] query: ${envelope.payload.sql} (${envelope.payload.duration}ms)`);
+        events.on("database:query", (envelope) => {
+            log(`  [db-subscriber] query: ${envelope.payload.sql} (${envelope.payload.durationMs}ms)`);
         })
     );
 
-    // Wildcard subscription: matches db:connected, db:query, etc.
+    // Wildcard subscription: matches database:connected, database:query, etc.
     subscriptions.push(
-        bus.on("db:*", (envelope: Envelope) => {
+        events.on("database:*", (envelope: FlowEvent) => {
             log(`  [db-subscriber] event: ${envelope.topic}`);
         })
     );
@@ -174,64 +165,64 @@ function dbActivitySubscriber(bus: ReadableBus<EngineEvents<typeof engine>>) {
 
 // ── Register subscribers ────────────────────────────────────────────
 
-const dbSubscriber = dbActivitySubscriber(engine.bus);
+const dbSubscriber = dbActivitySubscriber(engine.events);
 
 // priority: lower runs first
-engine.bus.subscribe("metrics:flushed", () => log("  [priority -10] pre-flush hook"), { priority: -10 });
-engine.bus.subscribe("metrics:flushed", (envelope) => log(`  [priority  10] ${envelope.payload.count} metrics sent`), {
+engine.events.on("metrics:flushed", () => log("  [priority -10] pre-flush hook"), { priority: -10 });
+engine.events.on("metrics:flushed", (envelope) => log(`  [priority  10] ${envelope.payload.count} metrics sent`), {
     priority: 10,
 });
 
 // filter: only react when payload matches
-engine.bus.subscribe("node:task:ended", (envelope) => log(`  [filtered] task failed: ${envelope.payload.nodeName}`), {
+engine.events.on("node:task:ended", (envelope) => log(`  [filtered] task failed: ${envelope.nodeName}`), {
     filter: (envelope) => envelope.payload.status === "failed",
-    subscriberId: "failure-monitor",
+    name: "failure-monitor",
 });
 
 // once: auto-unsubscribes after first delivery
-engine.bus.subscribe("flow:started", (envelope) => log(`  [once] first flow started: ${envelope.payload.flowName}`), {
+engine.events.on("flow:started", (envelope) => log(`  [once] first flow started: ${envelope.flowName}`), {
     once: true,
 });
 
-const temporarySubscription = engine.bus.on("flow:*", (envelope: Envelope) => {
+const temporarySubscription = engine.events.on("flow:*", (envelope: FlowEvent) => {
     log(`  [temp] ${envelope.topic} (will unsubscribe after first flow)`);
 });
 
 // Globstar (**): matches any depth — `node:**` captures node:task:started, node:every:ended, etc.
 let nodeEventCount = 0;
-const nodeGlobstar = engine.bus.on("node:**", () => {
+const nodeGlobstar = engine.events.on("node:**", () => {
     nodeEventCount++;
 });
 
 // Intentionally throwing handler — proves EventBusConfig.onError catches handler errors
-engine.bus.subscribe(
+engine.events.on(
     "flow:started",
     () => {
         throw new Error("intentional handler error to demo bus.onError");
     },
-    { subscriberId: "broken-handler" }
+    { name: "broken-handler" }
 );
 
 // ── Run ─────────────────────────────────────────────────────────────
 
 title("Extensions + modules + event bus");
 
-const flushPromise = engine.bus.waitFor("metrics:flushed", { timeout: 5000 });
+const flushPromise = engine.events.waitFor("metrics:flushed", { timeout: 5000 });
 const result = await engine.run(syncFlow, { source: "users" });
 const flushEnvelope = await flushPromise;
 
 log(`\nwaitFor resolved: ${flushEnvelope.payload.count} metrics`);
 
 temporarySubscription.unsubscribe();
-log(`\nUnsubscribed: ${temporarySubscription.subscriberId}`);
+log(`\nUnsubscribed: ${temporarySubscription.name}`);
 
-const dbHistory = engine.bus.history("db:*");
-log(`\nHistory (db:*): ${dbHistory.length} events`);
+const dbHistory = engine.events.history("database:*");
+log(`\nHistory (database:*): ${dbHistory.length} events`);
 for (const envelope of dbHistory) {
     log(`  ${envelope.topic} [correlationId: ${envelope.correlationId ?? "-"}]`);
 }
 
-const allHistory = engine.bus.history();
+const allHistory = engine.events.history();
 log(`\nHistory (no filter): ${allHistory.length} total events buffered`);
 
 log(`\nGlobstar (node:**) captured ${nodeEventCount} events across all node depths`);
