@@ -45,7 +45,7 @@ const taskShowcase = flow("task-showcase")
         // Constant backoff — same delay between every attempt
         task({
             name: "retry-constant",
-            retry: { attempts: 3, backoff: "constant", delayMs: 10 },
+            retry: { maxAttempts: 3, backoff: "constant", delayMs: 10 },
             run: (context) => {
                 if (constantFails > 0) {
                     constantFails--;
@@ -59,7 +59,7 @@ const taskShowcase = flow("task-showcase")
         task({
             name: "retry-exponential",
             retry: {
-                attempts: 4,
+                maxAttempts: 4,
                 backoff: "exponential",
                 delayMs: 20,
                 factor: 2,
@@ -80,7 +80,7 @@ const taskShowcase = flow("task-showcase")
         task({
             name: "best-effort",
             onError: "skip",
-            retry: { attempts: 2, backoff: "constant", delayMs: 5 },
+            retry: { maxAttempts: 2, backoff: "constant", delayMs: 5 },
             run: () => {
                 throw new Error("never works");
             },

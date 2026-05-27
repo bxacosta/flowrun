@@ -185,7 +185,7 @@ title("3 - Params + state derived from params (full state API)");
 const orderResult = await engine.run(processOrder, { orderId: "ORD-001" });
 if (orderResult.status === "success") {
     log("State:", orderResult.state);
-    log(`Duration: ${orderResult.duration}ms`);
+    log(`Duration: ${orderResult.durationMs}ms`);
     log(`Tasks: ${orderResult.tasks.map((result) => `${result.nodeName}(${result.status})`).join(", ")}`);
 }
 

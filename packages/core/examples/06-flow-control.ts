@@ -98,7 +98,7 @@ log(`status: ${handle1.status()}`);
 
 const result1 = await handle1.join();
 log(`\nstatus: ${handle1.status()}`);
-log(`result: ${result1.status}, duration: ${result1.duration}ms`);
+log(`result: ${result1.status}, duration: ${result1.durationMs}ms`);
 log("steps:", result1.state.steps);
 
 // ── Demo 2: cancel() with reason ────────────────────────────────────
@@ -137,7 +137,7 @@ setTimeout(() => {
 }, 100);
 
 const result3 = await handle3.join();
-log(`\nresult: ${result3.status}, duration: ${result3.duration}ms (includes ~200ms pause)`);
+log(`\nresult: ${result3.status}, duration: ${result3.durationMs}ms (includes ~200ms pause)`);
 log("steps:", result3.state.steps);
 
 // ── Flow: every + resource (per-iteration browser pages) ────────────

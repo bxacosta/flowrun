@@ -189,4 +189,4 @@ title("Run 2 - Feature disabled (short-circuit, by name)");
 featureEnabled = false;
 const result2 = await engine.getFlow("order-pipeline").run({ orderId: "ORD-002" });
 log("\nFinal state:", result2.state);
-log(`Duration: ${result2.duration}ms`);
+log(`Duration: ${result2.durationMs}ms`);

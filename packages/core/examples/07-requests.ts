@@ -148,7 +148,7 @@ const flakyDecisionFlow = flow("flaky-decision")
     .nodes(({ task }) => [
         task({
             name: "decide-then-act",
-            retry: { attempts: 3, backoff: "constant", delayMs: 5 },
+            retry: { maxAttempts: 3, backoff: "constant", delayMs: 5 },
             run: async (context) => {
                 const decision = await context.request(
                     routingDecision,

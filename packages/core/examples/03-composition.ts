@@ -146,7 +146,7 @@ const engine = createEngine();
 title("Shaped composition - nested containers");
 const result = await engine.run(compositionFlow);
 if (result.status === "success") {
-    log(`status: success (${result.tasks.length} tasks, ${result.duration}ms)`);
+    log(`status: success (${result.tasks.length} tasks, ${result.durationMs}ms)`);
     log(`  compiled:    [${result.state.compiled.join(", ")}]`);
     log(`  lintReport:  [${result.state.lintReport.join(", ")}]`);
     log(`  deployments: [${result.state.deployments.join(", ")}]`);
