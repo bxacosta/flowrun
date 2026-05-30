@@ -1,28 +1,39 @@
 /**
- * 06-tracing.ts — TraceConfig modes and lifecycle
+ * 06-tracing.ts — Tracing extension lifecycle
  *
  * Covers:
- *  - TraceConfig.mode:
- *      "off"                — tracing disabled (default).
+ *  - browser.tracing({ mode, ... }) — opt-in extension that requires
+ *    browser + storage at the type level. createEngine + .use(browser(...))
+ *    + .use(browser.storage(...)) + .use(browser.tracing(...)).
+ *  - TracingExtensionConfig.mode:
+ *      "off"                — extension installed but inert.
  *      "on"                 — record every run, save the trace zip always.
  *      "on-failure"         — record every run, save only when the flow fails.
- *      "retain-on-failure"  — record every run, save only when the flow fails;
- *                              optimised for keeping the cost of the success
- *                              path low.
- *  - TraceConfig.screenshots / snapshots / sources — passthrough to Playwright.
- *  - TraceConfig.storageKey({ runId, flowName }) — custom key for the trace
- *    zip persisted via StorageProvider.save().
- *  - browser:tracing-saved event with reason "always" | "on-failure" | "retained".
+ *      "retain-on-failure"  — record always, save only on failure;
+ *                              same observable as "on-failure" today.
+ *  - TracingExtensionConfig.screenshots / snapshots / sources — Playwright passthrough.
+ *  - TracingExtensionConfig.storageKey({ runId, flowName }) — custom key for the
+ *    trace zip persisted via the storage extension's StorageProvider.
+ *  - tracing:saved event with reason "always" | "on-failure" | "retained".
  */
 
-import { browser, createBrowserEngine, type TraceConfig } from "@flowrun/browser";
-import { BASE_URL, provider, STORAGE_ROOT, selectors, storage } from "./shared/env.ts";
+import {
+    type BrowserShape,
+    createBrowserEngine,
+    storage,
+    type TracingExtensionConfig,
+    tracing,
+} from "@flowrun/browser";
+import { flow } from "@flowrun/core";
+import { BASE_URL, localBrowser, STORAGE_ROOT, storageProvider } from "./shared/env.ts";
 import { log, title } from "./shared/helpers.ts";
 
-// Helper: build an engine with a given trace config and a subscriber.
-function makeEngine(trace: TraceConfig) {
-    const engine = createBrowserEngine({ provider, selectors, storage, trace });
-    engine.bus.subscribe("browser:tracing-saved", (envelope) => {
+// Helper: build an engine with browser + storage + tracing, plus a subscriber.
+function makeEngine(trace: TracingExtensionConfig) {
+    const engine = createBrowserEngine({ provider: localBrowser })
+        .use(storage({ provider: storageProvider }))
+        .use(tracing(trace));
+    engine.bus.subscribe("tracing:saved", (envelope) => {
         log(
             `  [tracing-saved] key=${envelope.payload.key}  size=${envelope.payload.size}B  reason=${envelope.payload.reason}`
         );
@@ -32,7 +43,7 @@ function makeEngine(trace: TraceConfig) {
 
 // Two fixture flows: one that succeeds, one that throws.
 
-const okFlow = browser.flow("trace-ok").nodes(({ task }) => [
+const okFlow = flow<BrowserShape>("trace-ok").nodes(({ task }) => [
     task({
         name: "visit-some-pages",
         run: async (context) => {
@@ -43,7 +54,7 @@ const okFlow = browser.flow("trace-ok").nodes(({ task }) => [
     }),
 ]);
 
-const failFlow = browser.flow("trace-fail").nodes(({ task }) => [
+const failFlow = flow<BrowserShape>("trace-fail").nodes(({ task }) => [
     task({
         name: "visit-then-throw",
         run: async (context) => {
@@ -53,7 +64,7 @@ const failFlow = browser.flow("trace-fail").nodes(({ task }) => [
     }),
 ]);
 
-const sharedTraceOpts: Omit<TraceConfig, "mode"> = {
+const sharedTraceOpts: Omit<TracingExtensionConfig, "mode"> = {
     screenshots: true,
     snapshots: true,
     sources: false,
@@ -91,4 +102,4 @@ await e4.run(failFlow);
 
 log(`\nAll trace zips persisted under: ${STORAGE_ROOT}/06-tracing/`);
 
-await provider.dispose();
+await localBrowser.dispose();

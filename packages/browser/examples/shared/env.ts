@@ -13,8 +13,8 @@ export const BASE_URL = process.env["TEST_APP_URL"] ?? "http://localhost:5173";
  * Shared provider for the examples. Lazy: chromium is not launched until
  * the first run() call hits provider.open(). Set HEADLESS=0 to watch.
  */
-export const provider = new LocalBrowserProvider({
-    // biome-ignore lint/complexity/useLiteralKeys: TS strict mode requires bracket access for env index signature
+export const localBrowser = new LocalBrowserProvider({
+    channel: "msedge",
     headless: false,
 });
 
@@ -23,7 +23,7 @@ export const provider = new LocalBrowserProvider({
  * test-app-spec.md sections 4 and 5. The fields used by each example
  * are scoped per page; expand as the test app grows.
  */
-export const selectors = JsonSelectorRegistry.fromObject({
+export const selectorsRegistry = JsonSelectorRegistry.fromObject({
     pageTitle: { selector: "[data-testid='page-title']", description: "Page-unique heading" },
     loginUser: { selector: "[name='username']" },
     loginPass: { selector: "[name='password']" },
@@ -48,4 +48,4 @@ export const selectors = JsonSelectorRegistry.fromObject({
  */
 export const STORAGE_ROOT = join(tmpdir(), "flowrun-browser-examples");
 
-export const storage = new FileStorageProvider(STORAGE_ROOT);
+export const storageProvider = new FileStorageProvider(STORAGE_ROOT);

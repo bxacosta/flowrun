@@ -14,18 +14,30 @@
  */
 
 import { Readable } from "node:stream";
-import { browser, createBrowserEngine } from "@flowrun/browser";
-import { BASE_URL, provider, STORAGE_ROOT, selectors, storage } from "./shared/env.ts";
+import {
+    type BrowserShape,
+    createBrowserEngine,
+    selectors,
+    storage,
+    type WithSelectors,
+    type WithStorage,
+} from "@flowrun/browser";
+import { flow } from "@flowrun/core";
+import { BASE_URL, localBrowser, STORAGE_ROOT, selectorsRegistry, storageProvider } from "./shared/env.ts";
 import { log, title } from "./shared/helpers.ts";
 
-const engine = createBrowserEngine({ provider, selectors, storage });
+const engine = createBrowserEngine({ provider: localBrowser })
+    .use(selectors({ registry: selectorsRegistry }))
+    .use(storage({ provider: storageProvider }));
+
+type AppShape = WithStorage<WithSelectors<BrowserShape>>;
 
 const PREFIX = "03-storage/";
 const DASHBOARD_URL_PATTERN = /\/dashboard/;
 
 // ── Flow 1: save() bytes + saveStream() from a Playwright download ──
 
-const captureFlow = browser.flow("capture").nodes(({ task }) => [
+const captureFlow = flow<AppShape>("capture").nodes(({ task }) => [
     task({
         name: "sign-in",
         run: async (context) => {
@@ -115,7 +127,7 @@ log(`status: ${r1.status}`);
 
 // ── Flow 2: list / head / exists / read / readStream / delete ───────
 
-const queryFlow = browser.flow("query-storage").nodes(({ task }) => [
+const queryFlow = flow<AppShape>("query-storage").nodes(({ task }) => [
     task({
         name: "list-and-head",
         run: async (context) => {
@@ -167,4 +179,4 @@ const r2 = await engine.run(queryFlow);
 log(`status: ${r2.status}`);
 log(`storage root: ${STORAGE_ROOT}`);
 
-await provider.dispose();
+await localBrowser.dispose();

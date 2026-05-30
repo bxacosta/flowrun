@@ -3,8 +3,8 @@
  *
  * Covers:
  *  - createBrowserEngine({ defaultTimeout, defaultNavigationTimeout }) —
- *    applied to every page (including those opened by browser.newPage /
- *    browser.newSession unless overridden).
+ *    applied to every page (including those opened by resource.newPage /
+ *    resource.newSession unless overridden).
  *  - cancelStrategy:
  *      "close-context" (default) — on AbortSignal, the context owning
  *        the run's session/page is closed. Pending Playwright operations
@@ -17,21 +17,20 @@
  *    timeout, network failure, or non-2xx status when configured to fail.
  */
 
-import { browser, createBrowserEngine, NavigationError } from "@flowrun/browser";
-import { BASE_URL, provider, selectors, storage } from "./shared/env.ts";
+import { type BrowserShape, createBrowserEngine, NavigationError } from "@flowrun/browser";
+import { flow } from "@flowrun/core";
+import { BASE_URL, localBrowser } from "./shared/env.ts";
 import { log, title } from "./shared/helpers.ts";
 
 // ── Demo 1: defaultNavigationTimeout produces NavigationError ───────
 
 title("1 - defaultNavigationTimeout: NavigationError on slow URLs");
 const tightEngine = createBrowserEngine({
-    provider,
-    selectors,
-    storage,
+    provider: localBrowser,
     defaultNavigationTimeout: 500,
 });
 
-const slowFlow = browser.flow("slow-nav").nodes(({ task }) => [
+const slowFlow = flow<BrowserShape>("slow-nav").nodes(({ task }) => [
     task({
         name: "visit-slow-page",
         run: async (context) => {
@@ -54,14 +53,12 @@ log(`status: ${r1.status}`);
 
 title("2 - handle.cancel() with cancelStrategy: 'close-context'");
 const engine = createBrowserEngine({
-    provider,
-    selectors,
-    storage,
+    provider: localBrowser,
     cancelStrategy: "close-context",
     defaultTimeout: 30_000,
 });
 
-const longFlow = browser.flow("long-running").nodes(({ task }) => [
+const longFlow = flow<BrowserShape>("long-running").nodes(({ task }) => [
     task({
         name: "kick-off-report",
         run: async (context) => {
@@ -88,8 +85,7 @@ if (r2.status === "cancelled") {
 // ── Demo 3: cooperative cancellation via context.signal ─────────────
 
 title("3 - cooperative cancellation via context.signal");
-const coopFlow = browser
-    .flow("coop-signal")
+const coopFlow = flow<BrowserShape>("coop-signal")
     .state({ stepsExecuted: 0 })
     .nodes(({ task }) => [
         task({
@@ -114,13 +110,11 @@ log(`status: ${r3.status}, steps executed: ${r3.state.stepsExecuted}`);
 
 title("4 - cancelStrategy: 'none' (no auto-close, signal only)");
 const looseEngine = createBrowserEngine({
-    provider,
-    selectors,
-    storage,
+    provider: localBrowser,
     cancelStrategy: "none",
 });
 
-const looseFlow = browser.flow("loose").nodes(({ task }) => [
+const looseFlow = flow<BrowserShape>("loose").nodes(({ task }) => [
     task({
         name: "navigate-then-loop",
         run: async (context) => {
@@ -140,4 +134,4 @@ setTimeout(() => handle4.cancel(), 400);
 const r4 = await handle4.join();
 log(`status: ${r4.status}`);
 
-await provider.dispose();
+await localBrowser.dispose();

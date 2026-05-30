@@ -2,9 +2,9 @@
  * 04-isolation.ts — Per-iteration / per-branch isolation
  *
  * Covers:
- *  - browser.newPage(options?) — opens a new tab in the SAME BrowserContext.
+ *  - resource.newPage(options?) — opens a new tab in the SAME BrowserContext.
  *    Cookies and storage are shared with the parent session.
- *  - browser.newSession(options?) — opens a FRESH BrowserContext.
+ *  - resource.newSession(options?) — opens a FRESH BrowserContext.
  *    Independent cookies / storageState — useful for multi-account work.
  *  - Both resources expose { page, navigate, session } on the child context
  *    and close automatically on cleanup.
@@ -12,21 +12,23 @@
  *  - cancelStrategy: "close-context" closes the resource on AbortSignal.
  */
 
-import { browser, createBrowserEngine } from "@flowrun/browser";
-import { BASE_URL, provider, selectors, storage } from "./shared/env.ts";
+import { type BrowserShape, createBrowserEngine, resource, selectors, type WithSelectors } from "@flowrun/browser";
+import { flow } from "@flowrun/core";
+import { BASE_URL, localBrowser, selectorsRegistry } from "./shared/env.ts";
 import { log, title } from "./shared/helpers.ts";
 
-const engine = createBrowserEngine({ provider, selectors, storage });
+const engine = createBrowserEngine({ provider: localBrowser }).use(selectors({ registry: selectorsRegistry }));
+
+type AppShape = WithSelectors<BrowserShape>;
 
 const DASHBOARD_URL_PATTERN = /\/dashboard/;
 const LOGIN_CODE_URL_PATTERN = /\/login\/code/;
 
-// ── Flow 1: every() + browser.newPage() — one tab per iteration ─────
+// ── Flow 1: every() + resource.newPage() — one tab per iteration ─────
 
 const months = ["2024-01", "2024-02", "2024-03", "2024-04"];
 
-const scrapeMonths = browser
-    .flow("scrape-months")
+const scrapeMonths = flow<AppShape>("scrape-months")
     .state({ results: [] as { month: string; url: string }[] })
     .nodes(({ every }) => [
         every({
@@ -38,7 +40,7 @@ const scrapeMonths = browser
             // resource opens a fresh tab per iteration and closes it on
             // cleanup. context.page / context.navigate / context.session
             // in the child tasks point at the new tab, not at the parent.
-            resource: browser.newPage(),
+            resource: resource.newPage(),
 
             nodes: ({ task }) => [
                 task({
@@ -52,23 +54,22 @@ const scrapeMonths = browser
         }),
     ]);
 
-title("1 - every() + browser.newPage() (per-iteration tabs)");
+title("1 - every() + resource.newPage() (per-iteration tabs)");
 const r1 = await engine.run(scrapeMonths);
 log(`status: ${r1.status}`);
 for (const entry of r1.state.results) {
     log(`  ${entry.month} -> ${entry.url}`);
 }
 
-// ── Flow 2: parallel() + browser.newPage() — one tab per branch ─────
+// ── Flow 2: parallel() + resource.newPage() — one tab per branch ─────
 
-const splitWork = browser
-    .flow("split-work")
+const splitWork = flow<AppShape>("split-work")
     .state({ invoicesUrl: "", reportsUrl: "" })
     .nodes(({ parallel }) => [
         parallel({
             name: "fan-out-tabs",
             merge: "overwrite",
-            resource: browser.newPage({ defaultNavigationTimeout: 10_000 }),
+            resource: resource.newPage({ defaultNavigationTimeout: 10_000 }),
             nodes: ({ task }) => [
                 task({
                     name: "tab-invoices",
@@ -88,16 +89,15 @@ const splitWork = browser
         }),
     ]);
 
-title("2 - parallel() + browser.newPage() (per-branch tabs, same context)");
+title("2 - parallel() + resource.newPage() (per-branch tabs, same context)");
 const r2 = await engine.run(splitWork);
 log(`status: ${r2.status}`);
 log(`invoices tab: ${r2.state.invoicesUrl}`);
 log(`reports tab: ${r2.state.reportsUrl}`);
 
-// ── Flow 3: parallel() + browser.newSession() — one context per branch ─
+// ── Flow 3: parallel() + resource.newSession() — one context per branch ─
 
-const multiAccount = browser
-    .flow("multi-account")
+const multiAccount = flow<AppShape>("multi-account")
     .state({ acmeFinalUrl: "", twofaFinalUrl: "" })
     .nodes(({ parallel }) => [
         parallel({
@@ -107,7 +107,7 @@ const multiAccount = browser
             // Each branch gets a brand-new BrowserContext with its own
             // cookies, localStorage, and storageState. The two branches
             // cannot interfere with each other's session.
-            resource: browser.newSession({
+            resource: resource.newSession({
                 contextOptions: {
                     viewport: { width: 1280, height: 800 },
                 },
@@ -146,10 +146,10 @@ const multiAccount = browser
         }),
     ]);
 
-title("3 - parallel() + browser.newSession() (per-branch contexts)");
+title("3 - parallel() + resource.newSession() (per-branch contexts)");
 const r3 = await engine.run(multiAccount);
 log(`status: ${r3.status}`);
 log(`acme final url: ${r3.state.acmeFinalUrl}`);
 log(`2fa final url:  ${r3.state.twofaFinalUrl}`);
 
-await provider.dispose();
+await localBrowser.dispose();

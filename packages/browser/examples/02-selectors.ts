@@ -13,8 +13,16 @@
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { browser, createBrowserEngine, JsonSelectorRegistry, SelectorNotFoundError } from "@flowrun/browser";
-import { BASE_URL, provider, storage } from "./shared/env.ts";
+import {
+    type BrowserShape,
+    createBrowserEngine,
+    JsonSelectorRegistry,
+    SelectorNotFoundError,
+    selectors,
+    type WithSelectors,
+} from "@flowrun/browser";
+import { flow } from "@flowrun/core";
+import { BASE_URL, localBrowser } from "./shared/env.ts";
 import { log, title } from "./shared/helpers.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -33,11 +41,9 @@ const inlineRegistry = JsonSelectorRegistry.fromObject({
     paymentCardNumber: { selector: "[name='cardNumber']" },
 });
 
-const engine = createBrowserEngine({
-    provider,
-    selectors: inlineRegistry,
-    storage,
-});
+const engine = createBrowserEngine({ provider: localBrowser }).use(selectors({ registry: inlineRegistry }));
+
+type AppShape = WithSelectors<BrowserShape>;
 
 // ── Demo 1: registry.get(name) — read a SelectorDefinition ──────────
 
@@ -48,7 +54,7 @@ log(`description: ${titleDef.description ?? "(none)"}`);
 
 // ── Demo 2: resolve against the Page scope (top-level locators) ─────
 
-const loginFlow = browser.flow("selectors-page-scope").nodes(({ task }) => [
+const loginFlow = flow<AppShape>("selectors-page-scope").nodes(({ task }) => [
     task({
         name: "fill-login",
         run: async (context) => {
@@ -77,7 +83,7 @@ log(`status: ${r2.status}`);
 
 // ── Demo 3: resolve against a Frame scope (iframe content) ──────────
 
-const iframeFlow = browser.flow("selectors-frame-scope").nodes(({ task }) => [
+const iframeFlow = flow<AppShape>("selectors-frame-scope").nodes(({ task }) => [
     task({
         name: "sign-in",
         run: async (context) => {
@@ -142,4 +148,4 @@ log(`loaded 'twoFactorCode' from file: ${fileRegistry.get("twoFactorCode").selec
 await fileRegistry.reload();
 log("reload() completed");
 
-await provider.dispose();
+await localBrowser.dispose();

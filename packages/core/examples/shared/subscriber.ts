@@ -1,4 +1,4 @@
-import type { Envelope, ReadableBus, Subscription, SystemEvents } from "@flowrun/core";
+import type { EventStream, FlowEvent, RuntimeEvents, Subscription } from "@flowrun/core";
 import { type Color, colorize } from "./helpers.ts";
 
 const FLOW_STATUS_COLORS: Record<string, Color> = {
@@ -28,8 +28,8 @@ function formatRunId(runId: string): string {
     return colorize("dim", `[${runId.slice(0, 8)}]`);
 }
 
-function formatPrefix(envelope: Envelope<{ runId: string }>): string {
-    return `${formatTimestamp(envelope.timestamp)} ${formatRunId(envelope.payload.runId)}`;
+function formatPrefix(event: FlowEvent): string {
+    return `${formatTimestamp(event.timestamp)} ${formatRunId(event.runId)}`;
 }
 
 function formatDuration(durationMs: number): string {
@@ -40,143 +40,150 @@ function formatNodeIndex(index?: number): string {
     return index === undefined ? "" : colorize("dim", `[${index}]`);
 }
 
-export function subscriber<TEvents extends SystemEvents>(bus: ReadableBus<TEvents>) {
+export function subscriber<TEvents extends RuntimeEvents>(events: EventStream<TEvents>) {
     const subscriptions: Subscription[] = [];
 
-    const track = <K extends keyof TEvents & string>(
+    const track = <K extends keyof RuntimeEvents & string>(
         topic: K,
-        handler: (envelope: Envelope<TEvents[K]>) => void
+        handler: (event: FlowEvent<RuntimeEvents[K]>) => void
     ): void => {
-        subscriptions.push(bus.subscribe(topic, handler));
+        subscriptions.push((events as EventStream<RuntimeEvents>).on(topic, handler));
     };
 
-    track("flow:started", (envelope) => {
-        const prefix = formatPrefix(envelope);
-        const flowName = colorize("cyan", envelope.payload.flowName);
-        console.log(`${prefix} ${colorize("cyan", "FLOW START")}  ${flowName}`);
+    track("run:started", (event) => {
+        const prefix = formatPrefix(event);
+        const flowName = colorize("cyan", event.flowName);
+        console.log(`${prefix} ${colorize("cyan", "RUN START ")}  ${flowName}`);
     });
 
-    track("flow:ended", (envelope) => {
-        const prefix = formatPrefix(envelope);
-        const status = envelope.payload.status;
+    track("run:ended", (event) => {
+        const prefix = formatPrefix(event);
+        const status = event.payload.status;
         const color = FLOW_STATUS_COLORS[status] ?? "red";
-        const label = colorize(color, `FLOW ${status.toUpperCase()}`);
-        const duration = formatDuration(envelope.payload.duration);
-        const detail = envelope.payload.reason ?? envelope.payload.error?.message ?? "";
+        const label = colorize(color, `RUN ${status.toUpperCase()}`);
+        const duration = formatDuration(event.payload.durationMs);
+        const detail = event.payload.reason ?? event.payload.error?.message ?? "";
         console.log(`${prefix} ${label}  ${duration}`, detail);
     });
 
-    track("flow:paused", (envelope) => {
-        console.log(`${formatPrefix(envelope)} ${colorize("yellow", "FLOW PAUSED")}`);
+    track("flow:started", (event) => {
+        const prefix = formatPrefix(event);
+        const flowName = colorize("cyan", event.flowName);
+        console.log(`${prefix} ${colorize("cyan", "FLOW START")}  ${flowName}`);
     });
 
-    track("flow:resumed", (envelope) => {
-        console.log(`${formatPrefix(envelope)} ${colorize("green", "FLOW RESUMED")}`);
+    track("flow:ended", (event) => {
+        const prefix = formatPrefix(event);
+        const status = event.payload.status;
+        const color = FLOW_STATUS_COLORS[status] ?? "red";
+        const label = colorize(color, `FLOW ${status.toUpperCase()}`);
+        const duration = formatDuration(event.payload.durationMs);
+        const detail = event.payload.reason ?? event.payload.error?.message ?? "";
+        console.log(`${prefix} ${label}  ${duration}`, detail);
     });
 
-    track("node:task:started", (envelope) => {
-        const prefix = formatPrefix(envelope);
-        const index = formatNodeIndex(envelope.payload.index);
-        const attempts = colorize("dim", `(1/${envelope.payload.maxAttempts})`);
-        console.log(`${prefix}   ${colorize("blue", "TASK START")}  ${envelope.payload.nodeName}${index} ${attempts}`);
+    track("flow:paused", (event) => {
+        console.log(`${formatPrefix(event)} ${colorize("yellow", "FLOW PAUSED")}`);
     });
 
-    track("node:task:retried", (envelope) => {
-        const prefix = formatPrefix(envelope);
-        const index = formatNodeIndex(envelope.payload.index);
-        const attempt = colorize("dim", `(${envelope.payload.attempt})`);
-        const nextDelay = colorize("dim", `next in ${envelope.payload.nextDelayMs}ms`);
-        const error = colorize("red", envelope.payload.error.message);
+    track("flow:resumed", (event) => {
+        console.log(`${formatPrefix(event)} ${colorize("green", "FLOW RESUMED")}`);
+    });
+
+    track("node:task:started", (event) => {
+        const prefix = formatPrefix(event);
+        const index = formatNodeIndex(event.iteration?.index);
+        const attempts = colorize("dim", `(1/${event.payload.maxAttempts})`);
+        console.log(`${prefix}   ${colorize("blue", "TASK START")}  ${event.nodeName}${index} ${attempts}`);
+    });
+
+    track("node:task:retried", (event) => {
+        const prefix = formatPrefix(event);
+        const index = formatNodeIndex(event.iteration?.index);
+        const attempt = colorize("dim", `(${event.payload.attempt})`);
+        const nextDelay = colorize("dim", `next in ${event.payload.nextDelayMs}ms`);
+        const error = colorize("red", event.payload.error.message);
         console.log(
-            `${prefix}   ${colorize("yellow", "TASK RETRY")}  ${envelope.payload.nodeName}${index} ${attempt} ${nextDelay} - ${error}`
+            `${prefix}   ${colorize("yellow", "TASK RETRY")}  ${event.nodeName}${index} ${attempt} ${nextDelay} - ${error}`
         );
     });
 
-    track("node:task:ended", (envelope) => {
-        const prefix = formatPrefix(envelope);
-        const index = formatNodeIndex(envelope.payload.index);
-        const status = envelope.payload.status;
+    track("node:task:ended", (event) => {
+        const prefix = formatPrefix(event);
+        const index = formatNodeIndex(event.iteration?.index);
+        const status = event.payload.status;
         const color = TASK_STATUS_COLORS[status] ?? "red";
         const label = colorize(color, `TASK ${status.toUpperCase()}`);
-        const attempts = colorize("dim", `(${envelope.payload.attempts}/${envelope.payload.attempts})`);
-        const duration = formatDuration(envelope.payload.duration);
-        const error = envelope.payload.error?.message ?? "";
-        console.log(`${prefix}   ${label}  ${envelope.payload.nodeName}${index} ${attempts} ${duration}`, error);
+        const attempts = colorize("dim", `(${event.payload.attempts}/${event.payload.attempts})`);
+        const duration = formatDuration(event.payload.durationMs);
+        const error = event.payload.error?.message ?? "";
+        console.log(`${prefix}   ${label}  ${event.nodeName}${index} ${attempts} ${duration}`, error);
     });
 
-    track("node:parallel:started", (envelope) => {
-        console.log(
-            `${formatPrefix(envelope)}   ${colorize("magenta", "PARALLEL START")}  ${envelope.payload.nodeName}`
-        );
+    track("node:parallel:started", (event) => {
+        console.log(`${formatPrefix(event)}   ${colorize("magenta", "PARALLEL START")}  ${event.nodeName}`);
     });
 
-    track("node:parallel:ended", (envelope) => {
-        const status = envelope.payload.status;
+    track("node:parallel:ended", (event) => {
+        const status = event.payload.status;
         const color = status === "success" ? "green" : "red";
         const label = colorize(color, `PARALLEL ${status.toUpperCase()}`);
-        console.log(
-            `${formatPrefix(envelope)}   ${label}  ${envelope.payload.nodeName} ${formatDuration(envelope.payload.duration)}`
-        );
+        console.log(`${formatPrefix(event)}   ${label}  ${event.nodeName} ${formatDuration(event.payload.durationMs)}`);
     });
 
-    track("node:every:started", (envelope) => {
-        const items = colorize("dim", `(${envelope.payload.totalItems} items)`);
-        console.log(
-            `${formatPrefix(envelope)}   ${colorize("magenta", "EVERY START")}  ${envelope.payload.nodeName} ${items}`
-        );
+    track("node:every:started", (event) => {
+        const items = colorize("dim", `(${event.payload.totalItems} items)`);
+        console.log(`${formatPrefix(event)}   ${colorize("magenta", "EVERY START")}  ${event.nodeName} ${items}`);
     });
 
-    track("node:every:ended", (envelope) => {
-        const status = envelope.payload.status;
+    track("node:every:ended", (event) => {
+        const status = event.payload.status;
         const color = status === "success" ? "green" : "red";
         const label = colorize(color, `EVERY ${status.toUpperCase()}`);
         const failed =
-            envelope.payload.failedIndexes && envelope.payload.failedIndexes.length > 0
-                ? colorize("red", ` failed: [${envelope.payload.failedIndexes.join(", ")}]`)
+            event.payload.failedIndexes && event.payload.failedIndexes.length > 0
+                ? colorize("red", ` failed: [${event.payload.failedIndexes.join(", ")}]`)
                 : "";
         console.log(
-            `${formatPrefix(envelope)}   ${label}  ${envelope.payload.nodeName} ${formatDuration(envelope.payload.duration)}${failed}`
+            `${formatPrefix(event)}   ${label}  ${event.nodeName} ${formatDuration(event.payload.durationMs)}${failed}`
         );
     });
 
-    track("request:created", (envelope) => {
-        const prefix = formatPrefix(envelope);
+    track("request:created", (event) => {
+        const prefix = formatPrefix(event);
         const label = colorize("cyan", "REQUEST CREATED");
-        const id = colorize("dim", `id=${envelope.payload.id.slice(0, 8)}`);
-        console.log(`${prefix}   ${label}  ${envelope.payload.name} ${id}`);
+        const id = colorize("dim", `id=${event.payload.id.slice(0, 8)}`);
+        console.log(`${prefix}   ${label}  ${event.payload.name} ${id}`);
     });
 
-    track("request:responded", (envelope) => {
-        const prefix = formatPrefix(envelope);
+    track("request:responded", (event) => {
+        const prefix = formatPrefix(event);
         const label = colorize("green", "REQUEST RESPONDED");
-        const id = colorize("dim", `id=${envelope.payload.id.slice(0, 8)}`);
-        console.log(`${prefix}   ${label}  ${envelope.payload.name} ${id}`);
+        const id = colorize("dim", `id=${event.payload.id.slice(0, 8)}`);
+        console.log(`${prefix}   ${label}  ${event.payload.name} ${id}`);
     });
 
-    track("request:cancelled", (envelope) => {
-        const prefix = formatPrefix(envelope);
+    track("request:cancelled", (event) => {
+        const prefix = formatPrefix(event);
         const label = colorize("yellow", "REQUEST CANCELLED");
-        const reason = envelope.payload.reason ? colorize("dim", ` (${envelope.payload.reason})`) : "";
-        console.log(`${prefix}   ${label}  ${envelope.payload.name}${reason}`);
+        const reason = event.payload.reason ? colorize("dim", ` (${event.payload.reason})`) : "";
+        console.log(`${prefix}   ${label}  ${event.payload.name}${reason}`);
     });
 
-    track("request:expired", (envelope) => {
-        const prefix = formatPrefix(envelope);
-        const label = colorize("red", "REQUEST EXPIRED");
-        console.log(`${prefix}   ${label}  ${envelope.payload.name}`);
+    track("request:timeout", (event) => {
+        const prefix = formatPrefix(event);
+        const label = colorize("red", "REQUEST TIMEOUT");
+        console.log(`${prefix}   ${label}  ${event.payload.name}`);
     });
 
-    subscriptions.push(
-        bus.subscribe("log", (envelope) => {
-            const timestamp = formatTimestamp(envelope.timestamp);
-            const runId = formatRunId(envelope.payload.runId);
-            const color = LOG_LEVEL_COLORS[envelope.payload.level] ?? "white";
-            const label = colorize(color, envelope.payload.level.toUpperCase().padEnd(5));
-            const data =
-                envelope.payload.data === undefined ? "" : colorize("dim", ` ${JSON.stringify(envelope.payload.data)}`);
-            console.log(`${timestamp} ${runId}     ${label}  ${envelope.payload.message}${data}`);
-        })
-    );
+    track("log", (event) => {
+        const timestamp = formatTimestamp(event.timestamp);
+        const runId = formatRunId(event.runId);
+        const color = LOG_LEVEL_COLORS[event.payload.level] ?? "white";
+        const label = colorize(color, event.payload.level.toUpperCase().padEnd(5));
+        const data = event.payload.data === undefined ? "" : colorize("dim", ` ${JSON.stringify(event.payload.data)}`);
+        console.log(`${timestamp} ${runId}     ${label}  ${event.payload.message}${data}`);
+    });
 
     return {
         dispose() {

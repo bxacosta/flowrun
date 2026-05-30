@@ -1,45 +1,44 @@
 /**
- * 05-events.ts — Browser-specific bus events
+ * 05-events.ts — Bus events across browser/selectors/storage extensions
  *
  * Covers:
  *  - engine.bus subscriptions for every browser:* topic:
  *      browser:opened         (session opened at run start)
  *      browser:closed         (session closed at cleanup)
  *      browser:navigated      (every successful navigate())
- *      browser:page-opened    (browser.newPage resource opened a tab)
- *      browser:page-closed    (browser.newPage resource closed a tab)
- *      browser:session-opened (browser.newSession resource opened a context)
- *      browser:session-closed (browser.newSession resource closed a context)
+ *      browser:page-opened    (resource.newPage resource opened a tab)
+ *      browser:page-closed    (resource.newPage resource closed a tab)
+ *      browser:session-opened (resource.newSession resource opened a context)
+ *      browser:session-closed (resource.newSession resource closed a context)
  *      browser:page-error     (uncaught error in the page)
  *      browser:console-error  (console.error from the page)
- *      browser:storage-saved  (StorageProvider.save/saveStream completed)
- *      browser:tracing-saved  (a trace zip was persisted)
+ *  - And cross-extension topics:
+ *      storage:saved          (StorageProvider.save/saveStream completed)
  *  - Wildcard subscription (browser:**) and filter / once options
  *  - Extension flags that gate emission:
- *      observePageErrors / observeConsoleErrors
- *      emitNavigateEvent  / emitStorageEvent
+ *      browser({ emitPageErrors, emitConsoleErrors, emitNavigateEvent })
+ *      storage({ emitEvent })
  */
 
-import { browser, createBrowserEngine } from "@flowrun/browser";
-import type { Envelope } from "@flowrun/core";
-import { BASE_URL, provider, selectors, storage } from "./shared/env.ts";
+import { type BrowserShape, createBrowserEngine, resource, storage, type WithStorage } from "@flowrun/browser";
+import { type Envelope, flow } from "@flowrun/core";
+import { BASE_URL, localBrowser, storageProvider } from "./shared/env.ts";
 import { log, title } from "./shared/helpers.ts";
 
 const engine = createBrowserEngine({
-    provider,
-    selectors,
-    storage,
+    provider: localBrowser,
     // Defaults are all true. Setting them here makes the contract explicit.
-    observePageErrors: true,
-    observeConsoleErrors: true,
+    emitPageErrors: true,
+    emitConsoleErrors: true,
     emitNavigateEvent: true,
-    emitStorageEvent: true,
-});
+}).use(storage({ provider: storageProvider, emitEvent: true }));
+
+type AppShape = WithStorage<BrowserShape>;
 
 // ── Wildcard subscription: every browser:* topic ────────────────────
 
 const seen: string[] = [];
-const wildcardSub = engine.bus.on("browser:**", (envelope: Envelope) => {
+const wildcardSub = engine.bus.match("browser:**", (envelope: Envelope) => {
     seen.push(envelope.topic);
 });
 
@@ -64,7 +63,7 @@ engine.bus.subscribe("browser:console-error", (envelope) => {
     log(`  [console-error] ${envelope.payload.text}${loc}`);
 });
 
-engine.bus.subscribe("browser:storage-saved", (envelope) => {
+engine.bus.subscribe("storage:saved", (envelope) => {
     log(`  [storage-saved] ${envelope.payload.key} (${envelope.payload.size}B)`);
 });
 
@@ -87,7 +86,7 @@ engine.bus.subscribe("browser:closed", () => log("  [closed]   (run finished)"),
 
 // ── Flow 1: trigger navigated, page-error, console-error, storage-saved ─
 
-const observability = browser.flow("observability").nodes(({ task }) => [
+const observability = flow<AppShape>("observability").nodes(({ task }) => [
     task({
         name: "land",
         run: async (context) => {
@@ -128,13 +127,13 @@ title("1 - Trigger every event-emitting code path");
 const r1 = await engine.run(observability);
 log(`status: ${r1.status}`);
 
-// ── Flow 2: per-tab events via browser.newPage() ────────────────────
+// ── Flow 2: per-tab events via resource.newPage() ────────────────────
 
-const tabsFlow = browser.flow("tabs-events").nodes(({ parallel }) => [
+const tabsFlow = flow<BrowserShape>("tabs-events").nodes(({ parallel }) => [
     parallel({
         name: "two-tabs",
         merge: "overwrite",
-        resource: browser.newPage(),
+        resource: resource.newPage(),
         nodes: ({ task }) => [
             task({
                 name: "tab-a",
@@ -152,7 +151,7 @@ const tabsFlow = browser.flow("tabs-events").nodes(({ parallel }) => [
     }),
 ]);
 
-title("2 - page-opened / page-closed (from browser.newPage)");
+title("2 - page-opened / page-closed (from resource.newPage)");
 const r2 = await engine.run(tabsFlow);
 log(`status: ${r2.status}`);
 
@@ -165,4 +164,4 @@ for (const topic of unique) {
     log(`  ${topic}`);
 }
 
-await provider.dispose();
+await localBrowser.dispose();
