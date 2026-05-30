@@ -11,7 +11,7 @@
  *  - context.emit() (flow domain events declared via .emits<T>())
  */
 
-import type { EngineEvents, EventStream, FlowEvent, Subscription } from "@flowrun/core";
+import type { EngineEvents, EventSubscriber, FlowEvent, Subscription } from "@flowrun/core";
 import { createEngine, event, extension, shape } from "@flowrun/core";
 import { log, title } from "./shared/helpers.ts";
 
@@ -29,7 +29,7 @@ const databaseExtension = (config: { connectionString: string }) =>
             await context.emit("connected", { poolSize: 10 });
 
             return {
-                context: {
+                provided: {
                     db: {
                         query: async <TRow>(sql: string): Promise<TRow[]> => {
                             const start = Date.now();
@@ -65,7 +65,7 @@ const metricsExtension = () =>
             });
 
             return {
-                context: {
+                provided: {
                     metrics: {
                         counter: (name: string, value = 1) => {
                             counters.set(name, (counters.get(name) ?? 0) + value);
@@ -138,7 +138,7 @@ const engine = createEngine({
 
 // ── Standalone subscriber — reusable, externalizable ────────────────
 
-function dbActivitySubscriber(events: EventStream<EngineEvents<typeof engine>>) {
+function dbActivitySubscriber(events: EventSubscriber<EngineEvents<typeof engine>>) {
     const subscriptions: Subscription[] = [];
 
     subscriptions.push(
@@ -188,7 +188,7 @@ const temporarySubscription = engine.events.on("flow:*", (envelope: FlowEvent) =
     log(`  [temp] ${envelope.topic} (will unsubscribe after first flow)`);
 });
 
-// Globstar (**): matches any depth — `node:**` captures node:task:started, node:every:ended, etc.
+// Globstar (**): matches any depth — `node:**` captures node:task:started, node:each:ended, etc.
 let nodeEventCount = 0;
 const nodeGlobstar = engine.events.on("node:**", () => {
     nodeEventCount++;

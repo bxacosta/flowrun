@@ -6,9 +6,9 @@
  *
  * Covers:
  *  - task: sync/async run, retry (constant + exponential w/ jitter, factor,
- *          maxDelayMs, retryOn), onError:"skip", context.skip(), context.attempt
- *  - parallel: merge strategies (overwrite, append, strict -> MergeConflictError)
- *  - every: items source, concurrency, merge, onError:"continue", context.iteration
+ *          maxDelayMs, retryOn), onError:"ignore", context.skip(), context.attempt
+ *  - parallel: merge strategies (overwrite, append, exclusive -> MergeConflictError)
+ *  - each: items source, concurrency, merge, onBranchError:"ignore", context.iteration
  */
 
 import { createEngine, flow } from "@flowrun/core";
@@ -76,10 +76,10 @@ const taskShowcase = flow("task-showcase")
             },
         }),
 
-        // onError:"skip" — task fails after retries, but the flow continues
+        // onError:"ignore" — task fails after retries, but the flow continues
         task({
             name: "best-effort",
-            onError: "skip",
+            onError: "ignore",
             retry: { maxAttempts: 2, backoff: "constant", delayMs: 5 },
             run: () => {
                 throw new Error("never works");
@@ -159,13 +159,13 @@ const appendDemo = flow("append-demo")
         }),
     ]);
 
-// strict: same key from 2 branches -> MergeConflictError
+// exclusive: same key from 2 branches -> MergeConflictError
 const strictDemo = flow("strict-demo")
     .state({ shared: "" })
     .nodes(({ parallel }) => [
         parallel({
             name: "will-conflict",
-            merge: "strict",
+            merge: "exclusive",
             nodes: ({ task }) => [
                 task({
                     name: "writer-a",
@@ -183,14 +183,14 @@ const strictDemo = flow("strict-demo")
         }),
     ]);
 
-// continue: one branch fails, successful branches still merge — flow survives
+// ignore: one branch fails, successful branches still merge — flow survives
 const continueDemo = flow("continue-demo")
     .state({ collected: [] as string[] })
     .nodes(({ parallel }) => [
         parallel({
             name: "tolerant",
             merge: "append",
-            onError: "continue",
+            onBranchError: "ignore",
             nodes: ({ task }) => [
                 task({
                     name: "branch-ok-1",
@@ -215,18 +215,18 @@ const continueDemo = flow("continue-demo")
     ]);
 
 // ─────────────────────────────────────────────────────────────────────
-// Every — items source, concurrency, iteration context, onError
+// Each — items source, concurrency, iteration context, onBranchError
 // ─────────────────────────────────────────────────────────────────────
 
-const everyShowcase = flow("every-showcase")
+const eachShowcase = flow("each-showcase")
     .state({
         ordered: [] as string[],
         resilient: [] as string[],
         sourceItems: ["x1", "x2", "x3", "x4"],
     })
-    .nodes(({ every }) => [
+    .nodes(({ each }) => [
         // items pulled from state, bounded concurrency, iteration context
-        every({
+        each({
             name: "process-from-state",
             items: (context) => context.state.get("sourceItems"),
             concurrency: 2,
@@ -243,13 +243,13 @@ const everyShowcase = flow("every-showcase")
             ],
         }),
 
-        // items as inline array, onError:"continue" — failed items do not break the rest
-        every({
+        // items as inline array, onBranchError:"ignore" — failed items do not break the rest
+        each({
             name: "resilient-pass",
             items: () => ["ok-1", "FAIL", "ok-2"],
             concurrency: 1,
             merge: "append",
-            onError: "continue",
+            onBranchError: "ignore",
             nodes: ({ task }) => [
                 task({
                     name: "maybe-fail",
@@ -271,13 +271,18 @@ subscriber(engine.events);
 
 // ── Run ─────────────────────────────────────────────────────────────
 
-title("Task - sync/async + retry + onError:skip + context.skip() + context.attempt");
+title("Task - sync/async + retry + onError:ignore + context.skip() + context.attempt");
 const taskResult = await engine.run(taskShowcase);
 log("steps:", taskResult.state.steps);
 log("tasks:");
 for (const result of taskResult.tasks) {
-    const reason = result.reason ? ` (${result.reason})` : "";
-    log(`  ${result.nodeName} -> ${result.status}${reason} (attempts=${result.attempts})`);
+    let tag = "";
+    if (result.ignored) {
+        tag = " (ignored)";
+    } else if (result.reason) {
+        tag = ` (${result.reason})`;
+    }
+    log(`  ${result.nodeName} -> ${result.status}${tag} (attempts=${result.attempts})`);
 }
 
 title("Parallel - overwrite (last write wins)");
@@ -288,27 +293,25 @@ title("Parallel - append (arrays concatenated)");
 const appendResult = await engine.run(appendDemo);
 log("items:", appendResult.state.items);
 
-title("Parallel - strict (conflict -> MergeConflictError)");
+title("Parallel - exclusive (conflict -> MergeConflictError)");
 const strictResult = await engine.run(strictDemo);
 if (strictResult.status === "failed") {
     log("expected error:", strictResult.error.message);
 }
 
-title("Parallel - continue (one branch fails, successful merges survive)");
+title("Parallel - ignore (one branch fails, successful merges survive)");
 const continueResult = await engine.run(continueDemo);
 if (continueResult.status === "success") {
     log("collected (failed branch dropped):", continueResult.state.collected);
 }
 
-title("Every - items + concurrency + iteration context + onError:continue");
-const everyResult = await engine.run(everyShowcase);
-if (everyResult.status === "success") {
-    log("ordered results:", everyResult.state.ordered);
-    log("resilient results:", everyResult.state.resilient);
+title("Each - items + concurrency + iteration context + onBranchError:ignore");
+const eachResult = await engine.run(eachShowcase);
+if (eachResult.status === "success") {
+    log("ordered results:", eachResult.state.ordered);
+    log("resilient results:", eachResult.state.resilient);
     log(
         "tasks:",
-        everyResult.tasks
-            .map((result) => `${result.nodeName}[${result.iteration?.item}] -> ${result.status}`)
-            .join(", ")
+        eachResult.tasks.map((result) => `${result.nodeName}[${result.iteration?.item}] -> ${result.status}`).join(", ")
     );
 }

@@ -2,8 +2,8 @@
  * 03-composition.ts — Composing Nodes
  *
  * Covers:
- *  - Nested containers: parallel inside parallel, every inside parallel, parallel inside every
- *  - Bottom-up composition: nodes built standalone with shape.task/parallel/every
+ *  - Nested containers: parallel inside parallel, each inside parallel, parallel inside each
+ *  - Bottom-up composition: nodes built standalone with shape.task/parallel/each
  *    and assembled into a flow later
  *  - Reusable shape contract shared across every node and the final flow
  *  - merge: "append" across forks — each branch contributes its slice of state
@@ -11,13 +11,13 @@
  * Tree structure:
  *   prepare (task)                      <- task at flow level
  *   build (parallel)                    <- parallel at flow level
- *   ├─ compileAll (every: modules)      <- every inside parallel
- *   │  └─ compile (task)                <- task inside every
+ *   ├─ compileAll (each: modules)       <- each inside parallel
+ *   │  └─ compile (task)                <- task inside each
  *   └─ runLinters (parallel)            <- parallel inside parallel
  *      ├─ lintTypes (task)              <- task inside parallel
  *      └─ lintStyle (task)
- *   deploy (every: environments)        <- every at flow level
- *   └─ deployEnv (parallel)             <- parallel inside every
+ *   deploy (each: environments)         <- each at flow level
+ *   └─ deployEnv (parallel)             <- parallel inside each
  *      ├─ deployServer (task)
  *      └─ smokeTest (task)
  */
@@ -60,8 +60,8 @@ const prepare = pipeline.task({
     },
 });
 
-// every inside parallel — fans out per item
-const compileAll = pipeline.every({
+// each inside parallel — fans out per item
+const compileAll = pipeline.each({
     name: "compileAll",
     items: (context) => context.state.get("modules"),
     concurrency: 2,
@@ -103,8 +103,8 @@ const build = pipeline.parallel({
     nodes: [compileAll, runLinters],
 });
 
-// every iterates per item and runs a parallel of two tasks inside
-const deploy = pipeline.every({
+// each iterates per item and runs a parallel of two tasks inside
+const deploy = pipeline.each({
     name: "deploy",
     items: (context) => context.state.get("environments"),
     concurrency: 1,

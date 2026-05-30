@@ -7,7 +7,7 @@
  *  - handle.cancel(reason) -> CancelledFlowResult
  *  - handle.pause() / handle.resume()
  *  - context.signal (cooperative cancellation with AbortSignal)
- *  - resource in every (per-iteration resource isolation)
+ *  - resource in each (per-iteration resource isolation)
  *  - resource in parallel (per-branch resource isolation)
  *  - typed child context: resource.provide adds keys that child tasks see typed
  */
@@ -24,7 +24,7 @@ const browserExtension = (browser: Browser) =>
         name: "browser",
         setup() {
             return {
-                context: { browser },
+                provided: { browser },
                 dispose: (outcome) => {
                     log(`  [browser] extension disposed (run ended ${outcome.status})`);
                 },
@@ -140,7 +140,7 @@ const result3 = await handle3.join();
 log(`\nresult: ${result3.status}, duration: ${result3.durationMs}ms (includes ~200ms pause)`);
 log("steps:", result3.state.steps);
 
-// ── Flow: every + resource (per-iteration browser pages) ────────────
+// ── Flow: each + resource (per-iteration browser pages) ────────────
 
 const months = ["2024-01", "2024-02", "2024-03", "2024-04"];
 
@@ -153,8 +153,8 @@ const scrapeFlow = shape<
 >()
     .flow("scrape-invoices")
     .state({ scraped: [] as { month: string; pageId: number }[] })
-    .nodes(({ every }) => [
-        every({
+    .nodes(({ each }) => [
+        each({
             name: "scrape-month",
             items: () => months,
             concurrency: 2,
@@ -162,14 +162,14 @@ const scrapeFlow = shape<
 
             // resource opens a fresh page per iteration and closes it on cleanup.
             // The returned keys are typed in the child context (context.page).
-            // meta is EveryMeta<string>: index, item, nodeName.
+            // meta is EachMeta<string>: index, item, nodeName.
             resource: {
                 provide: async (context, meta) => {
-                    log(`  [every meta] start iteration #${meta.index} item="${meta.item}"`);
+                    log(`  [each meta] start iteration #${meta.index} item="${meta.item}"`);
                     return { page: await context.browser.newPage() };
                 },
                 cleanup: async (context, meta) => {
-                    log(`  [every meta] cleanup iteration #${meta.index} item="${meta.item}" page=#${context.page.id}`);
+                    log(`  [each meta] cleanup iteration #${meta.index} item="${meta.item}" page=#${context.page.id}`);
                     await context.page.close();
                 },
             },
@@ -191,7 +191,7 @@ const scrapeFlow = shape<
         }),
     ]);
 
-title("Demo 4 - resource in every (per-iteration pages)");
+title("Demo 4 - resource in each (per-iteration pages)");
 
 const scrapeResult = await engine.run(scrapeFlow);
 log(`\nresult: ${scrapeResult.status}`);

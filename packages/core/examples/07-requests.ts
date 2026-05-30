@@ -126,7 +126,7 @@ const mfaFlow = flow("mfa")
     .nodes(({ task }) => [
         task({
             name: "ask-mfa",
-            onError: "skip",
+            onError: "ignore",
             run: async (context) => {
                 try {
                     await context.request(mfaCodeRequest, { destination: "+1-555-0100" }, { timeoutMs: 60 });
