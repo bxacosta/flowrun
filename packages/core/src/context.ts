@@ -1,6 +1,6 @@
 import { SkipSignal } from "./errors.ts";
 import { type AnyEventBus, createEmitMeta, type EmitMeta } from "./event-bus.ts";
-import type { EmitOptions, EventEmitter, EventSource } from "./events.ts";
+import type { EmitFn, EmitOptions, EventSource } from "./events.ts";
 import { createLogger, type Logger } from "./logger.ts";
 import type { TaskResult } from "./node.ts";
 import type { ContextRequest, RequestDefinition, RequestOptions } from "./request.ts";
@@ -13,7 +13,7 @@ import type { EmptyObject } from "./utils.ts";
 type IterationField<TIteration> = [TIteration] extends [never] ? EmptyObject : { readonly iteration: TIteration };
 
 export type BaseContext<TShape extends Shape = Shape> = ProvidedOf<TShape> & {
-    emit: EventEmitter<EventsOf<TShape>>;
+    emit: EmitFn<EventsOf<TShape>>;
     flowName: string;
     log: Logger;
     params: Readonly<ParamsOf<TShape>>;
@@ -75,11 +75,11 @@ function buildEmitMeta(runtime: FlowRuntime, location: ScopeLocation, correlatio
     return createEmitMeta(flowSource(runtime.flowName), runtime, { ...location, correlationId });
 }
 
-function buildScopeEmitter(runtime: FlowRuntime, location: ScopeLocation): EventEmitter<Record<string, unknown>> {
+function buildScopeEmitter(runtime: FlowRuntime, location: ScopeLocation): EmitFn<Record<string, unknown>> {
     const emit = (topic: string, payload?: unknown, options?: EmitOptions): void => {
         runtime.bus.emit(topic, payload, buildEmitMeta(runtime, location, options?.correlationId));
     };
-    return emit as unknown as EventEmitter<Record<string, unknown>>;
+    return emit as unknown as EmitFn<Record<string, unknown>>;
 }
 
 function buildScopeLogger(runtime: FlowRuntime, location: ScopeLocation): Logger {

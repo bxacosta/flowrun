@@ -3,8 +3,7 @@ import type { Shape } from "./shape.ts";
 import type { MergeStrategy } from "./state.ts";
 import type { MaybePromise } from "./utils.ts";
 
-export type TaskErrorMode = "fail" | "skip";
-export type ContainerErrorMode = "continue" | "fail";
+export type ErrorMode = "fail" | "ignore";
 
 interface RetryBase {
     delayMs: number;
@@ -22,7 +21,7 @@ export interface ParallelMeta {
     nodeName: string;
 }
 
-export interface EveryMeta<TItem = unknown> {
+export interface EachMeta<TItem = unknown> {
     index: number;
     item: TItem;
     nodeName: string;
@@ -31,7 +30,7 @@ export interface EveryMeta<TItem = unknown> {
 export interface TaskNodeDefinition {
     middleware: AnyMiddleware[];
     name: string;
-    onError: TaskErrorMode;
+    onError: ErrorMode;
     retry?: RetryConfig;
     run: AnyTaskRunner;
     type: "task";
@@ -46,23 +45,23 @@ export interface ParallelNodeDefinition {
     merge: MergeStrategy;
     name: string;
     nodes: NodeDefinition[];
-    onError: ContainerErrorMode;
+    onBranchError: ErrorMode;
     resource?: ContainerResource;
     type: "parallel";
 }
 
-export interface EveryNodeDefinition {
+export interface EachNodeDefinition {
     concurrency: number;
     items: AnyItemsFunction;
     merge: MergeStrategy;
     name: string;
     nodes: NodeDefinition[];
-    onError: ContainerErrorMode;
+    onBranchError: ErrorMode;
     resource?: ContainerResource;
-    type: "every";
+    type: "each";
 }
 
-export type NodeDefinition = EveryNodeDefinition | ParallelNodeDefinition | TaskNodeDefinition;
+export type NodeDefinition = EachNodeDefinition | ParallelNodeDefinition | TaskNodeDefinition;
 
 export type Node<TShape extends Shape = Shape> = NodeDefinition & {
     readonly _shape?: TShape;
@@ -72,6 +71,7 @@ export interface TaskResult {
     attempts: number;
     durationMs: number;
     error?: Error;
+    ignored: boolean;
     iteration?: { index: number; item: unknown };
     nodeName: string;
     path: string;

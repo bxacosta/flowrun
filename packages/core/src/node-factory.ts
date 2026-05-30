@@ -1,15 +1,7 @@
 import type { ItemsContext, TaskContext } from "./context.ts";
 import { FlowEngineError } from "./errors.ts";
 import type { Middleware } from "./middleware.ts";
-import type {
-    ContainerErrorMode,
-    EveryMeta,
-    Node,
-    NodeDefinition,
-    ParallelMeta,
-    RetryConfig,
-    TaskErrorMode,
-} from "./node.ts";
+import type { EachMeta, ErrorMode, Node, NodeDefinition, ParallelMeta, RetryConfig } from "./node.ts";
 import type { Shape, WithIteration, WithProvided } from "./shape.ts";
 import type { MergeStrategy } from "./state.ts";
 import type { MaybePromise, MergeObjects } from "./utils.ts";
@@ -18,12 +10,12 @@ import { assertUniqueNodeNames, assertValidName } from "./validation.ts";
 export interface TaskConfig<TShape extends Shape> {
     middleware?: NoInfer<Middleware<TaskContext<TShape>>>[];
     name: string;
-    onError?: TaskErrorMode;
+    onError?: ErrorMode;
     retry?: RetryConfig;
     run: (context: TaskContext<TShape>) => MaybePromise<void>;
 }
 
-export type ContainerMeta<TItem = unknown> = EveryMeta<TItem> | ParallelMeta;
+export type ContainerMeta<TItem = unknown> = EachMeta<TItem> | ParallelMeta;
 
 export interface ResourceFactory<TContext extends object, TLocal extends object, TMeta = ContainerMeta> {
     cleanup?: (context: MergeObjects<TContext, TLocal>, meta: TMeta) => MaybePromise<void>;
@@ -32,7 +24,7 @@ export interface ResourceFactory<TContext extends object, TLocal extends object,
 
 export interface ParallelOptions {
     merge?: MergeStrategy;
-    onError?: ContainerErrorMode;
+    onBranchError?: ErrorMode;
 }
 
 export type ParallelResourceConfig<TShape extends Shape, TLocal extends object> = ResourceFactory<
@@ -53,30 +45,30 @@ export type ParallelConfigWithResource<TShape extends Shape, TLocal extends obje
     resource: ParallelResourceConfig<TShape, TLocal>;
 };
 
-export interface EveryOptions {
+export interface EachOptions {
     concurrency?: number;
     merge?: MergeStrategy;
-    onError?: ContainerErrorMode;
+    onBranchError?: ErrorMode;
 }
 
-export type EveryResourceConfig<TShape extends Shape, TItem, TLocal extends object> = ResourceFactory<
+export type EachResourceConfig<TShape extends Shape, TItem, TLocal extends object> = ResourceFactory<
     ItemsContext<WithIteration<TShape, TItem>>,
     TLocal,
-    EveryMeta<TItem>
+    EachMeta<TItem>
 >;
 
-export type EveryConfig<TShape extends Shape, TItem> = EveryOptions & {
+export type EachConfig<TShape extends Shape, TItem> = EachOptions & {
     items: (context: ItemsContext<TShape>) => MaybePromise<readonly TItem[]>;
     name: string;
     nodes: NodesSpec<WithIteration<TShape, TItem>>;
     resource?: never;
 };
 
-export type EveryConfigWithResource<TShape extends Shape, TItem, TLocal extends object> = EveryOptions & {
+export type EachConfigWithResource<TShape extends Shape, TItem, TLocal extends object> = EachOptions & {
     items: (context: ItemsContext<TShape>) => MaybePromise<readonly TItem[]>;
     name: string;
     nodes: NodesSpec<WithProvided<WithIteration<TShape, TItem>, TLocal>>;
-    resource: EveryResourceConfig<TShape, TItem, TLocal>;
+    resource: EachResourceConfig<TShape, TItem, TLocal>;
 };
 
 export type NodesSpec<TShape extends Shape> =
@@ -84,8 +76,8 @@ export type NodesSpec<TShape extends Shape> =
     | ((nodes: NodeFactory<TShape>) => readonly Node<TShape>[]);
 
 export interface NodeFactory<TShape extends Shape> {
-    every<TItem>(config: EveryConfig<TShape, TItem>): Node<TShape>;
-    every<TItem, TLocal extends object>(config: EveryConfigWithResource<TShape, TItem, TLocal>): Node<TShape>;
+    each<TItem>(config: EachConfig<TShape, TItem>): Node<TShape>;
+    each<TItem, TLocal extends object>(config: EachConfigWithResource<TShape, TItem, TLocal>): Node<TShape>;
     parallel(config: ParallelConfig<TShape>): Node<TShape>;
     parallel<TLocal extends object>(config: ParallelConfigWithResource<TShape, TLocal>): Node<TShape>;
     task(config: TaskConfig<TShape>): Node<TShape>;
@@ -122,16 +114,16 @@ export function buildParallel<TShape extends Shape>(
         merge: config.merge ?? "overwrite",
         name: config.name,
         nodes: childNodes as NodeDefinition[],
-        onError: config.onError ?? "fail",
+        onBranchError: config.onBranchError ?? "fail",
         resource: config.resource,
         type: "parallel",
     };
 }
 
-export function buildEvery<TShape extends Shape, TItem>(
-    config: EveryConfig<TShape, TItem> | EveryConfigWithResource<TShape, TItem, object>
+export function buildEach<TShape extends Shape, TItem>(
+    config: EachConfig<TShape, TItem> | EachConfigWithResource<TShape, TItem, object>
 ): Node<TShape> {
-    assertValidName("every", config.name);
+    assertValidName("each", config.name);
     type ChildShape = WithIteration<TShape, TItem> | WithProvided<WithIteration<TShape, TItem>, object>;
     const childNodes = resolveNodes(config.nodes as NodesSpec<ChildShape>);
     assertUniqueNodeNames(childNodes, config.name);
@@ -141,15 +133,15 @@ export function buildEvery<TShape extends Shape, TItem>(
         merge: config.merge ?? "overwrite",
         name: config.name,
         nodes: childNodes as NodeDefinition[],
-        onError: config.onError ?? "fail",
+        onBranchError: config.onBranchError ?? "fail",
         resource: config.resource,
-        type: "every",
+        type: "each",
     };
 }
 
 export function createNodeFactory<TShape extends Shape>(): NodeFactory<TShape> {
     return {
-        every: buildEvery,
+        each: buildEach,
         parallel: buildParallel,
         task: buildTask,
     } as unknown as NodeFactory<TShape>;

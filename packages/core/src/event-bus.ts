@@ -2,7 +2,7 @@ import { FlowEngineError, normalizeError } from "./errors.ts";
 import type {
     EventMap,
     EventSource,
-    EventStream,
+    EventSubscriber,
     FlowEvent,
     OnOptions,
     Subscription,
@@ -55,8 +55,8 @@ export interface EventBusConfig {
     onError?: EventBusErrorHandler;
 }
 
-export interface EventBus<TEvents extends EventMap> extends EventStream<TEvents> {
-    asReadable<TView extends EventMap = TEvents>(): EventStream<TView>;
+export interface EventBus<TEvents extends EventMap> extends EventSubscriber<TEvents> {
+    asReadable<TView extends EventMap = TEvents>(): EventSubscriber<TView>;
     clear(): void;
     emit<K extends keyof TEvents & string>(topic: K, payload: TEvents[K], meta: EmitMeta): void;
 }
@@ -192,7 +192,7 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
 
     const bus: EventBus<TEvents> = {
         asReadable<TView extends EventMap = TEvents>() {
-            return bus as unknown as EventStream<TView>;
+            return bus as unknown as EventSubscriber<TView>;
         },
 
         clear() {
@@ -282,9 +282,6 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
                     signal.addEventListener("abort", onAbort, { once: true });
                 }
 
-                // The filter is registered on the subscription (not applied inside the
-                // handler) so dispatch's passesFilter() gates BEFORE removing the once
-                // handler — a non-matching event no longer consumes the subscription.
                 const subscription = addHandler(
                     topic,
                     (event) => {

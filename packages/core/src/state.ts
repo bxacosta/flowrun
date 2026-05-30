@@ -1,7 +1,7 @@
 import { InvalidMergeValueError, MergeConflictError } from "./errors.ts";
 import { assertPlainObject } from "./validation.ts";
 
-export type MergeStrategy = "append" | "overwrite" | "strict";
+export type MergeStrategy = "append" | "exclusive" | "overwrite";
 
 export interface FlowStateStore<TState extends object> {
     append<K extends keyof TState & string>(key: K, value: TState[K] extends (infer I)[] ? I : never): void;
@@ -141,7 +141,7 @@ function applyOverwrite(parent: AnyFlowStateStore, entries: readonly { values: M
     }
 }
 
-function applyStrict(
+function applyExclusive(
     parent: AnyFlowStateStore,
     entries: readonly { label: number | string; values: Map<string, unknown> }[]
 ): void {
@@ -185,8 +185,8 @@ export function mergeForkedStores(
         case "overwrite":
             applyOverwrite(parent, entries);
             return;
-        case "strict":
-            applyStrict(parent, entries);
+        case "exclusive":
+            applyExclusive(parent, entries);
             return;
         default:
             throw new Error(`Unknown merge strategy: ${strategy}`);

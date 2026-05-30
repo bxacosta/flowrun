@@ -1,4 +1,4 @@
-import type { EventEmitter, EventMap, EventStream, RuntimeEvents } from "./events.ts";
+import type { EmitFn, EventMap, EventSubscriber, RuntimeEvents } from "./events.ts";
 import type { Logger } from "./logger.ts";
 import type { TerminalFlowStatus } from "./status.ts";
 import type { EmptyObject, MaybePromise } from "./utils.ts";
@@ -44,8 +44,8 @@ export interface FlowOutcome {
 export type ExtensionDispose = (outcome: FlowOutcome) => MaybePromise<void>;
 
 export interface ExtensionSetupResult<TContext extends object> {
-    context?: TContext;
     dispose?: ExtensionDispose;
+    provided?: TContext;
 }
 
 export interface ExtensionSetupContext<
@@ -53,15 +53,15 @@ export interface ExtensionSetupContext<
     TOwnShortEvents extends EventMap,
     TAllEvents extends EventMap,
 > {
-    emit: EventEmitter<TOwnShortEvents>;
+    emit: EmitFn<TOwnShortEvents>;
     flowName: string;
-    history: EventStream<TAllEvents>["history"];
+    history: EventSubscriber<TAllEvents>["history"];
     log: Logger;
-    on: EventStream<TAllEvents>["on"];
+    on: EventSubscriber<TAllEvents>["on"];
     provided: TRequired;
     runId: string;
     signal: AbortSignal;
-    waitFor: EventStream<TAllEvents>["waitFor"];
+    waitFor: EventSubscriber<TAllEvents>["waitFor"];
 }
 
 export interface ExtensionConfig<
@@ -104,7 +104,7 @@ export type AnyExtensionSetup = (context: any) => MaybePromise<ExtensionSetupRes
 export type ExtensionRequired<TDefinition> =
     TDefinition extends ExtensionDefinition<infer TRequired, object, EventMap> ? TRequired : EmptyObject;
 
-export type ExtensionContext<TDefinition> =
+export type ExtensionProvided<TDefinition> =
     TDefinition extends ExtensionDefinition<object, infer TContext, EventMap> ? TContext : EmptyObject;
 
 export type ExtensionEvents<TDefinition> =

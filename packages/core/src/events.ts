@@ -27,7 +27,7 @@ export interface EmitOptions {
     correlationId?: string;
 }
 
-export type EventEmitter<TEvents extends EventMap> = <K extends keyof TEvents & string>(
+export type EmitFn<TEvents extends EventMap> = <K extends keyof TEvents & string>(
     topic: K,
     ...args: [TEvents[K]] extends [undefined]
         ? [payload?: undefined, options?: EmitOptions]
@@ -53,7 +53,7 @@ export interface WaitForOptions<TPayload = unknown> {
     timeout?: number;
 }
 
-export interface EventStream<TEvents extends EventMap> {
+export interface EventSubscriber<TEvents extends EventMap> {
     history(pattern?: string): readonly FlowEvent[];
     on<K extends keyof TEvents & string>(
         topic: K,
@@ -88,14 +88,14 @@ export interface RuntimeEvents {
         message: string;
     };
 
-    "node:every:ended": {
+    "node:each:ended": {
         durationMs: number;
         errors?: Error[];
         failedIndexes?: number[];
         status: "failed" | "success";
         totalItems: number;
     };
-    "node:every:started": { totalItems: number };
+    "node:each:started": { totalItems: number };
 
     "node:parallel:ended": {
         durationMs: number;
@@ -116,6 +116,7 @@ export interface RuntimeEvents {
         attempts: number;
         durationMs: number;
         error?: Error;
+        ignored: boolean;
         reason?: string;
         status: "failed" | "skipped" | "success";
     };

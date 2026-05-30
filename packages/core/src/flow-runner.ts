@@ -3,11 +3,11 @@ import { buildFlowContext } from "./context.ts";
 import { FlowCancellationSignal, normalizeError } from "./errors.ts";
 import { type AnyEventBus, createEmitMeta, type EmitMeta } from "./event-bus.ts";
 import type {
+    EmitFn,
     EmitOptions,
-    EventEmitter,
     EventMap,
     EventSource,
-    EventStream,
+    EventSubscriber,
     FlowEvent,
     OnOptions,
     Subscription,
@@ -132,11 +132,11 @@ function buildExtensionSetupContext(args: {
     const buildMeta = (correlationId?: string): EmitMeta =>
         createEmitMeta(source, { flowName: args.flowName, runId: args.runId }, { correlationId });
 
-    const emit: EventEmitter<EventMap> = ((topic: string, payload?: unknown, options?: EmitOptions): void => {
+    const emit: EmitFn<EventMap> = ((topic: string, payload?: unknown, options?: EmitOptions): void => {
         args.bus.emit(`${args.definition.name}:${topic}`, payload, buildMeta(options?.correlationId));
-    }) as EventEmitter<EventMap>;
+    }) as EmitFn<EventMap>;
 
-    const on: EventStream<EventMap>["on"] = ((
+    const on: EventSubscriber<EventMap>["on"] = ((
         pattern: string,
         handler: (event: FlowEvent<unknown>) => void | Promise<void>,
         options?: OnOptions<unknown>
@@ -144,9 +144,9 @@ function buildExtensionSetupContext(args: {
         const sub = args.bus.on(pattern, handler, options);
         args.tracked.push(sub);
         return sub;
-    }) as EventStream<EventMap>["on"];
+    }) as EventSubscriber<EventMap>["on"];
 
-    const waitFor: EventStream<EventMap>["waitFor"] = <K extends string>(
+    const waitFor: EventSubscriber<EventMap>["waitFor"] = <K extends string>(
         topic: K,
         options?: WaitForOptions<unknown>
     ): Promise<FlowEvent<unknown>> => {
@@ -218,12 +218,12 @@ async function setupExtensions(args: {
             });
             const result = await definition.setup(setupContext);
             assertPlainObject(result, `Extension "${definition.name}" setup() must return a plain object`);
-            if (result.context !== undefined) {
+            if (result.provided !== undefined) {
                 assertPlainObject(
-                    result.context,
-                    `Extension "${definition.name}" setup() must return { context } as a plain object`
+                    result.provided,
+                    `Extension "${definition.name}" setup() must return { provided } as a plain object`
                 );
-                Object.assign(provided, result.context);
+                Object.assign(provided, result.provided);
             }
             instance.dispose = result.dispose;
         }
@@ -278,6 +278,29 @@ interface PipelineOutcome {
     result: AnyFlowResult;
 }
 
+async function withScope(
+    bus: AnyEventBus,
+    scope: string,
+    meta: EmitMeta,
+    body: () => Promise<void>,
+    toEnded: (durationMs: number, error: unknown) => Record<string, unknown>
+): Promise<void> {
+    const start = Date.now();
+    bus.emit(`${scope}:started`, undefined, meta);
+    let failure: unknown;
+    let failed = false;
+    try {
+        await body();
+    } catch (error) {
+        failure = error;
+        failed = true;
+    }
+    bus.emit(`${scope}:ended`, toEnded(Date.now() - start, failed ? failure : undefined), meta);
+    if (failed) {
+        throw failure;
+    }
+}
+
 async function runPipeline(args: PipelineArgs): Promise<PipelineOutcome> {
     const { bus, cancellation, controller, executionContext, flow, flowStart, onPipelineStart, runId, state } = args;
     const flowName = flow.name;
@@ -294,11 +317,26 @@ async function runPipeline(args: PipelineArgs): Promise<PipelineOutcome> {
 
     try {
         controller.signal.throwIfAborted();
-        await compose(flow.middleware, flowContext, async () => {
-            bus.emit("flow:started", undefined, meta());
-            onPipelineStart();
-            await executeNodes(flow.nodes, executionContext, state, controller.signal);
-        });
+        await compose(flow.middleware, flowContext, () =>
+            withScope(
+                bus,
+                "flow",
+                meta(),
+                async () => {
+                    onPipelineStart();
+                    await executeNodes(flow.nodes, executionContext, state, controller.signal);
+                },
+                (durationMs, error) => {
+                    if (!error) {
+                        return { durationMs, status: "success" };
+                    }
+                    if (cancellation.requested) {
+                        return { durationMs, reason: cancellation.reason, status: "cancelled" };
+                    }
+                    return { durationMs, error: normalizeError(error), status: "failed" };
+                }
+            )
+        );
         const pipelineDurationMs = Date.now() - flowStart;
         return {
             pipelineDurationMs,
@@ -316,16 +354,6 @@ async function runPipeline(args: PipelineArgs): Promise<PipelineOutcome> {
             pipelineDurationMs,
             result: { ...buildBase(pipelineDurationMs), error: normalizeError(error), status: "failed" },
         };
-    }
-}
-
-function emitFlowEnded(bus: AnyEventBus, meta: EmitMeta, pipelineDurationMs: number, result: AnyFlowResult): void {
-    if (result.status === "success") {
-        bus.emit("flow:ended", { durationMs: pipelineDurationMs, status: "success" }, meta);
-    } else if (result.status === "cancelled") {
-        bus.emit("flow:ended", { durationMs: pipelineDurationMs, reason: result.reason, status: "cancelled" }, meta);
-    } else {
-        bus.emit("flow:ended", { durationMs: pipelineDurationMs, error: result.error, status: "failed" }, meta);
     }
 }
 
@@ -418,7 +446,6 @@ export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>)
     let currentStatus: FlowStatus = "pending";
     let pendingPause = false;
     const cancellation: CancellationState = { requested: false };
-    const pipelineState = { started: false };
     const pipelineStart = Date.now();
 
     const applyPause = () => {
@@ -435,7 +462,6 @@ export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>)
         flow,
         flowStart: pipelineStart,
         onPipelineStart: () => {
-            pipelineState.started = true;
             if (!isTerminalStatus(currentStatus)) {
                 currentStatus = "running";
                 if (pendingPause) {
@@ -447,14 +473,10 @@ export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>)
         runId,
         state,
     }).then(async (pipelineOutcome) => {
-        const { pipelineDurationMs, result } = pipelineOutcome;
+        const { result } = pipelineOutcome;
 
         if (!isTerminalStatus(currentStatus)) {
             currentStatus = result.status;
-        }
-
-        if (pipelineState.started) {
-            emitFlowEnded(bus, runMeta, pipelineDurationMs, result);
         }
 
         requests.pruneRun(runId);

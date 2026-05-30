@@ -39,11 +39,11 @@ export type {
 } from "./event-bus.ts";
 export { createEventBus } from "./event-bus.ts";
 export type {
+    EmitFn,
     EmitOptions,
-    EventEmitter,
     EventMap,
     EventSource,
-    EventStream,
+    EventSubscriber,
     FlowEvent,
     LogLevel,
     OnOptions,
@@ -55,10 +55,10 @@ export type {
     EventDefinitions,
     EventMarker,
     ExtensionConfig,
-    ExtensionContext,
     ExtensionDefinition,
     ExtensionDispose,
     ExtensionEvents,
+    ExtensionProvided,
     ExtensionRequired,
     ExtensionSetupContext,
     ExtensionSetupResult,
@@ -90,21 +90,20 @@ export type {
 } from "./middleware.ts";
 export { middleware } from "./middleware.ts";
 export type {
-    ContainerErrorMode,
     ContainerResource,
-    EveryMeta,
+    EachMeta,
+    ErrorMode,
     Node,
     ParallelMeta,
     RetryConfig,
-    TaskErrorMode,
     TaskResult,
 } from "./node.ts";
 export type {
     ContainerMeta,
-    EveryConfig,
-    EveryConfigWithResource,
-    EveryOptions,
-    EveryResourceConfig,
+    EachConfig,
+    EachConfigWithResource,
+    EachOptions,
+    EachResourceConfig,
     NodeFactory,
     NodesSpec,
     ParallelConfig,

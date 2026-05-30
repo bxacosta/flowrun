@@ -7,9 +7,9 @@ import { compose } from "./middleware.ts";
 import type {
     AnyCleanup,
     AnyProvide,
-    ContainerErrorMode,
-    EveryMeta,
-    EveryNodeDefinition,
+    EachMeta,
+    EachNodeDefinition,
+    ErrorMode,
     NodeDefinition,
     ParallelMeta,
     ParallelNodeDefinition,
@@ -52,6 +52,7 @@ function recordTaskResult(
     attempts: number,
     durationMs: number,
     status: "failed" | "skipped" | "success",
+    ignored: boolean,
     error: Error | null,
     reason: string | undefined,
     iteration?: { index: number; item: unknown }
@@ -59,6 +60,7 @@ function recordTaskResult(
     const result: TaskResult = {
         attempts,
         durationMs,
+        ignored,
         nodeName: node.name,
         path,
         status,
@@ -194,7 +196,7 @@ async function executeTask(
     const durationMs = Date.now() - taskStart;
 
     if (outcome.status === "success") {
-        bus.emit("node:task:ended", { attempts, durationMs, status: "success" }, meta);
+        bus.emit("node:task:ended", { attempts, durationMs, ignored: false, status: "success" }, meta);
         recordTaskResult(
             executionContext.progress,
             node,
@@ -202,6 +204,7 @@ async function executeTask(
             attempts,
             durationMs,
             "success",
+            false,
             null,
             undefined,
             iteration
@@ -210,7 +213,11 @@ async function executeTask(
     }
 
     if (outcome.status === "skipped") {
-        bus.emit("node:task:ended", { attempts, durationMs, reason: outcome.reason, status: "skipped" }, meta);
+        bus.emit(
+            "node:task:ended",
+            { attempts, durationMs, ignored: false, reason: outcome.reason, status: "skipped" },
+            meta
+        );
         recordTaskResult(
             executionContext.progress,
             node,
@@ -218,6 +225,7 @@ async function executeTask(
             attempts,
             durationMs,
             "skipped",
+            false,
             null,
             outcome.reason,
             iteration
@@ -225,15 +233,20 @@ async function executeTask(
         return;
     }
 
-    if (!signal.aborted && node.onError === "skip") {
-        bus.emit("node:task:ended", { attempts, durationMs, error: outcome.error, status: "skipped" }, meta);
+    if (!signal.aborted && node.onError === "ignore") {
+        bus.emit(
+            "node:task:ended",
+            { attempts, durationMs, error: outcome.error, ignored: true, status: "failed" },
+            meta
+        );
         recordTaskResult(
             executionContext.progress,
             node,
             path,
             attempts,
             durationMs,
-            "skipped",
+            "failed",
+            true,
             outcome.error,
             undefined,
             iteration
@@ -241,7 +254,7 @@ async function executeTask(
         return;
     }
 
-    bus.emit("node:task:ended", { attempts, durationMs, error: outcome.error, status: "failed" }, meta);
+    bus.emit("node:task:ended", { attempts, durationMs, error: outcome.error, ignored: false, status: "failed" }, meta);
     recordTaskResult(
         executionContext.progress,
         node,
@@ -249,6 +262,7 @@ async function executeTask(
         attempts,
         durationMs,
         "failed",
+        false,
         outcome.error,
         undefined,
         iteration
@@ -315,11 +329,11 @@ async function resolveBranches(
     parentProgress: FlowProgress,
     state: AnyFlowStateStore,
     controller: AbortController,
-    onError: ContainerErrorMode,
+    onBranchError: ErrorMode,
     merge: MergeStrategy,
     concurrency: number
 ): Promise<BranchOutcome> {
-    if (onError === "fail") {
+    if (onBranchError === "fail") {
         const firstError = await executeFailFastBranches(plan.branches, controller, concurrency);
         mergeBranchProgresses(parentProgress, plan.branchProgresses);
         if (firstError) {
@@ -403,7 +417,7 @@ async function executeParallel(
             executionContext.progress,
             state,
             controller,
-            node.onError,
+            node.onBranchError,
             node.merge,
             plan.branches.length
         );
@@ -412,7 +426,7 @@ async function executeParallel(
 
         if (outcome.errors.length === 0) {
             bus.emit("node:parallel:ended", { durationMs, status: "success" }, meta);
-        } else if (node.onError === "continue") {
+        } else if (node.onBranchError === "ignore") {
             bus.emit("node:parallel:ended", { durationMs, errors: outcome.errors, status: "success" }, meta);
         } else {
             bus.emit("node:parallel:ended", { durationMs, errors: outcome.errors, status: "failed" }, meta);
@@ -423,8 +437,8 @@ async function executeParallel(
     }
 }
 
-async function executeEvery(
-    node: EveryNodeDefinition,
+async function executeEach(
+    node: EachNodeDefinition,
     executionContext: ExecutionContext,
     state: AnyFlowStateStore,
     signal: AbortSignal,
@@ -442,8 +456,8 @@ async function executeEvery(
         throw new InvalidItemsError(node.name);
     }
 
-    const everyStart = Date.now();
-    bus.emit("node:every:started", { totalItems: items.length }, meta);
+    const eachStart = Date.now();
+    bus.emit("node:each:started", { totalItems: items.length }, meta);
 
     const { cleanup, controller } = createChildController(signal);
 
@@ -459,7 +473,7 @@ async function executeEvery(
             plan.forks.push({ label: itemIndex, store: forkedStore });
             plan.branchProgresses.push(branchProgress);
             plan.branches.push(async () => {
-                const branchMeta: EveryMeta = { index: itemIndex, item, nodeName: node.name };
+                const branchMeta: EachMeta = { index: itemIndex, item, nodeName: node.name };
                 await withLocalProvided(
                     executionContext,
                     forkedStore,
@@ -497,18 +511,18 @@ async function executeEvery(
             executionContext.progress,
             state,
             controller,
-            node.onError,
+            node.onBranchError,
             node.merge,
             effectiveConcurrency
         );
 
-        const durationMs = Date.now() - everyStart;
+        const durationMs = Date.now() - eachStart;
 
         if (outcome.errors.length === 0) {
-            bus.emit("node:every:ended", { durationMs, status: "success", totalItems: items.length }, meta);
-        } else if (node.onError === "continue") {
+            bus.emit("node:each:ended", { durationMs, status: "success", totalItems: items.length }, meta);
+        } else if (node.onBranchError === "ignore") {
             bus.emit(
-                "node:every:ended",
+                "node:each:ended",
                 {
                     durationMs,
                     errors: outcome.errors,
@@ -520,7 +534,7 @@ async function executeEvery(
             );
         } else {
             bus.emit(
-                "node:every:ended",
+                "node:each:ended",
                 { durationMs, errors: outcome.errors, status: "failed", totalItems: items.length },
                 meta
             );
@@ -541,8 +555,8 @@ async function executeNode(
     signal.throwIfAborted();
 
     switch (node.type) {
-        case "every":
-            await executeEvery(node, executionContext, state, signal, iteration);
+        case "each":
+            await executeEach(node, executionContext, state, signal, iteration);
             return;
         case "parallel":
             await executeParallel(node, executionContext, state, signal, iteration);

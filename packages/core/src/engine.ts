@@ -1,12 +1,12 @@
 import { DuplicateExtensionError, DuplicateFlowError, FlowNotRegisteredError } from "./errors.ts";
 import type { EventBusConfig } from "./event-bus.ts";
 import { createEventBus } from "./event-bus.ts";
-import type { EventMap, EventStream, RuntimeEvents } from "./events.ts";
+import type { EventMap, EventSubscriber, RuntimeEvents } from "./events.ts";
 import type {
     AnyExtensionDefinition,
-    ExtensionContext,
     ExtensionDefinition,
     ExtensionEvents,
+    ExtensionProvided,
     ExtensionRequired,
 } from "./extension.ts";
 import type {
@@ -51,7 +51,7 @@ export interface EngineConfig {
 }
 
 export interface Engine<TProvided extends object, TEvents extends EventMap> {
-    readonly events: EventStream<TEvents>;
+    readonly events: EventSubscriber<TEvents>;
 
     flows(): readonly string[];
 
@@ -73,7 +73,7 @@ export interface Engine<TProvided extends object, TEvents extends EventMap> {
 
     use<TExtension extends ExtensionDefinition<object, object, EventMap>>(
         extension: CompatibleExtension<TExtension, TProvided>
-    ): Engine<MergeObjects<TProvided, ExtensionContext<TExtension>>, TEvents & ExtensionEvents<TExtension>>;
+    ): Engine<MergeObjects<TProvided, ExtensionProvided<TExtension>>, TEvents & ExtensionEvents<TExtension>>;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased engine implementation with typed public facade
