@@ -1,29 +1,33 @@
+/**
+ * engine/request-manager.ts — Request runtime
+ *
+ * Layer: L4 (engine). Tracks pending requests, idempotency, timeouts and
+ * responder subscriptions, emitting request:* lifecycle events on the bus.
+ */
+
+import { FlowEngineError, normalizeError } from "../core/errors.ts";
+import { assertPlainObject } from "../core/validation.ts";
 import {
-    FlowEngineError,
-    normalizeError,
+    type AnyPendingRequest,
+    type AnyRequestCreatedHandler,
+    type AnyRequestDefinition,
+    type AnyRequestRecord,
+    type EngineRequests,
+    isTerminalStatus,
+    type PendingRequest,
     RequestAlreadyResolvedError,
     RequestCancelledError,
+    type RequestDefinition,
+    type RequestFilter,
     RequestNotFoundError,
+    type RequestOptions,
+    type RequestResponseOptions,
+    type RequestSubscribeOptions,
+    type RequestSubscription,
     RequestTimeoutError,
-} from "./errors.ts";
-import type { AnyEventBus, EmitMeta } from "./event-bus.ts";
-import type {
-    AnyPendingRequest,
-    AnyRequestCreatedHandler,
-    AnyRequestDefinition,
-    AnyRequestRecord,
-    EngineRequests,
-    PendingRequest,
-    RequestDefinition,
-    RequestFilter,
-    RequestOptions,
-    RequestResponseOptions,
-    RequestSubscribeOptions,
-    RequestSubscription,
-    TerminalRequestStatus,
-} from "./request.ts";
-import { isTerminalStatus } from "./request.ts";
-import { assertPlainObject } from "./validation.ts";
+    type TerminalRequestStatus,
+} from "../definition/request.ts";
+import type { AnyEventBus, EmitMeta, EventBusErrorHandler } from "../events/bus.ts";
 
 export interface OpenRequestArgs<TPayload, TResponse> {
     attempt?: number;
@@ -57,6 +61,8 @@ export interface RequestManager extends EngineRequests {
     open<TPayload, TResponse>(args: OpenRequestArgs<TPayload, TResponse>): Promise<TResponse>;
     pruneRun(runId: string): void;
 }
+
+// ── Helpers ─────────────────────────────────────────────────────────
 
 function computeIdempotencyMapKey(args: {
     definitionName: string;
@@ -124,11 +130,29 @@ function basePayload(record: AnyRequestRecord): {
     };
 }
 
-export function createRequestManager(bus: AnyEventBus): RequestManager {
+// ── Factory ─────────────────────────────────────────────────────────
+
+export function createRequestManager(bus: AnyEventBus, onError?: EventBusErrorHandler): RequestManager {
     const records = new Map<string, AnyRequestRecord>();
     const pending = new Map<string, PendingEntry>();
     const idempotency = new Map<string, string>();
     const subscribers = new Set<SubscriberEntry>();
+
+    function reportSubscriberError(error: unknown, definitionName: string, requestId: string): void {
+        const normalized = normalizeError(error);
+        if (!onError) {
+            console.error(`[RequestManager] subscriber for "${definitionName}" threw:`, normalized);
+            return;
+        }
+        try {
+            onError(normalized, { definitionName, phase: "requestSubscriber", requestId });
+        } catch (handlerError) {
+            console.error("[RequestManager] onError threw while handling a subscriber error:", {
+                onErrorFailure: normalizeError(handlerError),
+                originalError: normalized,
+            });
+        }
+    }
 
     function buildPendingRequest(id: string): AnyPendingRequest {
         const record = records.get(id);
@@ -168,7 +192,7 @@ export function createRequestManager(bus: AnyEventBus): RequestManager {
             }
             const pendingRequest = buildPendingRequest(id);
             Promise.resolve(subscriber.handler(pendingRequest)).catch((error: unknown) => {
-                console.error(`[RequestManager] subscriber for "${entry.definition.name}" threw:`, error);
+                reportSubscriberError(error, entry.definition.name, id);
             });
         }
     }
@@ -444,7 +468,7 @@ export function createRequestManager(bus: AnyEventBus): RequestManager {
                 }
                 const pendingRequest = buildPendingRequest(id);
                 Promise.resolve(handler(pendingRequest)).catch((error: unknown) => {
-                    console.error(`[RequestManager] replay handler for "${definition.name}" threw:`, error);
+                    reportSubscriberError(error, definition.name, id);
                 });
             }
         }

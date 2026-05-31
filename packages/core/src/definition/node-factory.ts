@@ -1,11 +1,18 @@
-import type { ItemsContext, TaskContext } from "./context.ts";
-import { FlowEngineError } from "./errors.ts";
+/**
+ * definition/node-factory.ts — Node factories
+ *
+ * Layer: L3 (definition). The `task`/`parallel`/`each` builders and their config
+ * types, including the typed `resource` lifecycle for containers.
+ */
+
+import { FlowEngineError } from "../core/errors.ts";
+import type { MaybePromise, MergeObjects } from "../core/types.ts";
+import { assertUniqueNodeNames, assertValidName } from "../core/validation.ts";
+import type { Shape, WithIteration, WithProvided } from "../shape/shape.ts";
+import type { MergeStrategy } from "../state/types.ts";
+import type { ContainerContext, TaskContext } from "./context-types.ts";
 import type { Middleware } from "./middleware.ts";
-import type { EachMeta, ErrorMode, Node, NodeDefinition, ParallelMeta, RetryConfig } from "./node.ts";
-import type { Shape, WithIteration, WithProvided } from "./shape.ts";
-import type { MergeStrategy } from "./state.ts";
-import type { MaybePromise, MergeObjects } from "./utils.ts";
-import { assertUniqueNodeNames, assertValidName } from "./validation.ts";
+import type { EachMeta, ErrorMode, Node, NodeDefinition, ParallelMeta, ResourceOutcome, RetryConfig } from "./node.ts";
 
 export interface TaskConfig<TShape extends Shape> {
     middleware?: NoInfer<Middleware<TaskContext<TShape>>>[];
@@ -18,17 +25,17 @@ export interface TaskConfig<TShape extends Shape> {
 export type ContainerMeta<TItem = unknown> = EachMeta<TItem> | ParallelMeta;
 
 export interface ResourceFactory<TContext extends object, TLocal extends object, TMeta = ContainerMeta> {
-    cleanup?: (context: MergeObjects<TContext, TLocal>, meta: TMeta) => MaybePromise<void>;
+    cleanup?: (context: MergeObjects<TContext, TLocal>, meta: TMeta, outcome: ResourceOutcome) => MaybePromise<void>;
     provide: (context: TContext, meta: TMeta) => MaybePromise<TLocal>;
 }
 
 export interface ParallelOptions {
     merge?: MergeStrategy;
-    onBranchError?: ErrorMode;
+    onError?: ErrorMode;
 }
 
 export type ParallelResourceConfig<TShape extends Shape, TLocal extends object> = ResourceFactory<
-    ItemsContext<TShape>,
+    ContainerContext<TShape>,
     TLocal,
     ParallelMeta
 >;
@@ -48,24 +55,24 @@ export type ParallelConfigWithResource<TShape extends Shape, TLocal extends obje
 export interface EachOptions {
     concurrency?: number;
     merge?: MergeStrategy;
-    onBranchError?: ErrorMode;
+    onError?: ErrorMode;
 }
 
 export type EachResourceConfig<TShape extends Shape, TItem, TLocal extends object> = ResourceFactory<
-    ItemsContext<WithIteration<TShape, TItem>>,
+    ContainerContext<WithIteration<TShape, TItem>>,
     TLocal,
     EachMeta<TItem>
 >;
 
 export type EachConfig<TShape extends Shape, TItem> = EachOptions & {
-    items: (context: ItemsContext<TShape>) => MaybePromise<readonly TItem[]>;
+    items: (context: ContainerContext<TShape>) => MaybePromise<readonly TItem[]>;
     name: string;
     nodes: NodesSpec<WithIteration<TShape, TItem>>;
     resource?: never;
 };
 
 export type EachConfigWithResource<TShape extends Shape, TItem, TLocal extends object> = EachOptions & {
-    items: (context: ItemsContext<TShape>) => MaybePromise<readonly TItem[]>;
+    items: (context: ContainerContext<TShape>) => MaybePromise<readonly TItem[]>;
     name: string;
     nodes: NodesSpec<WithProvided<WithIteration<TShape, TItem>, TLocal>>;
     resource: EachResourceConfig<TShape, TItem, TLocal>;
@@ -82,6 +89,8 @@ export interface NodeFactory<TShape extends Shape> {
     parallel<TLocal extends object>(config: ParallelConfigWithResource<TShape, TLocal>): Node<TShape>;
     task(config: TaskConfig<TShape>): Node<TShape>;
 }
+
+// ── Builders ────────────────────────────────────────────────────────
 
 export function resolveNodes<TShape extends Shape>(spec: NodesSpec<TShape>): Node<TShape>[] {
     const nodes = typeof spec === "function" ? spec(createNodeFactory<TShape>()) : spec;
@@ -114,7 +123,7 @@ export function buildParallel<TShape extends Shape>(
         merge: config.merge ?? "overwrite",
         name: config.name,
         nodes: childNodes as NodeDefinition[],
-        onBranchError: config.onBranchError ?? "fail",
+        onError: config.onError ?? "fail",
         resource: config.resource,
         type: "parallel",
     };
@@ -133,7 +142,7 @@ export function buildEach<TShape extends Shape, TItem>(
         merge: config.merge ?? "overwrite",
         name: config.name,
         nodes: childNodes as NodeDefinition[],
-        onBranchError: config.onBranchError ?? "fail",
+        onError: config.onError ?? "fail",
         resource: config.resource,
         type: "each",
     };

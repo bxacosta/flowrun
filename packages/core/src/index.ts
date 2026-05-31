@@ -1,56 +1,30 @@
-export type { FlowBuilder } from "./builder.ts";
+/**
+ * index.ts — Public API barrel
+ *
+ * Re-exports the public surface. Layers (low → high): core → shape → events /
+ * state → definition → engine.
+ */
+
+// ── core ────────────────────────────────────────────────────────────
 // biome-ignore lint/performance/noBarrelFile: public library entry point
-export { flow } from "./builder.ts";
-export type {
-    BaseContext,
-    FlowContext,
-    ItemsContext,
-    TaskContext,
-} from "./context.ts";
-export type { Engine, EngineConfig, EngineEvents, InferEngine, MissingExtensionDependency } from "./engine.ts";
-export { createEngine } from "./engine.ts";
+export { FlowEngineError, normalizeError } from "./core/errors.ts";
+export { FlowCancellationSignal, SkipSignal } from "./core/signals.ts";
+export type { FlowStatus, TerminalFlowStatus } from "./core/status.ts";
+export type { EmptyObject, MaybePromise } from "./core/types.ts";
 export {
-    DuplicateExtensionError,
-    DuplicateFlowError,
     DuplicateNodeNameError,
-    FlowCancellationSignal,
-    FlowEngineError,
-    FlowNotRegisteredError,
-    InvalidItemsError,
-    InvalidMergeValueError,
     InvalidNameError,
     InvalidPatternError,
     InvalidPlainObjectError,
     InvalidTopicKeyError,
-    MergeConflictError,
-    normalizeError,
-    RequestAlreadyResolvedError,
-    RequestCancelledError,
-    RequestError,
-    RequestNotFoundError,
-    RequestTimeoutError,
-    SkipSignal,
-} from "./errors.ts";
+} from "./core/validation.ts";
+// ── definition ──────────────────────────────────────────────────────
 export type {
-    EventBus,
-    EventBusConfig,
-    EventBusErrorContext,
-    EventBusErrorHandler,
-} from "./event-bus.ts";
-export { createEventBus } from "./event-bus.ts";
-export type {
-    EmitFn,
-    EmitOptions,
-    EventMap,
-    EventSource,
-    EventSubscriber,
-    FlowEvent,
-    LogLevel,
-    OnOptions,
-    RuntimeEvents,
-    Subscription,
-    WaitForOptions,
-} from "./events.ts";
+    BaseContext,
+    ContainerContext,
+    FlowContext,
+    TaskContext,
+} from "./definition/context-types.ts";
 export type {
     EventDefinitions,
     EventMarker,
@@ -67,37 +41,27 @@ export type {
     RequiresMarker,
     UnwrapEvents,
     UnwrapRequires,
-} from "./extension.ts";
-export { event, extension, requires } from "./extension.ts";
-export type {
-    BaseFlowResult,
-    CancelledFlowResult,
-    FailedFlowResult,
-    Flow,
-    FlowDefinition,
-    FlowHandle,
-    FlowResult,
-    RunArgs,
-    SuccessFlowResult,
-} from "./flow-runner.ts";
-export type { Logger } from "./logger.ts";
+} from "./definition/extension.ts";
+export { event, extension, requires } from "./definition/extension.ts";
+export type { FlowBuilder, FlowDefinition } from "./definition/flow.ts";
+export { flow } from "./definition/flow.ts";
 export type {
     FlowMiddleware,
     Middleware,
     MiddlewareConfig,
     MiddlewareRun,
     TaskMiddleware,
-} from "./middleware.ts";
-export { middleware } from "./middleware.ts";
+} from "./definition/middleware.ts";
+export { middleware } from "./definition/middleware.ts";
 export type {
     ContainerResource,
     EachMeta,
     ErrorMode,
     Node,
     ParallelMeta,
+    ResourceOutcome,
     RetryConfig,
-    TaskResult,
-} from "./node.ts";
+} from "./definition/node.ts";
 export type {
     ContainerMeta,
     EachConfig,
@@ -112,7 +76,7 @@ export type {
     ParallelResourceConfig,
     ResourceFactory,
     TaskConfig,
-} from "./node-factory.ts";
+} from "./definition/node-factory.ts";
 export type {
     ContextRequest,
     EngineRequests,
@@ -126,8 +90,53 @@ export type {
     RequestStatus,
     RequestSubscribeOptions,
     RequestSubscription,
-} from "./request.ts";
-export { request } from "./request.ts";
+} from "./definition/request.ts";
+export {
+    RequestAlreadyResolvedError,
+    RequestCancelledError,
+    RequestError,
+    RequestNotFoundError,
+    RequestTimeoutError,
+    request,
+} from "./definition/request.ts";
+export type { ShapeFactory } from "./definition/shape-factory.ts";
+export { shape } from "./definition/shape-factory.ts";
+export type { Engine, EngineConfig, EngineEvents, InferEngine, MissingExtensionDependency } from "./engine/engine.ts";
+// ── engine ──────────────────────────────────────────────────────────
+export { createEngine, DuplicateExtensionError, DuplicateFlowError, FlowNotRegisteredError } from "./engine/engine.ts";
+export { InvalidItemsError } from "./engine/execute.ts";
+export type { Flow, FlowHandle, RunArgs } from "./engine/flow-runner.ts";
+export type {
+    BaseFlowResult,
+    CancelledFlowResult,
+    FailedFlowResult,
+    FlowResult,
+    SuccessFlowResult,
+    TaskResult,
+} from "./engine/results.ts";
+// ── events ──────────────────────────────────────────────────────────
+export type {
+    EventBus,
+    EventBusConfig,
+    EventBusErrorContext,
+    EventBusErrorHandler,
+} from "./events/bus.ts";
+export { createEventBus } from "./events/bus.ts";
+export type { Logger } from "./events/logger.ts";
+export type {
+    EmitFn,
+    EmitOptions,
+    EventMap,
+    EventSource,
+    EventSubscriber,
+    FlowEvent,
+    LogLevel,
+    OnOptions,
+    RuntimeEvents,
+    Subscription,
+    WaitForOptions,
+} from "./events/types.ts";
+// ── shape ───────────────────────────────────────────────────────────
 export type {
     AnyShape,
     EventsOf,
@@ -142,9 +151,7 @@ export type {
     WithParams,
     WithProvided,
     WithState,
-} from "./shape.ts";
-export type { ShapeFactory } from "./shape-factory.ts";
-export { shape } from "./shape-factory.ts";
-export type { FlowStateStore, MergeStrategy } from "./state.ts";
-export type { FlowStatus, TerminalFlowStatus } from "./status.ts";
-export type { EmptyObject, MaybePromise } from "./utils.ts";
+} from "./shape/shape.ts";
+// ── state ───────────────────────────────────────────────────────────
+export { InvalidMergeValueError, MergeConflictError } from "./state/errors.ts";
+export type { MergeStrategy, StateStore } from "./state/types.ts";

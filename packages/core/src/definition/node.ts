@@ -1,7 +1,17 @@
+/**
+ * definition/node.ts — Node definitions
+ *
+ * Layer: L3 (definition). The declarative node tree (task/parallel/each), retry
+ * and error policy, container resource lifecycle, and the type-erased callback
+ * aliases the runtime invokes. Run results live in engine/results.ts.
+ */
+
+import type { MaybePromise } from "../core/types.ts";
+import type { Shape } from "../shape/shape.ts";
+import type { MergeStrategy } from "../state/types.ts";
 import type { AnyMiddleware } from "./middleware.ts";
-import type { Shape } from "./shape.ts";
-import type { MergeStrategy } from "./state.ts";
-import type { MaybePromise } from "./utils.ts";
+
+// ── Policies ────────────────────────────────────────────────────────
 
 export type ErrorMode = "fail" | "ignore";
 
@@ -15,6 +25,13 @@ interface RetryBase {
 
 export type RetryConfig = RetryBase & ({ backoff: "constant" } | { backoff: "exponential"; factor?: number });
 
+export interface ResourceOutcome {
+    error?: Error;
+    status: "failed" | "success";
+}
+
+// ── Container meta ──────────────────────────────────────────────────
+
 export interface ParallelMeta {
     branchIndex: number;
     branchName: string;
@@ -27,6 +44,13 @@ export interface EachMeta<TItem = unknown> {
     nodeName: string;
 }
 
+export interface ContainerResource {
+    cleanup?: AnyCleanup;
+    provide: AnyProvide;
+}
+
+// ── Node definitions ────────────────────────────────────────────────
+
 export interface TaskNodeDefinition {
     middleware: AnyMiddleware[];
     name: string;
@@ -36,16 +60,11 @@ export interface TaskNodeDefinition {
     type: "task";
 }
 
-export interface ContainerResource {
-    cleanup?: AnyCleanup;
-    provide: AnyProvide;
-}
-
 export interface ParallelNodeDefinition {
     merge: MergeStrategy;
     name: string;
     nodes: NodeDefinition[];
-    onBranchError: ErrorMode;
+    onError: ErrorMode;
     resource?: ContainerResource;
     type: "parallel";
 }
@@ -56,7 +75,7 @@ export interface EachNodeDefinition {
     merge: MergeStrategy;
     name: string;
     nodes: NodeDefinition[];
-    onBranchError: ErrorMode;
+    onError: ErrorMode;
     resource?: ContainerResource;
     type: "each";
 }
@@ -67,17 +86,7 @@ export type Node<TShape extends Shape = Shape> = NodeDefinition & {
     readonly _shape?: TShape;
 };
 
-export interface TaskResult {
-    attempts: number;
-    durationMs: number;
-    error?: Error;
-    ignored: boolean;
-    iteration?: { index: number; item: unknown };
-    nodeName: string;
-    path: string;
-    reason?: string;
-    status: "failed" | "skipped" | "success";
-}
+// ── Type-erased callback boundaries ─────────────────────────────────
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased task runner, typed at definition boundary
 export type AnyTaskRunner = (context: any) => MaybePromise<void>;
@@ -86,7 +95,7 @@ export type AnyTaskRunner = (context: any) => MaybePromise<void>;
 export type AnyProvide = (context: any, meta: any) => MaybePromise<object>;
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased cleanup callback, typed at definition boundary
-export type AnyCleanup = (context: any, meta: any) => MaybePromise<void>;
+export type AnyCleanup = (context: any, meta: any, outcome: ResourceOutcome) => MaybePromise<void>;
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased items callback, typed at definition boundary
 export type AnyItemsFunction = (context: any) => MaybePromise<readonly unknown[]>;

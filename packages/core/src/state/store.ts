@@ -1,29 +1,22 @@
+/**
+ * state/store.ts — State store implementation & fork merging
+ *
+ * Layer: L2. Copy-on-read/write store with structural cloning, plus the
+ * fork-merge strategies (append/overwrite/exclusive).
+ */
+
+import { assertPlainObject } from "../core/validation.ts";
 import { InvalidMergeValueError, MergeConflictError } from "./errors.ts";
-import { assertPlainObject } from "./validation.ts";
-
-export type MergeStrategy = "append" | "exclusive" | "overwrite";
-
-export interface FlowStateStore<TState extends object> {
-    append<K extends keyof TState & string>(key: K, value: TState[K] extends (infer I)[] ? I : never): void;
-    fork(): FlowStateStore<TState>;
-    get<K extends keyof TState & string>(key: K): TState[K];
-    getWrittenValues(): Map<string, unknown>;
-    has<K extends keyof TState & string>(key: K): boolean;
-    patch(values: Partial<TState>): void;
-    set<K extends keyof TState & string>(key: K, value: TState[K]): void;
-    snapshot(): Readonly<TState>;
-    update<K extends keyof TState & string>(key: K, updater: (current: TState[K]) => TState[K]): void;
-}
-
-// biome-ignore lint/suspicious/noExplicitAny: type-erased state store for runtime orchestration
-export type AnyFlowStateStore = FlowStateStore<any>;
+import type { AnyFlowStateStore, InternalStateStore, MergeStrategy } from "./types.ts";
 
 export interface ForkEntry {
     label: number | string;
     store: AnyFlowStateStore;
 }
 
-export function createStateStore<TState extends object>(initial: TState): FlowStateStore<TState> {
+// ── Store ───────────────────────────────────────────────────────────
+
+export function createStateStore<TState extends object>(initial: TState): InternalStateStore<TState> {
     assertPlainObject(initial, "Flow state must be a plain object");
     const root = new Map<string, unknown>();
     for (const [key, value] of Object.entries(initial)) {
@@ -34,11 +27,11 @@ export function createStateStore<TState extends object>(initial: TState): FlowSt
 
 function createStore<TState extends object>(
     data: Map<string, unknown>,
-    parent: FlowStateStore<TState> | null
-): FlowStateStore<TState> {
+    parent: InternalStateStore<TState> | null
+): InternalStateStore<TState> {
     const writtenKeys = new Set<string>();
 
-    const store: FlowStateStore<TState> = {
+    const store: InternalStateStore<TState> = {
         append(key, value) {
             const current = store.get(key);
             const next = Array.isArray(current) ? [...current, value] : [value];
@@ -101,6 +94,8 @@ function createStore<TState extends object>(
 
     return store;
 }
+
+// ── Fork merging ────────────────────────────────────────────────────
 
 function collectWrittenEntries(
     forks: readonly ForkEntry[]

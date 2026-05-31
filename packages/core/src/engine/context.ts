@@ -1,37 +1,21 @@
-import { SkipSignal } from "./errors.ts";
-import { type AnyEventBus, createEmitMeta, type EmitMeta } from "./event-bus.ts";
-import type { EmitFn, EmitOptions, EventSource } from "./events.ts";
-import { createLogger, type Logger } from "./logger.ts";
-import type { TaskResult } from "./node.ts";
-import type { ContextRequest, RequestDefinition, RequestOptions } from "./request.ts";
+/**
+ * engine/context.ts — Runtime context construction
+ *
+ * Layer: L4 (engine). Builds the concrete context objects (flow/container/task)
+ * handed to user code, wiring the scoped emit, logger and request opener.
+ */
+
+import type { PauseGate } from "../core/async.ts";
+import { SkipSignal } from "../core/signals.ts";
+import type { ContextRequest, RequestDefinition, RequestOptions } from "../definition/request.ts";
+import { type AnyEventBus, createEmitMeta, type EmitMeta } from "../events/bus.ts";
+import { createLogger, type Logger } from "../events/logger.ts";
+import type { EmitFn, EmitOptions, EventSource } from "../events/types.ts";
+import type { AnyFlowStateStore } from "../state/types.ts";
 import type { RequestManager } from "./request-manager.ts";
-import type { EventsOf, IterationOf, ParamsOf, ProvidedOf, Shape, StateOf } from "./shape.ts";
-import type { PauseGate } from "./signal.ts";
-import type { AnyFlowStateStore, FlowStateStore } from "./state.ts";
-import type { EmptyObject } from "./utils.ts";
+import type { TaskResult } from "./results.ts";
 
-type IterationField<TIteration> = [TIteration] extends [never] ? EmptyObject : { readonly iteration: TIteration };
-
-export type BaseContext<TShape extends Shape = Shape> = ProvidedOf<TShape> & {
-    emit: EmitFn<EventsOf<TShape>>;
-    flowName: string;
-    log: Logger;
-    params: Readonly<ParamsOf<TShape>>;
-    request: ContextRequest;
-    runId: string;
-    signal: AbortSignal;
-    state: FlowStateStore<StateOf<TShape>>;
-};
-
-type TaskExtras<TIteration = never> = {
-    attempt: number;
-    nodeName: string;
-    skip: (reason?: string) => never;
-} & IterationField<TIteration>;
-
-export type FlowContext<TShape extends Shape = Shape> = BaseContext<TShape>;
-export type ItemsContext<TShape extends Shape = Shape> = BaseContext<TShape> & IterationField<IterationOf<TShape>>;
-export type TaskContext<TShape extends Shape = Shape> = BaseContext<TShape> & TaskExtras<IterationOf<TShape>>;
+// ── Runtime types ───────────────────────────────────────────────────
 
 export interface FlowRuntime {
     bus: AnyEventBus;
@@ -66,6 +50,8 @@ interface ScopeLocation {
     nodeName?: string;
     path?: readonly string[];
 }
+
+// ── Scoping helpers ─────────────────────────────────────────────────
 
 export function flowSource(flowName: string): EventSource {
     return `flow:${flowName}`;
@@ -114,6 +100,8 @@ function createContextRequest(runtime: FlowRuntime, signal: AbortSignal, meta: R
         });
 }
 
+// ── Context builders ────────────────────────────────────────────────
+
 function buildBaseContext(
     runtime: FlowRuntime,
     state: AnyFlowStateStore,
@@ -142,7 +130,7 @@ export function buildFlowContext(
     return buildBaseContext(runtime, state, signal, {}, { path: [] });
 }
 
-export function buildItemsContext(
+export function buildContainerContext(
     runtime: FlowRuntime,
     state: AnyFlowStateStore,
     signal: AbortSignal,

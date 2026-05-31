@@ -1,29 +1,64 @@
-import { DuplicateExtensionError, DuplicateFlowError, FlowNotRegisteredError } from "./errors.ts";
-import type { EventBusConfig } from "./event-bus.ts";
-import { createEventBus } from "./event-bus.ts";
-import type { EventMap, EventSubscriber, RuntimeEvents } from "./events.ts";
+/**
+ * engine/engine.ts — Engine facade
+ *
+ * Layer: L4 (engine). Holds the event bus, request manager, extension chain and
+ * flow registry, and exposes the typed run/start/register/use surface. Owns the
+ * registry errors it can raise.
+ */
+
+import { FlowEngineError } from "../core/errors.ts";
+import type { EmptyObject, MergeObjects } from "../core/types.ts";
 import type {
     AnyExtensionDefinition,
     ExtensionDefinition,
     ExtensionEvents,
     ExtensionProvided,
     ExtensionRequired,
-} from "./extension.ts";
-import type {
-    AnyFlow,
-    AnyFlowDefinition,
-    AnyRunArgs,
-    Flow,
-    FlowDefinition,
-    FlowHandle,
-    FlowResult,
-    RunArgs,
+} from "../definition/extension.ts";
+import type { AnyFlowDefinition, FlowDefinition } from "../definition/flow.ts";
+import type { EngineRequests } from "../definition/request.ts";
+import { createEventBus, type EventBusConfig } from "../events/bus.ts";
+import type { EventMap, EventSubscriber, RuntimeEvents } from "../events/types.ts";
+import type { ParamsOf, ProvidedOf, Shape, StateOf } from "../shape/shape.ts";
+import {
+    type AnyFlow,
+    type AnyRunArgs,
+    type Flow,
+    type FlowHandle,
+    type RunArgs,
+    runFlow,
+    startFlow,
 } from "./flow-runner.ts";
-import { runFlow, startFlow } from "./flow-runner.ts";
-import type { EngineRequests } from "./request.ts";
 import { createRequestManager } from "./request-manager.ts";
-import type { ParamsOf, ProvidedOf, Shape, StateOf } from "./shape.ts";
-import type { EmptyObject, MergeObjects } from "./utils.ts";
+import type { FlowResult } from "./results.ts";
+
+// ── Errors ──────────────────────────────────────────────────────────
+
+export class DuplicateFlowError extends FlowEngineError {
+    override readonly name = "DuplicateFlowError";
+
+    constructor(flowName: string) {
+        super(`Flow "${flowName}" is already registered`);
+    }
+}
+
+export class DuplicateExtensionError extends FlowEngineError {
+    override readonly name = "DuplicateExtensionError";
+
+    constructor(extensionName: string) {
+        super(`Extension "${extensionName}" is already registered`);
+    }
+}
+
+export class FlowNotRegisteredError extends FlowEngineError {
+    override readonly name = "FlowNotRegisteredError";
+
+    constructor(flowName: string) {
+        super(`Flow "${flowName}" is not registered`);
+    }
+}
+
+// ── Compatibility typing ────────────────────────────────────────────
 
 type CompatibleFlow<TProvided extends object, TShape extends Shape> =
     TProvided extends ProvidedOf<TShape> ? FlowDefinition<TShape> : never;
@@ -45,6 +80,8 @@ type CompatibleExtension<TExtension extends AnyExtensionDefinition, TProvided ex
 ] extends [never]
     ? TExtension
     : MissingExtensionDependency<MissingDependencyKeys<TExtension, TProvided>>;
+
+// ── Engine interface ────────────────────────────────────────────────
 
 export interface EngineConfig {
     events?: EventBusConfig;
@@ -79,6 +116,8 @@ export interface Engine<TProvided extends object, TEvents extends EventMap> {
 // biome-ignore lint/suspicious/noExplicitAny: type-erased engine implementation with typed public facade
 type AnyEngine = Engine<any, any>;
 
+// ── Factory ─────────────────────────────────────────────────────────
+
 function createRunnable(
     flow: AnyFlowDefinition,
     extensions: readonly AnyExtensionDefinition[],
@@ -102,7 +141,7 @@ function createRunnable(
 
 export function createEngine(config?: EngineConfig): Engine<EmptyObject, RuntimeEvents> {
     const bus = createEventBus<EventMap>(config?.events);
-    const requests = createRequestManager(bus);
+    const requests = createRequestManager(bus, config?.events?.onError);
     const extensions: AnyExtensionDefinition[] = [];
     const flows = new Map<string, AnyFlowDefinition>();
 

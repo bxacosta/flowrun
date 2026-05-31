@@ -1,7 +1,19 @@
-import type { ExecutionContext, FlowProgress, FlowRuntime } from "./context.ts";
-import { buildFlowContext } from "./context.ts";
-import { FlowCancellationSignal, normalizeError } from "./errors.ts";
-import { type AnyEventBus, createEmitMeta, type EmitMeta } from "./event-bus.ts";
+/**
+ * engine/flow-runner.ts — Run lifecycle
+ *
+ * Layer: L4 (engine). Orchestrates a single run: extension setup/teardown, the
+ * middleware + node pipeline, pause/cancel, run/flow envelopes, and the result.
+ */
+
+import { PauseGate } from "../core/async.ts";
+import { normalizeError } from "../core/errors.ts";
+import { FlowCancellationSignal } from "../core/signals.ts";
+import type { FlowStatus, TerminalFlowStatus } from "../core/status.ts";
+import { assertPlainObject } from "../core/validation.ts";
+import type { AnyExtensionDefinition, ExtensionDispose, FlowOutcome } from "../definition/extension.ts";
+import type { AnyFlowDefinition, FlowDefinition } from "../definition/flow.ts";
+import { type AnyEventBus, createEmitMeta, type EmitMeta } from "../events/bus.ts";
+import { createLogger, type Logger } from "../events/logger.ts";
 import type {
     EmitFn,
     EmitOptions,
@@ -12,32 +24,17 @@ import type {
     OnOptions,
     Subscription,
     WaitForOptions,
-} from "./events.ts";
+} from "../events/types.ts";
+import type { ParamsOf, Shape } from "../shape/shape.ts";
+import { createStateStore } from "../state/store.ts";
+import type { AnyFlowStateStore } from "../state/types.ts";
+import { compose } from "./compose.ts";
+import { buildFlowContext, type ExecutionContext, type FlowProgress, type FlowRuntime } from "./context.ts";
 import { executeNodes } from "./execute.ts";
-import type { AnyExtensionDefinition, ExtensionDispose, FlowOutcome } from "./extension.ts";
-import { createLogger, type Logger } from "./logger.ts";
-import type { AnyMiddleware } from "./middleware.ts";
-import { compose } from "./middleware.ts";
-import type { AnyStateFactory, NodeDefinition, TaskResult } from "./node.ts";
 import type { RequestManager } from "./request-manager.ts";
-import type { ParamsOf, Shape } from "./shape.ts";
-import { PauseGate } from "./signal.ts";
-import type { AnyFlowStateStore } from "./state.ts";
-import { createStateStore } from "./state.ts";
-import type { FlowStatus, TerminalFlowStatus } from "./status.ts";
-import { assertPlainObject } from "./validation.ts";
+import type { AnyFlowResult, FlowResult } from "./results.ts";
 
-export interface FlowDefinition<TShape extends Shape = Shape> {
-    readonly _shape?: TShape;
-    readonly middleware: readonly AnyMiddleware[];
-    readonly name: string;
-    readonly nodes: readonly NodeDefinition[];
-    readonly state?: AnyStateFactory;
-    readonly type: "flow";
-}
-
-// biome-ignore lint/suspicious/noExplicitAny: type-erased flow definition for registries
-export type AnyFlowDefinition = FlowDefinition<any>;
+// ── Public run handle & contracts ───────────────────────────────────
 
 export interface FlowHandle<TState extends object> {
     cancel(reason?: string): void;
@@ -66,35 +63,13 @@ export interface Flow<TParams extends object, TState extends object> {
 // biome-ignore lint/suspicious/noExplicitAny: type-erased flow for registries
 export type AnyFlow = Flow<any, any>;
 
-export interface BaseFlowResult<TState extends object> {
-    durationMs: number;
-    flowName: string;
-    runId: string;
-    state: Readonly<TState>;
-    tasks: readonly TaskResult[];
+export interface FlowRunArgs<TShape extends Shape = Shape> {
+    bus: AnyEventBus;
+    extensions: readonly AnyExtensionDefinition[];
+    flow: FlowDefinition<TShape>;
+    params: Readonly<ParamsOf<TShape>>;
+    requests: RequestManager;
 }
-
-export interface SuccessFlowResult<TState extends object> extends BaseFlowResult<TState> {
-    status: "success";
-}
-
-export interface FailedFlowResult<TState extends object> extends BaseFlowResult<TState> {
-    error: Error;
-    status: "failed";
-}
-
-export interface CancelledFlowResult<TState extends object> extends BaseFlowResult<TState> {
-    reason?: string;
-    status: "cancelled";
-}
-
-export type FlowResult<TState extends object> =
-    | CancelledFlowResult<TState>
-    | FailedFlowResult<TState>
-    | SuccessFlowResult<TState>;
-
-// biome-ignore lint/suspicious/noExplicitAny: type-erased flow result for runtime orchestration
-export type AnyFlowResult = FlowResult<any>;
 
 interface ExtensionInstance {
     definition: AnyExtensionDefinition;
@@ -107,17 +82,13 @@ interface CancellationState {
     requested: boolean;
 }
 
-export interface FlowRunArgs<TShape extends Shape = Shape> {
-    bus: AnyEventBus;
-    extensions: readonly AnyExtensionDefinition[];
-    flow: FlowDefinition<TShape>;
-    params: Readonly<ParamsOf<TShape>>;
-    requests: RequestManager;
-}
+// ── Status helpers ──────────────────────────────────────────────────
 
 function isTerminalStatus(status: FlowStatus): boolean {
     return status === "cancelled" || status === "success" || status === "failed";
 }
+
+// ── Extension setup/teardown ────────────────────────────────────────
 
 function buildExtensionSetupContext(args: {
     bus: AnyEventBus;
@@ -261,6 +232,8 @@ async function teardownExtensions(
     }
 }
 
+// ── Pipeline ────────────────────────────────────────────────────────
+
 interface PipelineArgs {
     bus: AnyEventBus;
     cancellation: CancellationState;
@@ -386,6 +359,8 @@ function toFlowOutcome(result: AnyFlowResult): FlowOutcome {
     }
     return { status: "success" };
 }
+
+// ── Run entry points ────────────────────────────────────────────────
 
 export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>): Promise<AnyFlowHandle> {
     const { bus, extensions, flow, params, requests } = args;

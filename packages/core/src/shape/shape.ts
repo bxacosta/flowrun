@@ -1,5 +1,12 @@
-import type { EventMap } from "./events.ts";
-import type { EmptyObject, MergeObjects } from "./utils.ts";
+/**
+ * shape/shape.ts — Shape type system
+ *
+ * Layer: L1. Pure types describing a flow's contract (params, state, events,
+ * provided context, iteration) and the combinators that extend it.
+ */
+
+import type { EmptyObject, MergeObjects } from "../core/types.ts";
+import type { EventMap } from "../events/types.ts";
 
 export interface IterationContext<TItem> {
     index: number;

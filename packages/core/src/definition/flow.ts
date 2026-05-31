@@ -1,11 +1,33 @@
-import type { FlowContext } from "./context.ts";
-import type { EventMap } from "./events.ts";
-import type { FlowDefinition } from "./flow-runner.ts";
+/**
+ * definition/flow.ts — Flow definition & builder
+ *
+ * Layer: L3 (definition). The `flow(name)` chainable builder (params/state/
+ * events/middleware/nodes) and the immutable {@link FlowDefinition} it produces.
+ */
+
+import { assertUniqueNodeNames, assertValidName } from "../core/validation.ts";
+import type { EventMap } from "../events/types.ts";
+import type { ParamsOf, Shape, WithEvents, WithParams, WithState } from "../shape/shape.ts";
+import type { FlowContext } from "./context-types.ts";
 import type { AnyMiddleware, Middleware } from "./middleware.ts";
-import type { AnyStateFactory } from "./node.ts";
+import type { AnyStateFactory, NodeDefinition } from "./node.ts";
 import { type NodesSpec, resolveNodes } from "./node-factory.ts";
-import type { ParamsOf, Shape, WithEvents, WithParams, WithState } from "./shape.ts";
-import { assertUniqueNodeNames, assertValidName } from "./validation.ts";
+
+// ── Definition ──────────────────────────────────────────────────────
+
+export interface FlowDefinition<TShape extends Shape = Shape> {
+    readonly _shape?: TShape;
+    readonly middleware: readonly AnyMiddleware[];
+    readonly name: string;
+    readonly nodes: readonly NodeDefinition[];
+    readonly state?: AnyStateFactory;
+    readonly type: "flow";
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: type-erased flow definition for registries
+export type AnyFlowDefinition = FlowDefinition<any>;
+
+// ── Builder ─────────────────────────────────────────────────────────
 
 export interface FlowBuilder<TShape extends Shape> {
     emits<TEvents extends EventMap>(): FlowBuilder<WithEvents<TShape, TEvents>>;
@@ -62,11 +84,7 @@ function instantiate<TShape extends Shape>(state: BuilderState): FlowBuilder<TSh
     };
 }
 
-export function createFlowBuilder<TShape extends Shape>(name: string): FlowBuilder<TShape> {
+export function flow<TShape extends Shape = Shape>(name: string): FlowBuilder<TShape> {
     assertValidName("flow", name);
     return instantiate<TShape>({ middleware: [], name });
-}
-
-export function flow<TShape extends Shape = Shape>(name: string): FlowBuilder<TShape> {
-    return createFlowBuilder<TShape>(name);
 }

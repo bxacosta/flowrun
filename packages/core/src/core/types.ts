@@ -1,3 +1,9 @@
+/**
+ * core/types.ts — Shared type utilities
+ *
+ * Layer: L0 (core). No internal dependencies.
+ */
+
 export type EmptyObject = Record<never, never>;
 export type MaybePromise<T> = T | Promise<T>;
 export type Simplify<T> = { [K in keyof T]: T[K] } & {};

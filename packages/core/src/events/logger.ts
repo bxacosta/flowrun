@@ -1,5 +1,12 @@
-import type { AnyEventBus } from "./event-bus.ts";
-import type { EventSource, LogLevel } from "./events.ts";
+/**
+ * events/logger.ts — Scoped logger
+ *
+ * Layer: L2. A logger is a thin facade that emits "log" events onto the bus,
+ * carrying the current flow/run/node scope.
+ */
+
+import type { AnyEventBus } from "./bus.ts";
+import type { EventSource, LogLevel } from "./types.ts";
 
 export interface Logger {
     debug(message: string, data?: unknown): void;

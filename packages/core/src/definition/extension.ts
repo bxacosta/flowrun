@@ -1,11 +1,21 @@
-import type { EmitFn, EventMap, EventSubscriber, RuntimeEvents } from "./events.ts";
-import type { Logger } from "./logger.ts";
-import type { TerminalFlowStatus } from "./status.ts";
-import type { EmptyObject, MaybePromise } from "./utils.ts";
-import { assertValidName, assertValidTopicKey } from "./validation.ts";
+/**
+ * definition/extension.ts — Extension definition & markers
+ *
+ * Layer: L3 (definition). The `extension()` factory plus the `event()` and
+ * `requires()` type markers used to declare an extension's public events and
+ * its required (provided-by-others) context.
+ */
+
+import type { TerminalFlowStatus } from "../core/status.ts";
+import type { EmptyObject, MaybePromise } from "../core/types.ts";
+import { assertValidName, assertValidTopicKey } from "../core/validation.ts";
+import type { Logger } from "../events/logger.ts";
+import type { EmitFn, EventMap, EventSubscriber, RuntimeEvents } from "../events/types.ts";
 
 declare const eventPayloadBrand: unique symbol;
 declare const requiredBrand: unique symbol;
+
+// ── Markers ─────────────────────────────────────────────────────────
 
 export interface EventMarker<TPayload = unknown> {
     readonly [eventPayloadBrand]: TPayload;
@@ -25,6 +35,8 @@ export function requires<TRequired extends object>(): RequiresMarker<TRequired> 
     return undefined as unknown as RequiresMarker<TRequired>;
 }
 
+// ── Type derivation ─────────────────────────────────────────────────
+
 export type UnwrapRequires<TMarker> = TMarker extends RequiresMarker<infer TRequired> ? TRequired : EmptyObject;
 
 export type UnwrapEvents<TDefinitions extends EventDefinitions> = {
@@ -34,6 +46,8 @@ export type UnwrapEvents<TDefinitions extends EventDefinitions> = {
 export type Prefixed<TName extends string, TEvents extends EventMap> = {
     [K in keyof TEvents & string as `${TName}:${K}`]: TEvents[K];
 };
+
+// ── Setup contract ──────────────────────────────────────────────────
 
 export interface FlowOutcome {
     error?: Error;
@@ -109,6 +123,8 @@ export type ExtensionProvided<TDefinition> =
 
 export type ExtensionEvents<TDefinition> =
     TDefinition extends ExtensionDefinition<object, object, infer TEvents> ? TEvents : EmptyObject;
+
+// ── Factory ─────────────────────────────────────────────────────────
 
 export function extension<
     const TName extends string,

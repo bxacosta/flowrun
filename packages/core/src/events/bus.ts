@@ -1,4 +1,12 @@
-import { FlowEngineError, normalizeError } from "./errors.ts";
+/**
+ * events/bus.ts — In-memory event bus
+ *
+ * Layer: L2. Pattern-matched pub/sub with history buffer, priority ordering,
+ * filters, once, and waitFor. Owns emit metadata construction.
+ */
+
+import { FlowEngineError, normalizeError } from "../core/errors.ts";
+import { assertValidPattern } from "../core/validation.ts";
 import type {
     EventMap,
     EventSource,
@@ -7,8 +15,9 @@ import type {
     OnOptions,
     Subscription,
     WaitForOptions,
-} from "./events.ts";
-import { assertValidPattern } from "./validation.ts";
+} from "./types.ts";
+
+// ── Emit metadata ───────────────────────────────────────────────────
 
 export interface EmitMeta {
     correlationId?: string;
@@ -43,10 +52,13 @@ export function createEmitMeta(
     };
 }
 
+// ── Config & errors ─────────────────────────────────────────────────
+
 export type EventBusErrorContext =
     | { event: FlowEvent; name: string; pattern: string; phase: "filter" }
     | { event: FlowEvent; name: string; pattern: string; phase: "handler" }
-    | { phase: "waitFor"; timeout: number; topic: string };
+    | { phase: "waitFor"; timeout: number; topic: string }
+    | { definitionName: string; phase: "requestSubscriber"; requestId: string };
 
 export type EventBusErrorHandler = (error: Error, context: EventBusErrorContext) => void;
 
@@ -54,6 +66,8 @@ export interface EventBusConfig {
     bufferSize?: number;
     onError?: EventBusErrorHandler;
 }
+
+// ── Bus interface ───────────────────────────────────────────────────
 
 export interface EventBus<TEvents extends EventMap> extends EventSubscriber<TEvents> {
     asReadable<TView extends EventMap = TEvents>(): EventSubscriber<TView>;
@@ -77,6 +91,8 @@ interface RegisteredHandler {
     regex: RegExp;
 }
 
+// ── Pattern matching ────────────────────────────────────────────────
+
 function patternToRegex(pattern: string): RegExp {
     const escaped = pattern
         .replace(/[.+^${}()|[\]\\]/g, "\\$&")
@@ -85,6 +101,8 @@ function patternToRegex(pattern: string): RegExp {
         .replace(/<<GLOBSTAR>>/g, ".+");
     return new RegExp(`^${escaped}$`);
 }
+
+// ── Factory ─────────────────────────────────────────────────────────
 
 export function createEventBus<TEvents extends EventMap>(config: EventBusConfig = {}): EventBus<TEvents> {
     const handlers: RegisteredHandler[] = [];

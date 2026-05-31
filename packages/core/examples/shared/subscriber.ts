@@ -1,4 +1,4 @@
-import type { EventStream, FlowEvent, RuntimeEvents, Subscription } from "@flowrun/core";
+import type { EventSubscriber, FlowEvent, RuntimeEvents, Subscription } from "@flowrun/core";
 import { type Color, colorize } from "./helpers.ts";
 
 const FLOW_STATUS_COLORS: Record<string, Color> = {
@@ -40,14 +40,14 @@ function formatNodeIndex(index?: number): string {
     return index === undefined ? "" : colorize("dim", `[${index}]`);
 }
 
-export function subscriber<TEvents extends RuntimeEvents>(events: EventStream<TEvents>) {
+export function subscriber<TEvents extends RuntimeEvents>(events: EventSubscriber<TEvents>) {
     const subscriptions: Subscription[] = [];
 
     const track = <K extends keyof RuntimeEvents & string>(
         topic: K,
         handler: (event: FlowEvent<RuntimeEvents[K]>) => void
     ): void => {
-        subscriptions.push((events as EventStream<RuntimeEvents>).on(topic, handler));
+        subscriptions.push((events as EventSubscriber<RuntimeEvents>).on(topic, handler));
     };
 
     track("run:started", (event) => {
@@ -116,8 +116,9 @@ export function subscriber<TEvents extends RuntimeEvents>(events: EventStream<TE
         const label = colorize(color, `TASK ${status.toUpperCase()}`);
         const attempts = colorize("dim", `(${event.payload.attempts}/${event.payload.attempts})`);
         const duration = formatDuration(event.payload.durationMs);
+        const ignored = event.payload.ignored ? colorize("dim", " (ignored)") : "";
         const error = event.payload.error?.message ?? "";
-        console.log(`${prefix}   ${label}  ${event.nodeName}${index} ${attempts} ${duration}`, error);
+        console.log(`${prefix}   ${label}  ${event.nodeName}${index} ${attempts} ${duration}${ignored}`, error);
     });
 
     track("node:parallel:started", (event) => {
@@ -131,15 +132,15 @@ export function subscriber<TEvents extends RuntimeEvents>(events: EventStream<TE
         console.log(`${formatPrefix(event)}   ${label}  ${event.nodeName} ${formatDuration(event.payload.durationMs)}`);
     });
 
-    track("node:every:started", (event) => {
+    track("node:each:started", (event) => {
         const items = colorize("dim", `(${event.payload.totalItems} items)`);
-        console.log(`${formatPrefix(event)}   ${colorize("magenta", "EVERY START")}  ${event.nodeName} ${items}`);
+        console.log(`${formatPrefix(event)}   ${colorize("magenta", "EACH START")}  ${event.nodeName} ${items}`);
     });
 
-    track("node:every:ended", (event) => {
+    track("node:each:ended", (event) => {
         const status = event.payload.status;
         const color = status === "success" ? "green" : "red";
-        const label = colorize(color, `EVERY ${status.toUpperCase()}`);
+        const label = colorize(color, `EACH ${status.toUpperCase()}`);
         const failed =
             event.payload.failedIndexes && event.payload.failedIndexes.length > 0
                 ? colorize("red", ` failed: [${event.payload.failedIndexes.join(", ")}]`)

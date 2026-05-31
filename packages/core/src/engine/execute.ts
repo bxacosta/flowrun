@@ -1,9 +1,19 @@
-import { executeContinueBranches, executeFailFastBranches } from "./concurrency.ts";
-import type { ExecutionContext, FlowProgress, FlowRuntime } from "./context.ts";
-import { buildItemsContext, buildTaskContext } from "./context.ts";
-import { InvalidItemsError, normalizeError, SkipSignal } from "./errors.ts";
-import { createEmitMeta, type EmitMeta } from "./event-bus.ts";
-import { compose } from "./middleware.ts";
+/**
+ * engine/execute.ts — Node execution
+ *
+ * Layer: L4 (engine). Walks the node tree: task attempt/retry loop, parallel and
+ * each fan-out with forked state, branch error policy, and container resources.
+ */
+
+import {
+    createChildController,
+    executeContinueBranches,
+    executeFailFastBranches,
+    sleepWithSignal,
+} from "../core/async.ts";
+import { FlowEngineError, normalizeError } from "../core/errors.ts";
+import { SkipSignal } from "../core/signals.ts";
+import { assertPlainObject } from "../core/validation.ts";
 import type {
     AnyCleanup,
     AnyProvide,
@@ -13,14 +23,34 @@ import type {
     NodeDefinition,
     ParallelMeta,
     ParallelNodeDefinition,
+    ResourceOutcome,
     RetryConfig,
     TaskNodeDefinition,
-    TaskResult,
-} from "./node.ts";
-import { createChildController, sleepWithSignal } from "./signal.ts";
-import type { AnyFlowStateStore, ForkEntry, MergeStrategy } from "./state.ts";
-import { mergeForkedStores } from "./state.ts";
-import { assertPlainObject } from "./validation.ts";
+} from "../definition/node.ts";
+import { createEmitMeta, type EmitMeta } from "../events/bus.ts";
+import { type ForkEntry, mergeForkedStores } from "../state/store.ts";
+import type { AnyFlowStateStore, MergeStrategy } from "../state/types.ts";
+import { compose } from "./compose.ts";
+import {
+    buildContainerContext,
+    buildTaskContext,
+    type ExecutionContext,
+    type FlowProgress,
+    type FlowRuntime,
+} from "./context.ts";
+import type { TaskResult } from "./results.ts";
+
+// ── Errors ──────────────────────────────────────────────────────────
+
+export class InvalidItemsError extends FlowEngineError {
+    override readonly name = "InvalidItemsError";
+
+    constructor(nodeName: string) {
+        super(`Node "${nodeName}": items must return an array`);
+    }
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────
 
 function runtimeMeta(
     runtime: FlowRuntime,
@@ -76,6 +106,8 @@ function recordTaskResult(
     }
     progress.taskResults.push(result);
 }
+
+// ── Task ────────────────────────────────────────────────────────────
 
 async function runSingleAttempt(
     node: TaskNodeDefinition,
@@ -270,6 +302,8 @@ async function executeTask(
     throw outcome.error;
 }
 
+// ── Branch planning & containers ────────────────────────────────────
+
 function mergeBranchProgresses(parent: FlowProgress, branches: readonly FlowProgress[]): void {
     for (const branch of branches) {
         parent.taskResults.push(...branch.taskResults);
@@ -290,7 +324,7 @@ async function withLocalProvided(
     let branchRuntime = executionContext.runtime;
 
     if (provide) {
-        const provideContext = buildItemsContext(branchRuntime, state, signal, branchPathSegments, iteration);
+        const provideContext = buildContainerContext(branchRuntime, state, signal, branchPathSegments, iteration);
         const localProvided = await provide(provideContext, meta);
         assertPlainObject(localProvided, "Container provide() must return a plain object");
         branchRuntime = {
@@ -299,13 +333,23 @@ async function withLocalProvided(
         };
     }
 
+    let outcome: ResourceOutcome = { status: "success" };
     try {
         await execute(branchRuntime);
+    } catch (error) {
+        outcome = { error: normalizeError(error), status: "failed" };
+        throw error;
     } finally {
         if (cleanup) {
             try {
-                const cleanupContext = buildItemsContext(branchRuntime, state, signal, branchPathSegments, iteration);
-                await cleanup(cleanupContext, meta);
+                const cleanupContext = buildContainerContext(
+                    branchRuntime,
+                    state,
+                    signal,
+                    branchPathSegments,
+                    iteration
+                );
+                await cleanup(cleanupContext, meta, outcome);
             } catch (cleanupError) {
                 executionContext.runtime.log.error("cleanup failed", { error: cleanupError });
             }
@@ -329,11 +373,11 @@ async function resolveBranches(
     parentProgress: FlowProgress,
     state: AnyFlowStateStore,
     controller: AbortController,
-    onBranchError: ErrorMode,
+    onError: ErrorMode,
     merge: MergeStrategy,
     concurrency: number
 ): Promise<BranchOutcome> {
-    if (onBranchError === "fail") {
+    if (onError === "fail") {
         const firstError = await executeFailFastBranches(plan.branches, controller, concurrency);
         mergeBranchProgresses(parentProgress, plan.branchProgresses);
         if (firstError) {
@@ -417,7 +461,7 @@ async function executeParallel(
             executionContext.progress,
             state,
             controller,
-            node.onBranchError,
+            node.onError,
             node.merge,
             plan.branches.length
         );
@@ -426,7 +470,7 @@ async function executeParallel(
 
         if (outcome.errors.length === 0) {
             bus.emit("node:parallel:ended", { durationMs, status: "success" }, meta);
-        } else if (node.onBranchError === "ignore") {
+        } else if (node.onError === "ignore") {
             bus.emit("node:parallel:ended", { durationMs, errors: outcome.errors, status: "success" }, meta);
         } else {
             bus.emit("node:parallel:ended", { durationMs, errors: outcome.errors, status: "failed" }, meta);
@@ -449,7 +493,7 @@ async function executeEach(
     const containerPathSegments = [...executionContext.pathSegments, node.name];
     const meta = runtimeMeta(runtime, { iteration, nodeName: node.name, path: containerPathSegments });
 
-    const itemsContext = buildItemsContext(runtime, state, signal, containerPathSegments, iteration);
+    const itemsContext = buildContainerContext(runtime, state, signal, containerPathSegments, iteration);
     const items = await node.items(itemsContext);
 
     if (!Array.isArray(items)) {
@@ -511,7 +555,7 @@ async function executeEach(
             executionContext.progress,
             state,
             controller,
-            node.onBranchError,
+            node.onError,
             node.merge,
             effectiveConcurrency
         );
@@ -520,7 +564,7 @@ async function executeEach(
 
         if (outcome.errors.length === 0) {
             bus.emit("node:each:ended", { durationMs, status: "success", totalItems: items.length }, meta);
-        } else if (node.onBranchError === "ignore") {
+        } else if (node.onError === "ignore") {
             bus.emit(
                 "node:each:ended",
                 {
@@ -544,6 +588,8 @@ async function executeEach(
         cleanup();
     }
 }
+
+// ── Dispatch ────────────────────────────────────────────────────────
 
 async function executeNode(
     node: NodeDefinition,

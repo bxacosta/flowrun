@@ -1,3 +1,10 @@
+/**
+ * events/types.ts — Event system types
+ *
+ * Layer: L0. Event envelopes, the emit signature, subscriber surface, and the
+ * built-in runtime event map. No internal dependencies.
+ */
+
 // biome-ignore lint/suspicious/noExplicitAny: event maps need to accept arbitrary payload shapes
 export type EventMap = Record<string, any>;
 
@@ -27,6 +34,12 @@ export interface EmitOptions {
     correlationId?: string;
 }
 
+/**
+ * Emits an event. Fire-and-forget: returns `void` and schedules delivery on a
+ * later microtask, so handlers have not run when this returns — do not `await`
+ * it expecting ordering or completion guarantees. (`history()` is updated
+ * synchronously; handlers are not.)
+ */
 export type EmitFn<TEvents extends EventMap> = <K extends keyof TEvents & string>(
     topic: K,
     ...args: [TEvents[K]] extends [undefined]
