@@ -428,7 +428,11 @@ async function executeParallel(
             plan.forks.push({ label: child.name, store: forkedStore });
             plan.branchProgresses.push(branchProgress);
             plan.branches.push(async () => {
-                const branchMeta: ParallelBranchMeta = { containerName: node.name, index: branchIndex, name: child.name };
+                const branchMeta: ParallelBranchMeta = {
+                    containerName: node.name,
+                    index: branchIndex,
+                    name: child.name,
+                };
                 await withLocalProvided(
                     executionContext,
                     forkedStore,

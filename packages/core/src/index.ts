@@ -9,7 +9,7 @@
 // biome-ignore lint/performance/noBarrelFile: public library entry point
 export { FlowEngineError, normalizeError } from "./core/errors.ts";
 export { FlowCancellationSignal, SkipSignal } from "./core/signals.ts";
-export type { FlowStatus, TerminalFlowStatus } from "./core/status.ts";
+export type { FlowStatus, Outcome, TerminalFlowStatus } from "./core/status.ts";
 export type { EmptyObject, MaybePromise } from "./core/types.ts";
 export {
     DuplicateNodeNameError,
@@ -36,7 +36,6 @@ export type {
     ExtensionRequired,
     ExtensionSetupContext,
     ExtensionSetupResult,
-    FlowOutcome,
     Prefixed,
     RequiresMarker,
     UnwrapEvents,
@@ -54,12 +53,12 @@ export type {
 } from "./definition/middleware.ts";
 export { middleware } from "./definition/middleware.ts";
 export type {
+    BranchMeta,
     ContainerResource,
-    EachMeta,
+    EachBranchMeta,
     ErrorMode,
     Node,
-    ParallelMeta,
-    ResourceOutcome,
+    ParallelBranchMeta,
     RetryConfig,
 } from "./definition/node.ts";
 export type {
@@ -92,11 +91,11 @@ export type {
     RequestSubscription,
 } from "./definition/request.ts";
 export {
-    RequestAlreadyResolvedError,
+    RequestAlreadySettledError,
     RequestCancelledError,
     RequestError,
+    RequestExpiredError,
     RequestNotFoundError,
-    RequestTimeoutError,
     request,
 } from "./definition/request.ts";
 export type { ShapeFactory } from "./definition/shape-factory.ts";

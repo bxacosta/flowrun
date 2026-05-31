@@ -145,25 +145,25 @@ export interface RuntimeEvents {
         reason?: string;
     };
     "request:created": {
+        expiresAt?: number;
         id: string;
         idempotencyKey?: string;
         metadata?: Record<string, unknown>;
         name: string;
         payload: unknown;
-        timeoutAt?: number;
     };
-    "request:responded": {
+    "request:expired": {
+        expiresAt: number;
+        id: string;
+        idempotencyKey?: string;
+        name: string;
+    };
+    "request:resolved": {
         id: string;
         idempotencyKey?: string;
         name: string;
         response: unknown;
         responseMetadata?: Record<string, unknown>;
-    };
-    "request:timeout": {
-        id: string;
-        idempotencyKey?: string;
-        name: string;
-        timeoutAt: number;
     };
 
     "run:ended": {

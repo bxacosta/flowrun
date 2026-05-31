@@ -15,16 +15,16 @@ import {
     type EngineRequests,
     isTerminalStatus,
     type PendingRequest,
-    RequestAlreadyResolvedError,
+    RequestAlreadySettledError,
     RequestCancelledError,
     type RequestDefinition,
+    RequestExpiredError,
     type RequestFilter,
     RequestNotFoundError,
     type RequestOptions,
     type RequestResponseOptions,
     type RequestSubscribeOptions,
     type RequestSubscription,
-    RequestTimeoutError,
     type TerminalRequestStatus,
 } from "../definition/request.ts";
 import type { AnyEventBus, EmitMeta, EventBusErrorHandler } from "../events/bus.ts";
@@ -252,15 +252,15 @@ export function createRequestManager(bus: AnyEventBus, onError?: EventBusErrorHa
         }
         const safe = safelyRedact(transitioned.record, transitioned.entry.definition);
         bus.emit(
-            "request:timeout",
-            { ...basePayload(safe), timeoutAt: safe.timeoutAt ?? Date.now() },
+            "request:expired",
+            { ...basePayload(safe), expiresAt: safe.expiresAt ?? Date.now() },
             recordToMeta(safe)
         );
         transitioned.entry.reject(
-            new RequestTimeoutError(
+            new RequestExpiredError(
                 transitioned.record.name,
                 id,
-                transitioned.record.timeoutAt ? transitioned.record.timeoutAt - transitioned.record.createdAt : 0
+                transitioned.record.expiresAt ? transitioned.record.expiresAt - transitioned.record.createdAt : 0
             )
         );
     }
@@ -276,27 +276,27 @@ export function createRequestManager(bus: AnyEventBus, onError?: EventBusErrorHa
             return Promise.reject(new RequestNotFoundError(id));
         }
         if (existing.status !== "pending") {
-            return Promise.reject(new RequestAlreadyResolvedError(existing.name, id, existing.status));
+            return Promise.reject(new RequestAlreadySettledError(existing.name, id, existing.status));
         }
         try {
             assertPlainObject(response, "Request response must be a plain object");
         } catch (error) {
             return Promise.reject(normalizeError(error));
         }
-        const transitioned = transitionToTerminal(id, "responded", {
-            respondedAt: Date.now(),
+        const transitioned = transitionToTerminal(id, "resolved", {
+            resolvedAt: Date.now(),
             response,
             responseMetadata: options?.metadata,
         });
         if (!transitioned) {
             const currentStatus = records.get(id)?.status;
             const finalStatus: TerminalRequestStatus =
-                currentStatus && isTerminalStatus(currentStatus) ? currentStatus : "responded";
-            return Promise.reject(new RequestAlreadyResolvedError(existing.name, id, finalStatus));
+                currentStatus && isTerminalStatus(currentStatus) ? currentStatus : "resolved";
+            return Promise.reject(new RequestAlreadySettledError(existing.name, id, finalStatus));
         }
         const safe = safelyRedact(transitioned.record, definition);
         bus.emit(
-            "request:responded",
+            "request:resolved",
             { ...basePayload(safe), response: safe.response, responseMetadata: safe.responseMetadata },
             recordToMeta(safe)
         );
@@ -318,7 +318,7 @@ export function createRequestManager(bus: AnyEventBus, onError?: EventBusErrorHa
             idempotency.delete(idempotencyMapKey);
             return;
         }
-        if (existingRecord.status === "responded") {
+        if (existingRecord.status === "resolved") {
             return Promise.resolve(existingRecord.response as TResponse);
         }
         if (existingRecord.status === "pending") {
@@ -383,10 +383,11 @@ export function createRequestManager(bus: AnyEventBus, onError?: EventBusErrorHa
 
         const id = crypto.randomUUID();
         const createdAt = Date.now();
-        const timeoutAt = args.options?.timeoutMs === undefined ? undefined : createdAt + args.options.timeoutMs;
+        const expiresAt = args.options?.timeoutMs === undefined ? undefined : createdAt + args.options.timeoutMs;
         const record: AnyRequestRecord = {
             attempt: args.attempt,
             createdAt,
+            expiresAt,
             flowName: args.flowName,
             id,
             idempotencyKey: args.options?.idempotencyKey,
@@ -398,7 +399,6 @@ export function createRequestManager(bus: AnyEventBus, onError?: EventBusErrorHa
             payload: args.payload,
             runId: args.runId,
             status: "pending",
-            timeoutAt,
         };
         records.set(id, record);
         if (idempotencyMapKey) {
@@ -440,7 +440,7 @@ export function createRequestManager(bus: AnyEventBus, onError?: EventBusErrorHa
         const safe = safelyRedact(record, args.definition);
         bus.emit(
             "request:created",
-            { ...basePayload(safe), metadata: safe.metadata, payload: safe.payload, timeoutAt: safe.timeoutAt },
+            { ...basePayload(safe), expiresAt: safe.expiresAt, metadata: safe.metadata, payload: safe.payload },
             recordToMeta(safe)
         );
         queueMicrotask(() => notifySubscribers(id));
@@ -485,7 +485,7 @@ export function createRequestManager(bus: AnyEventBus, onError?: EventBusErrorHa
                 cancelById(id, "run ended").catch(() => undefined);
             }
         }
-        // Defer the delete so subscribers receiving the cancel/responded events
+        // Defer the delete so subscribers receiving the cancel/resolved events
         // (dispatched via microtask) can still look up the record via engine.requests.get().
         queueMicrotask(() => {
             for (const [id, record] of [...records.entries()]) {

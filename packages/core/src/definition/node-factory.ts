@@ -13,14 +13,7 @@ import type { Shape, WithIteration, WithProvided } from "../shape/shape.ts";
 import type { MergeStrategy } from "../state/types.ts";
 import type { ContainerContext, TaskContext } from "./context-types.ts";
 import type { Middleware } from "./middleware.ts";
-import type {
-    EachBranchMeta,
-    ErrorMode,
-    Node,
-    NodeDefinition,
-    ParallelBranchMeta,
-    RetryConfig,
-} from "./node.ts";
+import type { EachBranchMeta, ErrorMode, Node, NodeDefinition, ParallelBranchMeta, RetryConfig } from "./node.ts";
 
 export interface TaskConfig<TShape extends Shape> {
     middleware?: NoInfer<Middleware<TaskContext<TShape>>>[];

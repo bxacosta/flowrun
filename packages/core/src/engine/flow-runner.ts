@@ -17,10 +17,10 @@ import { createLogger, type Logger } from "../events/logger.ts";
 import type {
     EmitFn,
     EmitOptions,
+    EventEnvelope,
     EventMap,
     EventSource,
     EventSubscriber,
-    EventEnvelope,
     OnOptions,
     Subscription,
     WaitForOptions,

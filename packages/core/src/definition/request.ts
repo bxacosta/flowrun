@@ -12,11 +12,11 @@ import { assertValidName } from "../core/validation.ts";
 
 // ── Status ──────────────────────────────────────────────────────────
 
-export type RequestStatus = "cancelled" | "expired" | "pending" | "responded";
+export type RequestStatus = "cancelled" | "expired" | "pending" | "resolved";
 export type TerminalRequestStatus = Exclude<RequestStatus, "pending">;
 
 export function isTerminalStatus(status: RequestStatus): status is TerminalRequestStatus {
-    return status === "cancelled" || status === "expired" || status === "responded";
+    return status === "cancelled" || status === "expired" || status === "resolved";
 }
 
 // ── Records & definitions ───────────────────────────────────────────
@@ -26,6 +26,7 @@ export interface RequestRecord<TPayload = unknown, TResponse = unknown> {
     readonly cancelledAt?: number;
     readonly createdAt: number;
     readonly expiredAt?: number;
+    readonly expiresAt?: number;
     readonly flowName: string;
     readonly id: string;
     readonly idempotencyKey?: string;
@@ -36,12 +37,11 @@ export interface RequestRecord<TPayload = unknown, TResponse = unknown> {
     readonly path: readonly string[];
     readonly payload: TPayload;
     readonly reason?: string;
-    readonly respondedAt?: number;
+    readonly resolvedAt?: number;
     readonly response?: TResponse;
     readonly responseMetadata?: Record<string, unknown>;
     readonly runId: string;
     readonly status: RequestStatus;
-    readonly timeoutAt?: number;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased record for runtime registries
@@ -153,12 +153,12 @@ export class RequestError extends FlowEngineError {
     }
 }
 
-export class RequestTimeoutError extends RequestError {
-    override readonly name = "RequestTimeoutError";
+export class RequestExpiredError extends RequestError {
+    override readonly name = "RequestExpiredError";
     readonly timeoutMs: number;
 
     constructor(requestName: string, requestId: string, timeoutMs: number) {
-        super(`Request "${requestName}" timed out after ${timeoutMs}ms`, { requestId, requestName });
+        super(`Request "${requestName}" expired after ${timeoutMs}ms`, { requestId, requestName });
         this.timeoutMs = timeoutMs;
     }
 }
@@ -184,8 +184,8 @@ export class RequestNotFoundError extends RequestError {
     }
 }
 
-export class RequestAlreadyResolvedError extends RequestError {
-    override readonly name = "RequestAlreadyResolvedError";
+export class RequestAlreadySettledError extends RequestError {
+    override readonly name = "RequestAlreadySettledError";
     readonly currentStatus: TerminalRequestStatus;
 
     constructor(requestName: string, requestId: string, currentStatus: TerminalRequestStatus) {

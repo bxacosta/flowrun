@@ -8,10 +8,10 @@
 import { FlowEngineError, normalizeError } from "../core/errors.ts";
 import { assertValidPattern } from "../core/validation.ts";
 import type {
+    EventEnvelope,
     EventMap,
     EventSource,
     EventSubscriber,
-    EventEnvelope,
     OnOptions,
     Subscription,
     WaitForOptions,
@@ -310,7 +310,11 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
                         cleanup();
                         resolve(event as EventEnvelope<TEvents[K]>);
                     },
-                    { filter: filter as ((event: EventEnvelope) => boolean) | undefined, name: subscriberName, once: true }
+                    {
+                        filter: filter as ((event: EventEnvelope) => boolean) | undefined,
+                        name: subscriberName,
+                        once: true,
+                    }
                 );
             });
         },
