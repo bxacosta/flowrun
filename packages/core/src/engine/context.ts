@@ -130,6 +130,19 @@ export function buildFlowContext(
     return buildBaseContext(runtime, state, signal, {}, { path: [] });
 }
 
+function withFrozenIteration(
+    context: Record<string, unknown>,
+    iteration?: { index: number; item: unknown }
+): Record<string, unknown> {
+    if (!iteration) {
+        return context;
+    }
+    return {
+        ...context,
+        iteration: Object.freeze({ index: iteration.index, item: iteration.item }),
+    };
+}
+
 export function buildContainerContext(
     runtime: FlowRuntime,
     state: AnyFlowStateStore,
@@ -144,13 +157,7 @@ export function buildContainerContext(
         { iteration, path: pathSegments },
         { iteration, path: pathSegments }
     );
-    if (!iteration) {
-        return context;
-    }
-    return {
-        ...context,
-        iteration: Object.freeze({ index: iteration.index, item: iteration.item }),
-    };
+    return withFrozenIteration(context, iteration);
 }
 
 export function buildTaskContext(
@@ -173,12 +180,5 @@ export function buildTaskContext(
         },
     };
 
-    if (!iteration) {
-        return context;
-    }
-
-    return {
-        ...context,
-        iteration: Object.freeze({ index: iteration.index, item: iteration.item }),
-    };
+    return withFrozenIteration(context, iteration);
 }

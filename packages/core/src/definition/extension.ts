@@ -6,7 +6,7 @@
  * its required (provided-by-others) context.
  */
 
-import type { TerminalFlowStatus } from "../core/status.ts";
+import type { Outcome } from "../core/status.ts";
 import type { EmptyObject, MaybePromise } from "../core/types.ts";
 import { assertValidName, assertValidTopicKey } from "../core/validation.ts";
 import type { Logger } from "../events/logger.ts";
@@ -49,13 +49,7 @@ export type Prefixed<TName extends string, TEvents extends EventMap> = {
 
 // ── Setup contract ──────────────────────────────────────────────────
 
-export interface FlowOutcome {
-    error?: Error;
-    reason?: string;
-    status: TerminalFlowStatus;
-}
-
-export type ExtensionDispose = (outcome: FlowOutcome) => MaybePromise<void>;
+export type ExtensionDispose = (outcome: Outcome) => MaybePromise<void>;
 
 export interface ExtensionSetupResult<TContext extends object> {
     dispose?: ExtensionDispose;

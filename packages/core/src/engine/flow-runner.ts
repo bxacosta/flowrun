@@ -8,9 +8,9 @@
 import { PauseGate } from "../core/async.ts";
 import { normalizeError } from "../core/errors.ts";
 import { FlowCancellationSignal } from "../core/signals.ts";
-import type { FlowStatus, TerminalFlowStatus } from "../core/status.ts";
+import type { FlowStatus, Outcome, TerminalFlowStatus } from "../core/status.ts";
 import { assertPlainObject } from "../core/validation.ts";
-import type { AnyExtensionDefinition, ExtensionDispose, FlowOutcome } from "../definition/extension.ts";
+import type { AnyExtensionDefinition, ExtensionDispose } from "../definition/extension.ts";
 import type { AnyFlowDefinition, FlowDefinition } from "../definition/flow.ts";
 import { type AnyEventBus, createEmitMeta, type EmitMeta } from "../events/bus.ts";
 import { createLogger, type Logger } from "../events/logger.ts";
@@ -20,7 +20,7 @@ import type {
     EventMap,
     EventSource,
     EventSubscriber,
-    FlowEvent,
+    EventEnvelope,
     OnOptions,
     Subscription,
     WaitForOptions,
@@ -84,7 +84,7 @@ interface CancellationState {
 
 // ── Status helpers ──────────────────────────────────────────────────
 
-function isTerminalStatus(status: FlowStatus): boolean {
+function isTerminalFlowStatus(status: FlowStatus): boolean {
     return status === "cancelled" || status === "success" || status === "failed";
 }
 
@@ -109,7 +109,7 @@ function buildExtensionSetupContext(args: {
 
     const on: EventSubscriber<EventMap>["on"] = ((
         pattern: string,
-        handler: (event: FlowEvent<unknown>) => void | Promise<void>,
+        handler: (event: EventEnvelope<unknown>) => void | Promise<void>,
         options?: OnOptions<unknown>
     ): Subscription => {
         const sub = args.bus.on(pattern, handler, options);
@@ -120,7 +120,7 @@ function buildExtensionSetupContext(args: {
     const waitFor: EventSubscriber<EventMap>["waitFor"] = <K extends string>(
         topic: K,
         options?: WaitForOptions<unknown>
-    ): Promise<FlowEvent<unknown>> => {
+    ): Promise<EventEnvelope<unknown>> => {
         const signals: AbortSignal[] = [args.signal];
         if (options?.signal) {
             signals.push(options.signal);
@@ -199,7 +199,7 @@ async function setupExtensions(args: {
             instance.dispose = result.dispose;
         }
     } catch (error) {
-        const failure: FlowOutcome = { error: normalizeError(error), status: "failed" };
+        const failure: Outcome = { error: normalizeError(error), status: "failed" };
         await teardownExtensions(instances, failure, args.logger);
         throw error;
     }
@@ -209,7 +209,7 @@ async function setupExtensions(args: {
 
 async function teardownExtensions(
     instances: readonly ExtensionInstance[],
-    outcome: FlowOutcome,
+    outcome: Outcome,
     logger: Logger
 ): Promise<void> {
     for (const instance of [...instances].reverse()) {
@@ -350,7 +350,7 @@ function emitRunEnded(
     }
 }
 
-function toFlowOutcome(result: AnyFlowResult): FlowOutcome {
+function toOutcome(result: AnyFlowResult): Outcome {
     if (result.status === "cancelled") {
         return { reason: result.reason, status: "cancelled" };
     }
@@ -437,7 +437,7 @@ export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>)
         flow,
         flowStart: pipelineStart,
         onPipelineStart: () => {
-            if (!isTerminalStatus(currentStatus)) {
+            if (!isTerminalFlowStatus(currentStatus)) {
                 currentStatus = "running";
                 if (pendingPause) {
                     pendingPause = false;
@@ -450,13 +450,13 @@ export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>)
     }).then(async (pipelineOutcome) => {
         const { result } = pipelineOutcome;
 
-        if (!isTerminalStatus(currentStatus)) {
+        if (!isTerminalFlowStatus(currentStatus)) {
             currentStatus = result.status;
         }
 
         requests.pruneRun(runId);
 
-        await teardownExtensions(instances, toFlowOutcome(result), runtimeLogger);
+        await teardownExtensions(instances, toOutcome(result), runtimeLogger);
 
         emitRunEnded(bus, runMeta, Date.now() - runStart, result.status, {
             error: result.status === "failed" ? result.error : undefined,
@@ -468,7 +468,7 @@ export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>)
 
     return {
         cancel(reason?: string) {
-            if (isTerminalStatus(currentStatus)) {
+            if (isTerminalFlowStatus(currentStatus)) {
                 return;
             }
             cancellation.requested = true;

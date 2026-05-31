@@ -6,6 +6,7 @@
  * aliases the runtime invokes. Run results live in engine/results.ts.
  */
 
+import type { Outcome } from "../core/status.ts";
 import type { MaybePromise } from "../core/types.ts";
 import type { Shape } from "../shape/shape.ts";
 import type { MergeStrategy } from "../state/types.ts";
@@ -25,27 +26,23 @@ interface RetryBase {
 
 export type RetryConfig = RetryBase & ({ backoff: "constant" } | { backoff: "exponential"; factor?: number });
 
-export interface ResourceOutcome {
-    error?: Error;
-    status: "failed" | "success";
-}
-
 // ── Container meta ──────────────────────────────────────────────────
 
-export interface ParallelMeta {
-    branchIndex: number;
-    branchName: string;
-    nodeName: string;
+export interface BranchMeta {
+    containerName: string;
+    index: number;
 }
 
-export interface EachMeta<TItem = unknown> {
-    index: number;
+export interface ParallelBranchMeta extends BranchMeta {
+    name: string;
+}
+
+export interface EachBranchMeta<TItem = unknown> extends BranchMeta {
     item: TItem;
-    nodeName: string;
 }
 
 export interface ContainerResource {
-    cleanup?: AnyCleanup;
+    dispose?: AnyDispose;
     provide: AnyProvide;
 }
 
@@ -94,8 +91,8 @@ export type AnyTaskRunner = (context: any) => MaybePromise<void>;
 // biome-ignore lint/suspicious/noExplicitAny: type-erased provide callback, typed at definition boundary
 export type AnyProvide = (context: any, meta: any) => MaybePromise<object>;
 
-// biome-ignore lint/suspicious/noExplicitAny: type-erased cleanup callback, typed at definition boundary
-export type AnyCleanup = (context: any, meta: any, outcome: ResourceOutcome) => MaybePromise<void>;
+// biome-ignore lint/suspicious/noExplicitAny: type-erased dispose callback, typed at definition boundary
+export type AnyDispose = (context: any, meta: any, outcome: Outcome) => MaybePromise<void>;
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased items callback, typed at definition boundary
 export type AnyItemsFunction = (context: any) => MaybePromise<readonly unknown[]>;

@@ -75,10 +75,6 @@ export function assertUniqueNodeNames(nodes: readonly { name: string }[], parent
     }
 }
 
-export function isValidName(value: string): boolean {
-    return NAME_REGEX.test(value);
-}
-
 export function assertValidName(kind: string, value: string): void {
     if (!NAME_REGEX.test(value)) {
         throw new InvalidNameError(kind, value);

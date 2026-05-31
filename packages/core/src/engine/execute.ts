@@ -13,17 +13,17 @@ import {
 } from "../core/async.ts";
 import { FlowEngineError, normalizeError } from "../core/errors.ts";
 import { SkipSignal } from "../core/signals.ts";
+import type { Outcome } from "../core/status.ts";
 import { assertPlainObject } from "../core/validation.ts";
 import type {
-    AnyCleanup,
+    AnyDispose,
     AnyProvide,
-    EachMeta,
+    EachBranchMeta,
     EachNodeDefinition,
     ErrorMode,
     NodeDefinition,
-    ParallelMeta,
+    ParallelBranchMeta,
     ParallelNodeDefinition,
-    ResourceOutcome,
     RetryConfig,
     TaskNodeDefinition,
 } from "../definition/node.ts";
@@ -316,7 +316,7 @@ async function withLocalProvided(
     signal: AbortSignal,
     branchPathSegments: readonly string[],
     provide: AnyProvide | undefined,
-    cleanup: AnyCleanup | undefined,
+    dispose: AnyDispose | undefined,
     meta: unknown,
     iteration: { index: number; item: unknown } | undefined,
     execute: (runtime: FlowRuntime) => Promise<void>
@@ -333,25 +333,25 @@ async function withLocalProvided(
         };
     }
 
-    let outcome: ResourceOutcome = { status: "success" };
+    let outcome: Outcome = { status: "success" };
     try {
         await execute(branchRuntime);
     } catch (error) {
         outcome = { error: normalizeError(error), status: "failed" };
         throw error;
     } finally {
-        if (cleanup) {
+        if (dispose) {
             try {
-                const cleanupContext = buildContainerContext(
+                const disposeContext = buildContainerContext(
                     branchRuntime,
                     state,
                     signal,
                     branchPathSegments,
                     iteration
                 );
-                await cleanup(cleanupContext, meta, outcome);
-            } catch (cleanupError) {
-                executionContext.runtime.log.error("cleanup failed", { error: cleanupError });
+                await dispose(disposeContext, meta, outcome);
+            } catch (disposeError) {
+                executionContext.runtime.log.error("resource dispose failed", { error: disposeError });
             }
         }
     }
@@ -428,14 +428,14 @@ async function executeParallel(
             plan.forks.push({ label: child.name, store: forkedStore });
             plan.branchProgresses.push(branchProgress);
             plan.branches.push(async () => {
-                const branchMeta: ParallelMeta = { branchIndex, branchName: child.name, nodeName: node.name };
+                const branchMeta: ParallelBranchMeta = { containerName: node.name, index: branchIndex, name: child.name };
                 await withLocalProvided(
                     executionContext,
                     forkedStore,
                     controller.signal,
                     branchPathSegments,
                     node.resource?.provide,
-                    node.resource?.cleanup,
+                    node.resource?.dispose,
                     branchMeta,
                     iteration,
                     async (branchRuntime) => {
@@ -517,14 +517,14 @@ async function executeEach(
             plan.forks.push({ label: itemIndex, store: forkedStore });
             plan.branchProgresses.push(branchProgress);
             plan.branches.push(async () => {
-                const branchMeta: EachMeta = { index: itemIndex, item, nodeName: node.name };
+                const branchMeta: EachBranchMeta = { containerName: node.name, index: itemIndex, item };
                 await withLocalProvided(
                     executionContext,
                     forkedStore,
                     controller.signal,
                     branchPathSegments,
                     node.resource?.provide,
-                    node.resource?.cleanup,
+                    node.resource?.dispose,
                     branchMeta,
                     itemIteration,
                     async (branchRuntime) => {

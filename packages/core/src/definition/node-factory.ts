@@ -6,13 +6,21 @@
  */
 
 import { FlowEngineError } from "../core/errors.ts";
+import type { Outcome } from "../core/status.ts";
 import type { MaybePromise, MergeObjects } from "../core/types.ts";
 import { assertUniqueNodeNames, assertValidName } from "../core/validation.ts";
 import type { Shape, WithIteration, WithProvided } from "../shape/shape.ts";
 import type { MergeStrategy } from "../state/types.ts";
 import type { ContainerContext, TaskContext } from "./context-types.ts";
 import type { Middleware } from "./middleware.ts";
-import type { EachMeta, ErrorMode, Node, NodeDefinition, ParallelMeta, ResourceOutcome, RetryConfig } from "./node.ts";
+import type {
+    EachBranchMeta,
+    ErrorMode,
+    Node,
+    NodeDefinition,
+    ParallelBranchMeta,
+    RetryConfig,
+} from "./node.ts";
 
 export interface TaskConfig<TShape extends Shape> {
     middleware?: NoInfer<Middleware<TaskContext<TShape>>>[];
@@ -22,10 +30,10 @@ export interface TaskConfig<TShape extends Shape> {
     run: (context: TaskContext<TShape>) => MaybePromise<void>;
 }
 
-export type ContainerMeta<TItem = unknown> = EachMeta<TItem> | ParallelMeta;
+export type ContainerMeta<TItem = unknown> = EachBranchMeta<TItem> | ParallelBranchMeta;
 
 export interface ResourceFactory<TContext extends object, TLocal extends object, TMeta = ContainerMeta> {
-    cleanup?: (context: MergeObjects<TContext, TLocal>, meta: TMeta, outcome: ResourceOutcome) => MaybePromise<void>;
+    dispose?: (context: MergeObjects<TContext, TLocal>, meta: TMeta, outcome: Outcome) => MaybePromise<void>;
     provide: (context: TContext, meta: TMeta) => MaybePromise<TLocal>;
 }
 
@@ -37,7 +45,7 @@ export interface ParallelOptions {
 export type ParallelResourceConfig<TShape extends Shape, TLocal extends object> = ResourceFactory<
     ContainerContext<TShape>,
     TLocal,
-    ParallelMeta
+    ParallelBranchMeta
 >;
 
 export type ParallelConfig<TShape extends Shape> = ParallelOptions & {
@@ -61,7 +69,7 @@ export interface EachOptions {
 export type EachResourceConfig<TShape extends Shape, TItem, TLocal extends object> = ResourceFactory<
     ContainerContext<WithIteration<TShape, TItem>>,
     TLocal,
-    EachMeta<TItem>
+    EachBranchMeta<TItem>
 >;
 
 export type EachConfig<TShape extends Shape, TItem> = EachOptions & {

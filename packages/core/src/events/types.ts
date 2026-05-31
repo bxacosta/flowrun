@@ -8,13 +8,11 @@
 // biome-ignore lint/suspicious/noExplicitAny: event maps need to accept arbitrary payload shapes
 export type EventMap = Record<string, any>;
 
-export type AsEventMap<T> = { [K in keyof T & string]: T[K] };
-
 export type EventSource = "runtime" | `extension:${string}` | `flow:${string}`;
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
-export interface FlowEvent<TPayload = unknown> {
+export interface EventEnvelope<TPayload = unknown> {
     readonly correlationId?: string;
     readonly flowName: string;
     readonly id: string;
@@ -54,34 +52,34 @@ export interface Subscription {
 }
 
 export interface OnOptions<TPayload = unknown> {
-    filter?: (event: FlowEvent<TPayload>) => boolean;
+    filter?: (event: EventEnvelope<TPayload>) => boolean;
     name?: string;
     once?: boolean;
     priority?: number;
 }
 
 export interface WaitForOptions<TPayload = unknown> {
-    filter?: (event: FlowEvent<TPayload>) => boolean;
+    filter?: (event: EventEnvelope<TPayload>) => boolean;
     signal?: AbortSignal;
     timeout?: number;
 }
 
 export interface EventSubscriber<TEvents extends EventMap> {
-    history(pattern?: string): readonly FlowEvent[];
+    history(pattern?: string): readonly EventEnvelope[];
     on<K extends keyof TEvents & string>(
         topic: K,
-        handler: (event: FlowEvent<TEvents[K]>) => void | Promise<void>,
+        handler: (event: EventEnvelope<TEvents[K]>) => void | Promise<void>,
         options?: OnOptions<TEvents[K]>
     ): Subscription;
     on(
         pattern: string,
-        handler: (event: FlowEvent<unknown>) => void | Promise<void>,
+        handler: (event: EventEnvelope<unknown>) => void | Promise<void>,
         options?: OnOptions<unknown>
     ): Subscription;
     waitFor<K extends keyof TEvents & string>(
         topic: K,
         options?: WaitForOptions<TEvents[K]>
-    ): Promise<FlowEvent<TEvents[K]>>;
+    ): Promise<EventEnvelope<TEvents[K]>>;
 }
 
 export interface RuntimeEvents {

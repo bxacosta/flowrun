@@ -234,9 +234,7 @@ export function createRequestManager(bus: AnyEventBus, onError?: EventBusErrorHa
         if (!transitioned) {
             return Promise.resolve();
         }
-        const safe = transitioned.entry.definition.redact
-            ? safelyRedact(transitioned.record, transitioned.entry.definition)
-            : transitioned.record;
+        const safe = safelyRedact(transitioned.record, transitioned.entry.definition);
         bus.emit("request:cancelled", { ...basePayload(safe), reason: safe.reason }, recordToMeta(safe));
         transitioned.entry.reject(new RequestCancelledError(transitioned.record.name, id, reason));
         return Promise.resolve();
@@ -252,9 +250,7 @@ export function createRequestManager(bus: AnyEventBus, onError?: EventBusErrorHa
         if (!transitioned) {
             return;
         }
-        const safe = transitioned.entry.definition.redact
-            ? safelyRedact(transitioned.record, transitioned.entry.definition)
-            : transitioned.record;
+        const safe = safelyRedact(transitioned.record, transitioned.entry.definition);
         bus.emit(
             "request:timeout",
             { ...basePayload(safe), timeoutAt: safe.timeoutAt ?? Date.now() },

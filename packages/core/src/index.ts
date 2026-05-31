@@ -126,10 +126,10 @@ export type { Logger } from "./events/logger.ts";
 export type {
     EmitFn,
     EmitOptions,
+    EventEnvelope,
     EventMap,
     EventSource,
     EventSubscriber,
-    FlowEvent,
     LogLevel,
     OnOptions,
     RuntimeEvents,

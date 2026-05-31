@@ -11,7 +11,7 @@ import type {
     EventMap,
     EventSource,
     EventSubscriber,
-    FlowEvent,
+    EventEnvelope,
     OnOptions,
     Subscription,
     WaitForOptions,
@@ -55,15 +55,15 @@ export function createEmitMeta(
 // ── Config & errors ─────────────────────────────────────────────────
 
 export type EventBusErrorContext =
-    | { event: FlowEvent; name: string; pattern: string; phase: "filter" }
-    | { event: FlowEvent; name: string; pattern: string; phase: "handler" }
+    | { event: EventEnvelope; name: string; pattern: string; phase: "filter" }
+    | { event: EventEnvelope; name: string; pattern: string; phase: "handler" }
     | { phase: "waitFor"; timeout: number; topic: string }
     | { definitionName: string; phase: "requestSubscriber"; requestId: string };
 
 export type EventBusErrorHandler = (error: Error, context: EventBusErrorContext) => void;
 
 export interface EventBusConfig {
-    bufferSize?: number;
+    historyLimit?: number;
     onError?: EventBusErrorHandler;
 }
 
@@ -79,10 +79,10 @@ export interface EventBus<TEvents extends EventMap> extends EventSubscriber<TEve
 export type AnyEventBus = EventBus<any>;
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased handler stored at runtime
-type AnyHandler = (event: FlowEvent<any>) => void | Promise<void>;
+type AnyHandler = (event: EventEnvelope<any>) => void | Promise<void>;
 
 interface RegisteredHandler {
-    filter?: (event: FlowEvent) => boolean;
+    filter?: (event: EventEnvelope) => boolean;
     handler: AnyHandler;
     name: string;
     once: boolean;
@@ -106,8 +106,8 @@ function patternToRegex(pattern: string): RegExp {
 
 export function createEventBus<TEvents extends EventMap>(config: EventBusConfig = {}): EventBus<TEvents> {
     const handlers: RegisteredHandler[] = [];
-    const buffer: FlowEvent[] = [];
-    const maxBuffer = config.bufferSize ?? 0;
+    const buffer: EventEnvelope[] = [];
+    const maxHistory = config.historyLimit ?? 0;
     let nameCounter = 0;
 
     function reportError(error: unknown, context: EventBusErrorContext): void {
@@ -137,7 +137,7 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
     function addHandler(pattern: string, handler: AnyHandler, options: OnOptions = {}): Subscription {
         assertValidPattern(pattern);
         const entry: RegisteredHandler = {
-            filter: options.filter as ((event: FlowEvent) => boolean) | undefined,
+            filter: options.filter as ((event: EventEnvelope) => boolean) | undefined,
             handler,
             name: options.name ?? `sub_${++nameCounter}`,
             once: options.once ?? false,
@@ -157,7 +157,7 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
         };
     }
 
-    function passesFilter(entry: RegisteredHandler, event: FlowEvent): boolean {
+    function passesFilter(entry: RegisteredHandler, event: EventEnvelope): boolean {
         if (!entry.filter) {
             return true;
         }
@@ -169,7 +169,7 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
         }
     }
 
-    async function notifyHandler(entry: RegisteredHandler, event: FlowEvent): Promise<void> {
+    async function notifyHandler(entry: RegisteredHandler, event: EventEnvelope): Promise<void> {
         try {
             await entry.handler(event);
         } catch (error) {
@@ -177,7 +177,7 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
         }
     }
 
-    async function dispatch(event: FlowEvent): Promise<void> {
+    async function dispatch(event: EventEnvelope): Promise<void> {
         const matching = handlers.filter((entry) => entry.regex.test(event.topic));
 
         for (const entry of matching) {
@@ -191,8 +191,8 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
         }
     }
 
-    function buildEvent(topic: string, payload: unknown, meta: EmitMeta): FlowEvent {
-        const event: FlowEvent = {
+    function buildEvent(topic: string, payload: unknown, meta: EmitMeta): EventEnvelope {
+        const event: EventEnvelope = {
             correlationId: meta.correlationId,
             flowName: meta.flowName,
             id: crypto.randomUUID(),
@@ -219,9 +219,9 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
 
         emit(topic, payload, meta) {
             const event = buildEvent(topic, payload, meta);
-            if (maxBuffer > 0) {
+            if (maxHistory > 0) {
                 buffer.push(event);
-                if (buffer.length > maxBuffer) {
+                if (buffer.length > maxHistory) {
                     buffer.shift();
                 }
             }
@@ -245,13 +245,13 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
         waitFor<K extends keyof TEvents & string>(
             topic: K,
             options: WaitForOptions<TEvents[K]> = {}
-        ): Promise<FlowEvent<TEvents[K]>> {
+        ): Promise<EventEnvelope<TEvents[K]>> {
             const { filter, signal, timeout } = options;
             if (timeout !== undefined && timeout <= 0) {
                 throw new FlowEngineError(`waitFor("${topic}"): timeout must be > 0 (omit it to wait indefinitely)`);
             }
 
-            return new Promise<FlowEvent<TEvents[K]>>((resolve, reject) => {
+            return new Promise<EventEnvelope<TEvents[K]>>((resolve, reject) => {
                 let settled = false;
                 const subscriberName = `wait_${++nameCounter}`;
 
@@ -308,9 +308,9 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
                         }
                         settled = true;
                         cleanup();
-                        resolve(event as FlowEvent<TEvents[K]>);
+                        resolve(event as EventEnvelope<TEvents[K]>);
                     },
-                    { filter: filter as ((event: FlowEvent) => boolean) | undefined, name: subscriberName, once: true }
+                    { filter: filter as ((event: EventEnvelope) => boolean) | undefined, name: subscriberName, once: true }
                 );
             });
         },
