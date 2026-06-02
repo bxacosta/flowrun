@@ -8,8 +8,6 @@
  *  - Patterns: transaction wrap, timing, feature flag (short-circuit),
  *    skip-if-condition
  *  - Composition order: outer -> inner around next()
- *
- * Retry, onError and other node options live in 02-nodes.ts.
  */
 
 import { createEngine, type FlowContext, middleware, shape, type TaskContext } from "@flowrun/core";
@@ -171,18 +169,18 @@ const orderPipeline = order
 const engine = createEngine();
 subscriber(engine.events);
 
-// register() returns a typed Flow handle and adds order-pipeline to the registry,
-// so Run 2 below can dispatch by name.
+// register() returns a typed Flow handle and also adds order-pipeline to the
+// registry, so it can be dispatched by name via engine.getFlow().
 const orderRunner = engine.register(orderPipeline);
 
-// ── Run 1: feature enabled — full middleware chain ────────────────
+// ── Run 1: feature enabled - full middleware chain ────────────────
 
 title("Run 1 - Feature enabled (full middleware chain)");
 const result1 = await orderRunner.run({ orderId: "ORD-001" });
 log("\nFinal state:", result1.state);
 log(`Tasks: ${result1.tasks.map((result) => `${result.nodeName}(${result.status})`).join(", ")}`);
 
-// ── Run 2: feature disabled — flow short-circuited by middleware ──
+// ── Run 2: feature disabled - flow short-circuited by middleware ──
 // engine.getFlow(name) is the dynamic by-name path (type-erased).
 
 title("Run 2 - Feature disabled (short-circuit, by name)");

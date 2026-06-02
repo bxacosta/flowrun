@@ -3,33 +3,50 @@
  *
  * Covers:
  *  - flow(name) builder: chainable .params / .state / .nodes
- *  - createEngine(), engine.run(flow), engine.register(flow), engine.getFlow(name)
+ *  - createEngine(), engine.run(flow), engine.register(flow), engine.getFlow(name), engine.flows()
  *  - typed params and state propagating to handler contexts
- *  - context.state (get, set, patch, snapshot, has)
- *  - context.params, context.log
- *  - FlowResult discrimination (success, failed, cancelled)
- *  - engine.flows() (list registered flows)
- *  - shape<TShape>() for reusable typed nodes shared across files
+ *  - the base context fields and the state store API (get, set, patch, has, snapshot)
+ *  - FlowResult discrimination (success, failed, cancelled) and its full anatomy
+ *  - shape<TShape>() for reusable typed node and flow definitions
  */
 
-import { createEngine, flow, type Node, shape } from "@flowrun/core";
+import { createEngine, flow, shape } from "@flowrun/core";
 import { log, title } from "./shared/helpers.ts";
 
+// The engine hosts the event bus, request manager and flow registry. One per app.
+const engine = createEngine();
+
 // ─────────────────────────────────────────────────────────────────────
-// Flow 1: no params, no state — the simplest possible flow
+// Flow 1: The simplest flow: no params, no state
 // ─────────────────────────────────────────────────────────────────────
+
 const healthCheck = flow("health-check").nodes(({ task }) => [
     task({
         name: "ping",
         run: (context) => {
-            context.log.info("system is healthy");
+            // Every context (flow, container, task) carries the same base fields:
+            //   context.params - readonly, typed run input
+            //   context.state - the typed state store
+            //   context.signal - AbortSignal for cooperative cancellation
+            //   context.emit - publishes an event
+            //   context.request - opens a request
+            //   context.log - scoped structured logger
+            context.log.info("system is healthy", {
+                flowName: context.flowName, // the flow's name
+                runId: context.runId, // unique per run()/start()
+            });
         },
     }),
 ]);
 
+title("1 - No params, no state");
+const healthResult = await engine.run(healthCheck);
+log(`status: ${healthResult.status}`);
+
 // ─────────────────────────────────────────────────────────────────────
-// Flow 2: typed params, no state
+// Flow 2: Typed params
 // ─────────────────────────────────────────────────────────────────────
+
 const notify = flow("notify")
     .params<{ channel: string; message: string }>()
     .nodes(({ task }) => [
@@ -41,9 +58,14 @@ const notify = flow("notify")
         }),
     ]);
 
+title("2 - Typed params");
+const notifyResult = await engine.run(notify, { channel: "#alerts", message: "deploy complete" });
+log(`status: ${notifyResult.status}`);
+
 // ─────────────────────────────────────────────────────────────────────
-// Flow 3: params + state derived from params (callback form)
+// Flow 3: Params + state derived from params; the state store API
 // ─────────────────────────────────────────────────────────────────────
+
 const processOrder = flow("process-order")
     .params<{ orderId: string }>()
     .state((params) => ({
@@ -55,40 +77,43 @@ const processOrder = flow("process-order")
         task({
             name: "validate",
             run: (context) => {
-                context.state.set("status", "validated");
+                context.state.set("status", "validated"); // set: overwrite one key
                 context.log.info(`validated ${context.params.orderId}`);
             },
         }),
         task({
             name: "calculate-total",
             run: (context) => {
-                // patch: update multiple state keys at once
-                context.state.patch({ total: 49.99, status: "calculated" });
+                context.state.patch({ status: "calculated", total: 49.99 }); // patch: many keys at once
             },
         }),
         task({
             name: "finalize",
             run: (context) => {
-                // has: check if a key has been explicitly set
                 if (context.state.has("total")) {
+                    // has: was the key explicitly set?
                     context.state.set("status", "completed");
                 }
-
-                // snapshot: get a readonly copy of the full state
-                context.log.info(`final state: ${JSON.stringify(context.state.snapshot())}`);
+                context.log.info("final snapshot", { state: context.state.snapshot() }); // snapshot: readonly copy
             },
         }),
     ]);
 
+title("3 - Params + derived state (state store API)");
+const orderResult = await engine.run(processOrder, { orderId: "ORD-001" });
+if (orderResult.status === "success") {
+    log("state:", orderResult.state);
+}
+
 // ─────────────────────────────────────────────────────────────────────
-// Flow 4: params inferred from the state callback
+// Flow 4: Params inferred from the state callback
 // ─────────────────────────────────────────────────────────────────────
 
 const archiveOrder = flow("archive-order")
     .state((params: { orderId: string; reason: string }) => ({
+        archivedAt: 0,
         archivedId: params.orderId,
         reason: params.reason,
-        archivedAt: 0,
     }))
     .nodes(({ task }) => [
         task({
@@ -100,16 +125,19 @@ const archiveOrder = flow("archive-order")
         }),
     ]);
 
+title("4 - Params inferred from the state callback");
+const archiveResult = await engine.run(archiveOrder, { orderId: "ORD-002", reason: "duplicate" });
+if (archiveResult.status === "success") {
+    log(`archived ${archiveResult.state.archivedId} at ${archiveResult.state.archivedAt}`);
+}
+
 // ─────────────────────────────────────────────────────────────────────
-// Flow 5: params + literal state (state independent of params)
+// Flow 5: Literal state (independent of params)
 // ─────────────────────────────────────────────────────────────────────
 
 const inspect = flow("inspect")
     .params<{ path: string }>()
-    .state({
-        finalUrl: "",
-        userAgent: "",
-    })
+    .state({ finalUrl: "", userAgent: "" })
     .nodes(({ task }) => [
         task({
             name: "record",
@@ -122,8 +150,14 @@ const inspect = flow("inspect")
         }),
     ]);
 
+title("5 - Params + literal state");
+const inspectResult = await engine.run(inspect, { path: "/" });
+if (inspectResult.status === "success") {
+    log(`final url: ${inspectResult.state.finalUrl}`);
+}
+
 // ─────────────────────────────────────────────────────────────────────
-// Flow 6: failure handling — FlowResult discrimination
+// Flow 6: Failure: FlowResult discrimination
 // ─────────────────────────────────────────────────────────────────────
 
 const riskyFlow = flow("risky")
@@ -143,8 +177,16 @@ const riskyFlow = flow("risky")
         }),
     ]);
 
+title("6 - Result discrimination (failed flow)");
+// run() never throws: failures come back as a discriminated result.
+const riskyResult = await engine.run(riskyFlow);
+if (riskyResult.status === "failed") {
+    log(`error: ${riskyResult.error.message}`);
+    log(`state at failure: processed=${riskyResult.state.processed}`);
+}
+
 // ─────────────────────────────────────────────────────────────────────
-// Flow 7: shape<TShape>() — reusable nodes typed against a shape
+// Flow 7: shape<TShape>(): reusable nodes typed against a shape
 // ─────────────────────────────────────────────────────────────────────
 
 interface ReportShape {
@@ -154,7 +196,7 @@ interface ReportShape {
 
 const report = shape<ReportShape>();
 
-const generateTask: Node<ReportShape> = report.task({
+const generateTask = report.task({
     name: "generate",
     run: (context) => {
         context.state.set("generated", true);
@@ -164,58 +206,79 @@ const generateTask: Node<ReportShape> = report.task({
 
 const reportFlow = report.flow("generate-report").state({ generated: false }).nodes([generateTask]);
 
-// ── Engine ──────────────────────────────────────────────────────────
-
-const engine = createEngine();
-
-// ── Run ─────────────────────────────────────────────────────────────
-// engine.run(def, params?) is the typed shortcut for one-shot execution.
-// engine.register(def) returns a typed Flow handle and adds it to the registry.
-// engine.getFlow(name) does dynamic by-name lookup (throws FlowNotRegisteredError if missing).
-
-title("1 - No params, no state");
-const healthResult = await engine.run(healthCheck);
-log(`Status: ${healthResult.status}`);
-
-title("2 - Typed params, no state");
-const notifyResult = await engine.run(notify, { channel: "#alerts", message: "deploy complete" });
-log(`Status: ${notifyResult.status}`);
-
-title("3 - Params + state derived from params (full state API)");
-const orderResult = await engine.run(processOrder, { orderId: "ORD-001" });
-if (orderResult.status === "success") {
-    log("State:", orderResult.state);
-    log(`Duration: ${orderResult.durationMs}ms`);
-    log(`Tasks: ${orderResult.tasks.map((result) => `${result.nodeName}(${result.status})`).join(", ")}`);
-}
-
-title("4 - Params inferred from the state callback");
-const archiveResult = await engine.run(archiveOrder, { orderId: "ORD-002", reason: "duplicate" });
-if (archiveResult.status === "success") {
-    log(`archived ${archiveResult.state.archivedId} at ${archiveResult.state.archivedAt}`);
-}
-
-title("5 - Params + literal state (state independent of params)");
-const inspectResult = await engine.run(inspect, { path: "/" });
-if (inspectResult.status === "success") {
-    log(`final url: ${inspectResult.state.finalUrl}`);
-    log(`user agent: ${inspectResult.state.userAgent}`);
-}
-
-title("6 - Result discrimination (failed flow)");
-const riskyResult = await engine.run(riskyFlow);
-if (riskyResult.status === "failed") {
-    log(`Error: ${riskyResult.error.message}`);
-    log(`State at failure: processed=${riskyResult.state.processed}`);
-}
-
 title("7 - Reusable shaped definitions");
 const reportResult = await engine.run(reportFlow, { title: "Monthly Sales" });
-log(`Status: ${reportResult.status}, generated=${reportResult.state.generated}`);
+log(`status: ${reportResult.status}, generated=${reportResult.state.generated}`);
 
-title("8 - engine.register() + engine.getFlow(name) for by-name dispatch");
-const registeredHealth = engine.register(healthCheck);
-log(`Registered: ${registeredHealth.name}`);
-log("All registered flows:", engine.flows());
-const runByName = await engine.getFlow("health-check").run();
-log(`Run by name: ${runByName.status}`);
+// ─────────────────────────────────────────────────────────────────────
+// Flow 8: Anatomy of a FlowResult
+// ─────────────────────────────────────────────────────────────────────
+
+// Everything run() / handle.join() gives back:
+//   status: "success" | "failed" | "cancelled" (the discriminant)
+//   flowName: the flow's name
+//   runId: unique id for this execution
+//   durationMs: total wall-clock time
+//   state: readonly final state snapshot
+//   tasks: one TaskResult per leaf task that ran: { nodeName, path, status, attempts, durationMs, ignored, reason?, iteration?, error? }
+//   error: present only when status === "failed"
+//   reason: present only when status === "cancelled"
+
+const orderSummary = flow("order-summary")
+    .state({ items: 0, status: "open" })
+    .nodes(({ task }) => [
+        task({
+            name: "load-items",
+            run: (context) => {
+                context.state.set("items", 3);
+            },
+        }),
+        task({
+            name: "bulk-discount",
+            run: (context) => {
+                if (context.state.get("items") < 5) {
+                    context.skip("fewer than 5 items"); // appears as a skipped TaskResult with a reason
+                }
+            },
+        }),
+        task({
+            name: "close",
+            run: (context) => {
+                context.state.set("status", "closed");
+            },
+        }),
+    ]);
+
+title("8 - Anatomy of a FlowResult");
+const summary = await engine.run(orderSummary);
+log(`status:     ${summary.status}`);
+log(`flowName:   ${summary.flowName}`);
+log(`runId:      ${summary.runId}`);
+log(`durationMs: ${summary.durationMs}`);
+log("state:     ", summary.state);
+log("tasks:");
+for (const taskResult of summary.tasks) {
+    const reason = taskResult.reason ? ` reason="${taskResult.reason}"` : "";
+    log(
+        `  ${taskResult.path} -> ${taskResult.status} (attempts=${taskResult.attempts}, ${taskResult.durationMs}ms, ignored=${taskResult.ignored})${reason}`
+    );
+}
+if (summary.status === "failed") {
+    log(`error: ${summary.error.message}`);
+}
+if (summary.status === "cancelled") {
+    log(`reason: ${summary.reason}`);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Flow 9: By-name dispatch: register + getFlow + flows()
+// ─────────────────────────────────────────────────────────────────────
+// engine.run(def) runs an ad-hoc definition. To dispatch by name later,
+// register it first; getFlow(name) then looks it up (throws if missing).
+
+title("9 - register + getFlow + flows()");
+const registered = engine.register(healthCheck);
+log(`registered: ${registered.name}`);
+log("all registered flows:", engine.flows());
+const byName = await engine.getFlow("health-check").run();
+log(`run by name: ${byName.status}`);

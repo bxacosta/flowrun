@@ -10,6 +10,7 @@
  *  - resource in each (per-iteration resource isolation)
  *  - resource in parallel (per-branch resource isolation)
  *  - typed child context: resource.provide adds keys that child tasks see typed
+ *  - resource.dispose receives the branch outcome ({ status, error? }) for commit/rollback
  */
 
 import { createEngine, extension, flow, shape } from "@flowrun/core";
@@ -22,11 +23,11 @@ import { subscriber } from "./shared/subscriber.ts";
 const browserExtension = (browser: Browser) =>
     extension({
         name: "browser",
-        setup() {
+        setup(context) {
             return {
                 provided: { browser },
                 dispose: (outcome) => {
-                    log(`  [browser] extension disposed (run ended ${outcome.status})`);
+                    context.log.info(`browser extension disposed (run ended ${outcome.status})`);
                 },
             };
         },
@@ -44,7 +45,7 @@ const browser = createBrowser();
 const engine = createEngine().use(browserExtension(browser));
 subscriber(engine.events);
 
-// ── Flow: data pipeline — used for FlowHandle demos ─────────────────
+// ── Flow: data pipeline - used for FlowHandle demos ─────────────────
 
 const pipeline = flow("data-pipeline")
     .state({ steps: [] as string[] })
@@ -85,7 +86,7 @@ const pipeline = flow("data-pipeline")
         }),
     ]);
 
-// ── Demo 1: register() returns a callable Flow — start() + join() ──
+// ── Demo 1: register() returns a callable Flow - start() + join() ──
 
 title("Demo 1 - register + start (Flow returned by register is invocable)");
 
@@ -160,16 +161,20 @@ const scrapeFlow = shape<
             concurrency: 2,
             merge: "append",
 
-            // resource opens a fresh page per iteration and closes it on cleanup.
+            // resource opens a fresh page per iteration and closes it on dispose.
             // The returned keys are typed in the child context (context.page).
-            // meta is EachMeta<string>: index, item, nodeName.
+            // meta is EachBranchMeta<string>: index, item, containerName.
             resource: {
                 provide: async (context, meta) => {
-                    log(`  [each meta] start iteration #${meta.index} item="${meta.item}"`);
+                    context.log.info(`each iteration #${meta.index} item="${meta.item}" starting`);
                     return { page: await context.browser.newPage() };
                 },
-                cleanup: async (context, meta) => {
-                    log(`  [each meta] cleanup iteration #${meta.index} item="${meta.item}" page=#${context.page.id}`);
+                // dispose's 3rd arg is the branch outcome ({ status, error? }) - use it
+                // to commit on success or roll back on failure. Here we just log it.
+                dispose: async (context, meta, outcome) => {
+                    context.log.info(
+                        `each iteration #${meta.index} item="${meta.item}" dispose page=#${context.page.id} (${outcome.status})`
+                    );
                     await context.page.close();
                 },
             },
@@ -216,15 +221,15 @@ const parallelScrape = shape<
             name: "scrape-both",
             merge: "overwrite",
 
-            // resource.provide receives meta with branchName/branchIndex; useful for logs and labels
+            // resource.provide receives meta with name/index; useful for logs and labels
             resource: {
                 provide: async (context, meta) => {
                     const page: Page = await context.browser.newPage();
-                    log(`  branch "${meta.branchName}" got page #${page.id}`);
+                    context.log.info(`branch "${meta.name}" got page #${page.id}`);
                     return { page };
                 },
-                cleanup: async (context, meta) => {
-                    log(`  branch "${meta.branchName}" released page #${context.page.id}`);
+                dispose: async (context, meta, outcome) => {
+                    context.log.info(`branch "${meta.name}" released page #${context.page.id} (${outcome.status})`);
                     await context.page.close();
                 },
             },

@@ -1,114 +1,150 @@
 /**
  * 02-nodes.ts — Node Types & Options
  *
- * One section per node type, focused on the options each node exposes.
- * Composition (containers inside containers) lives in 03-composition.ts.
- *
  * Covers:
- *  - task: sync/async run, retry (constant + exponential w/ jitter, factor,
- *          maxDelayMs, retryOn), onError:"ignore", context.skip(), context.attempt
+ *  - task: retry (constant + exponential w/ jitter, factor, maxDelayMs, retryOn),
+ *          onError:"ignore", context.skip(), context.attempt
+ *  - the full state store API, one method per step of an order pipeline:
+ *          set, get, append, update, patch, has, snapshot
  *  - parallel: merge strategies (overwrite, append, exclusive -> MergeConflictError)
- *  - each: items source, concurrency, merge, onBranchError:"ignore", context.iteration
+ *  - each: items source, concurrency, merge, onError:"ignore", context.iteration
  */
 
 import { createEngine, flow } from "@flowrun/core";
-import { delay, log, title } from "./shared/helpers.ts";
+import { delay, log, logResult, title } from "./shared/helpers.ts";
 import { subscriber } from "./shared/subscriber.ts";
 
+const engine = createEngine();
+subscriber(engine.events);
+
 // ─────────────────────────────────────────────────────────────────────
-// Task — run, retry, onError, context.attempt, context.skip()
+// Task - an order pipeline covering the state API, retry, skip and onError
 // ─────────────────────────────────────────────────────────────────────
 
-let constantFails = 2; // succeeds on attempt #3
-let exponentialFails = 1; // succeeds on attempt #2
-
-const taskShowcase = flow("task-showcase")
-    .state({ steps: [] as string[] })
+const orderPipeline = flow("order-pipeline")
+    .state({
+        audit: [] as string[],
+        lines: [] as { amount: number; sku: string }[],
+        status: "new",
+        total: 0,
+    })
     .nodes(({ task }) => [
-        // Sync run — simplest form
+        // state.set - overwrite a single key
         task({
-            name: "sync-step",
+            name: "validate",
             run: (context) => {
-                context.state.append("steps", "sync-ok");
+                context.state.set("status", "validated");
             },
         }),
 
-        // Async run
+        // state.set - seed an array key
         task({
-            name: "async-step",
-            run: async (context) => {
-                await delay(10);
-                context.state.append("steps", "async-ok");
+            name: "load-lines",
+            run: (context) => {
+                context.state.set("lines", [
+                    { amount: 40, sku: "WIDGET" },
+                    { amount: 60, sku: "GADGET" },
+                ]);
             },
         }),
 
-        // Constant backoff — same delay between every attempt
+        // state.append - push one element onto an existing array
         task({
-            name: "retry-constant",
-            retry: { maxAttempts: 3, backoff: "constant", delayMs: 10 },
+            name: "add-shipping",
             run: (context) => {
-                if (constantFails > 0) {
-                    constantFails--;
-                    throw new Error("flaky");
+                context.state.append("lines", { amount: 10, sku: "SHIPPING" });
+            },
+        }),
+
+        // state.get - read a key, derive a value, write it back with set
+        task({
+            name: "compute-total",
+            run: (context) => {
+                const subtotal = context.state.get("lines").reduce((sum, line) => sum + line.amount, 0);
+                context.state.set("total", subtotal);
+            },
+        }),
+
+        // state.update - read-modify-write; constant backoff retry + context.attempt
+        task({
+            name: "apply-exchange-rate",
+            retry: { backoff: "constant", delayMs: 10, maxAttempts: 3 },
+            run: (context) => {
+                if (context.attempt < 2) {
+                    throw new Error("exchange-rate service unavailable");
                 }
-                context.state.append("steps", `constant-ok@${context.attempt}`);
+                context.state.update("total", (current) => Math.round(current * 1.05));
+                context.state.append("audit", `rate applied on attempt ${context.attempt}`);
             },
         }),
 
-        // Exponential backoff with jitter, max delay cap, and a retryOn filter
+        // Exponential backoff with jitter, a max-delay cap, and a retryOn filter
         task({
-            name: "retry-exponential",
+            name: "charge",
             retry: {
-                maxAttempts: 4,
                 backoff: "exponential",
                 delayMs: 20,
                 factor: 2,
                 jitter: true,
+                maxAttempts: 4,
                 maxDelayMs: 200,
                 retryOn: (error) => error.message.includes("timeout"),
             },
             run: (context) => {
-                if (exponentialFails > 0) {
-                    exponentialFails--;
-                    throw new Error("connection timeout");
+                if (context.attempt < 2) {
+                    throw new Error("gateway timeout");
                 }
-                context.state.append("steps", `exponential-ok@${context.attempt}`);
+                context.state.set("status", "charged");
             },
         }),
 
-        // onError:"ignore" — task fails after retries, but the flow continues
+        // context.skip(reason) - bail out cleanly when a step doesn't apply
         task({
-            name: "best-effort",
+            name: "gift-wrap",
+            run: (context) => {
+                const wantsGiftWrap = false; // imagine this comes from the order
+                if (!wantsGiftWrap) {
+                    context.skip("no gift wrap requested");
+                }
+                context.state.append("lines", { amount: 5, sku: "GIFT-WRAP" });
+            },
+        }),
+
+        // onError:"ignore" - best-effort side effect; failure doesn't stop the flow
+        task({
+            name: "send-receipt",
             onError: "ignore",
-            retry: { maxAttempts: 2, backoff: "constant", delayMs: 5 },
+            retry: { backoff: "constant", delayMs: 5, maxAttempts: 2 },
             run: () => {
-                throw new Error("never works");
+                throw new Error("email provider down");
             },
         }),
 
-        // context.skip(reason) — task validates and bails cleanly (no error thrown)
+        // state.has + state.patch + state.snapshot
         task({
-            name: "skip-when-not-applicable",
+            name: "finalize",
             run: (context) => {
-                const shouldRun = false; // imagine this comes from a validation check
-                if (!shouldRun) {
-                    context.skip("input did not match preconditions");
+                if (context.state.has("total")) {
+                    context.state.patch({ status: "completed" });
                 }
-                context.state.set("steps", [...context.state.get("steps"), "should-not-appear"]);
-            },
-        }),
-
-        // Final task observes that both skips did not kill the flow
-        task({
-            name: "after-skip",
-            run: (context) => {
-                context.state.append("steps", "after-skip-ok");
+                context.state.append("audit", "finalized");
+                context.log.info("final order", { snapshot: context.state.snapshot() });
             },
         }),
     ]);
 
+title("Task - state API tour + retry + skip + onError:ignore + context.attempt");
+const orderResult = await engine.run(orderPipeline);
+if (orderResult.status === "success") {
+    log("final status:", orderResult.state.status);
+    log("total:", orderResult.state.total);
+    log("lines:", orderResult.state.lines.map((line) => `${line.sku}:${line.amount}`).join(", "));
+    log("audit:", orderResult.state.audit);
+}
+logResult(orderResult);
+
 // ─────────────────────────────────────────────────────────────────────
-// Parallel — merge strategies
+// Parallel - merge strategies
 // ─────────────────────────────────────────────────────────────────────
 
 // overwrite: same key from N branches -> last write wins
@@ -135,6 +171,10 @@ const overwriteDemo = flow("overwrite-demo")
         }),
     ]);
 
+title("Parallel - overwrite (last write wins)");
+const overwriteResult = await engine.run(overwriteDemo);
+log("winner:", overwriteResult.state.winner);
+
 // append: arrays from each branch concatenated
 const appendDemo = flow("append-demo")
     .state({ items: [] as string[] })
@@ -158,6 +198,10 @@ const appendDemo = flow("append-demo")
             ],
         }),
     ]);
+
+title("Parallel - append (arrays concatenated)");
+const appendResult = await engine.run(appendDemo);
+log("items:", appendResult.state.items);
 
 // exclusive: same key from 2 branches -> MergeConflictError
 const strictDemo = flow("strict-demo")
@@ -183,14 +227,20 @@ const strictDemo = flow("strict-demo")
         }),
     ]);
 
-// ignore: one branch fails, successful branches still merge — flow survives
+title("Parallel - exclusive (conflict -> MergeConflictError)");
+const strictResult = await engine.run(strictDemo);
+if (strictResult.status === "failed") {
+    log("expected error:", strictResult.error.message);
+}
+
+// ignore: one branch fails, successful branches still merge - flow survives
 const continueDemo = flow("continue-demo")
     .state({ collected: [] as string[] })
     .nodes(({ parallel }) => [
         parallel({
             name: "tolerant",
             merge: "append",
-            onBranchError: "ignore",
+            onError: "ignore",
             nodes: ({ task }) => [
                 task({
                     name: "branch-ok-1",
@@ -214,8 +264,14 @@ const continueDemo = flow("continue-demo")
         }),
     ]);
 
+title("Parallel - ignore (one branch fails, successful merges survive)");
+const continueResult = await engine.run(continueDemo);
+if (continueResult.status === "success") {
+    log("collected (failed branch dropped):", continueResult.state.collected);
+}
+
 // ─────────────────────────────────────────────────────────────────────
-// Each — items source, concurrency, iteration context, onBranchError
+// Each - items source, concurrency, iteration context, onError
 // ─────────────────────────────────────────────────────────────────────
 
 const eachShowcase = flow("each-showcase")
@@ -243,13 +299,13 @@ const eachShowcase = flow("each-showcase")
             ],
         }),
 
-        // items as inline array, onBranchError:"ignore" — failed items do not break the rest
+        // items as inline array, onError:"ignore" - failed items do not break the rest
         each({
             name: "resilient-pass",
             items: () => ["ok-1", "FAIL", "ok-2"],
             concurrency: 1,
             merge: "append",
-            onBranchError: "ignore",
+            onError: "ignore",
             nodes: ({ task }) => [
                 task({
                     name: "maybe-fail",
@@ -264,54 +320,10 @@ const eachShowcase = flow("each-showcase")
         }),
     ]);
 
-// ── Engine ──────────────────────────────────────────────────────────
-
-const engine = createEngine();
-subscriber(engine.events);
-
-// ── Run ─────────────────────────────────────────────────────────────
-
-title("Task - sync/async + retry + onError:ignore + context.skip() + context.attempt");
-const taskResult = await engine.run(taskShowcase);
-log("steps:", taskResult.state.steps);
-log("tasks:");
-for (const result of taskResult.tasks) {
-    let tag = "";
-    if (result.ignored) {
-        tag = " (ignored)";
-    } else if (result.reason) {
-        tag = ` (${result.reason})`;
-    }
-    log(`  ${result.nodeName} -> ${result.status}${tag} (attempts=${result.attempts})`);
-}
-
-title("Parallel - overwrite (last write wins)");
-const overwriteResult = await engine.run(overwriteDemo);
-log("winner:", overwriteResult.state.winner);
-
-title("Parallel - append (arrays concatenated)");
-const appendResult = await engine.run(appendDemo);
-log("items:", appendResult.state.items);
-
-title("Parallel - exclusive (conflict -> MergeConflictError)");
-const strictResult = await engine.run(strictDemo);
-if (strictResult.status === "failed") {
-    log("expected error:", strictResult.error.message);
-}
-
-title("Parallel - ignore (one branch fails, successful merges survive)");
-const continueResult = await engine.run(continueDemo);
-if (continueResult.status === "success") {
-    log("collected (failed branch dropped):", continueResult.state.collected);
-}
-
-title("Each - items + concurrency + iteration context + onBranchError:ignore");
+title("Each - items + concurrency + iteration + onError:ignore");
 const eachResult = await engine.run(eachShowcase);
 if (eachResult.status === "success") {
     log("ordered results:", eachResult.state.ordered);
     log("resilient results:", eachResult.state.resilient);
-    log(
-        "tasks:",
-        eachResult.tasks.map((result) => `${result.nodeName}[${result.iteration?.item}] -> ${result.status}`).join(", ")
-    );
 }
+logResult(eachResult);

@@ -3,19 +3,27 @@
  *
  * Covers:
  *  - extension() with a single event<T>() marker (auto-prefixed by extension name)
- *  - setup(context) returns { context, dispose } — replaces provide/provided/cleanup
- *  - engine.use() chains extensions; bufferSize via engine config
+ *  - setup(context) returns { provided, dispose } - replaces provide/provided/cleanup
+ *  - requires<T>() declares a typed dependency on another extension's provided context;
+ *    engine.use() enforces the order at compile time (MissingExtensionDependency)
+ *  - engine.use() chains extensions; historyLimit via engine config
  *  - engine.events.on() (typed key or wildcard pattern), waitFor(), history()
  *  - Subscription options: priority, filter, name, once
  *  - subscription.unsubscribe()
- *  - context.emit() (flow domain events declared via .emits<T>())
+ *  - context.emit() (flow domain events declared via .events<T>())
  */
 
-import type { EngineEvents, EventSubscriber, FlowEvent, Subscription } from "@flowrun/core";
-import { createEngine, event, extension, shape } from "@flowrun/core";
+import type { EngineEvents, EventEnvelope, EventSubscriber, Subscription } from "@flowrun/core";
+import { createEngine, event, extension, requires, shape } from "@flowrun/core";
 import { log, title } from "./shared/helpers.ts";
+import { subscriber } from "./shared/subscriber.ts";
 
-// ── Extension 1: database — config factory + injected context ───────
+// Shared shape of the context the database extension provides.
+interface DbApi {
+    query<TRow>(sql: string): Promise<TRow[]>;
+}
+
+// ── Extension 1: database - config factory + injected context ───────
 
 const databaseExtension = (config: { connectionString: string }) =>
     extension({
@@ -24,18 +32,20 @@ const databaseExtension = (config: { connectionString: string }) =>
             connected: event<{ poolSize: number }>(),
             query: event<{ durationMs: number; sql: string }>(),
         },
-        setup: async (context) => {
+        setup: (context) => {
             context.log.info(`Connecting to ${config.connectionString}`);
-            await context.emit("connected", { poolSize: 10 });
+            // emit is fire-and-forget: it returns void and delivers on a later
+            // microtask, so there is nothing to await.
+            context.emit("connected", { poolSize: 10 });
 
             return {
                 provided: {
                     db: {
-                        query: async <TRow>(sql: string): Promise<TRow[]> => {
+                        query: <TRow>(sql: string): Promise<TRow[]> => {
                             const start = Date.now();
                             const result: TRow[] = [];
-                            await context.emit("query", { durationMs: Date.now() - start, sql });
-                            return result;
+                            context.emit("query", { durationMs: Date.now() - start, sql });
+                            return Promise.resolve(result);
                         },
                     },
                 },
@@ -43,21 +53,25 @@ const databaseExtension = (config: { connectionString: string }) =>
         },
     });
 
-// ── Extension 2: metrics — cross-extension listening + dispose ──────
+// ── Extension 2: metrics - cross-extension listening + dispose ──────
 
 const metricsExtension = () =>
     extension({
         name: "metrics",
+        // requires() declares a typed dependency on context an earlier extension
+        // provided. context.provided is then typed as { db }, and engine.use()
+        // refuses to compile if database wasn't .use()'d first.
+        requires: requires<{ db: DbApi }>(),
         events: {
             flushed: event<{ count: number }>(),
         },
         setup(context) {
             const counters = new Map<string, number>();
+            // Guaranteed present (and typed) thanks to requires<{ db }>().
+            const { db } = context.provided;
 
-            // Cross-extension listening: react to database:query events.
-            // Other extensions' events aren't in this extension's typed set,
-            // so we cast the payload at the use site.
-            // The subscription is auto-cleaned up at the end of the run.
+            // Listen to another extension's events (its payload is outside this
+            // extension's typed set, so cast it). Auto-unsubscribed at run end.
             context.on("database:query", (envelope) => {
                 const payload = envelope.payload as { durationMs: number; sql: string };
                 counters.set("db.queries", (counters.get("db.queries") ?? 0) + 1);
@@ -72,13 +86,15 @@ const metricsExtension = () =>
                         },
                         flush: async () => {
                             const count = counters.size;
+                            // Uses the required db dependency to persist the snapshot.
+                            await db.query(`INSERT INTO metric_snapshots (count) VALUES (${count})`);
                             context.log.info(`Flushed ${count} metrics`);
-                            await context.emit("flushed", { count });
+                            context.emit("flushed", { count });
                         },
                     },
                 },
                 dispose: (outcome) => {
-                    log(`  [metrics] disposed (run ended ${outcome.status})`);
+                    context.log.info(`metrics disposed (run ended ${outcome.status})`);
                 },
             };
         },
@@ -87,10 +103,9 @@ const metricsExtension = () =>
 // ── Flow: uses extension-provided context ───────────────────────────
 
 interface SyncShape {
-    events: { "order:fetched": { id: string } };
     params: { source: string };
     provided: {
-        db: { query<TRow>(sql: string): Promise<TRow[]> };
+        db: DbApi;
         metrics: {
             counter(name: string, value?: number): void;
             flush(): Promise<void>;
@@ -101,8 +116,11 @@ interface SyncShape {
 
 const sync = shape<SyncShape>();
 
+// .events<T>() declares the flow's own domain events on the builder. They type
+// context.emit inside the flow; subscribers listen for the bare topic on the bus.
 const syncFlow = sync
     .flow("sync-data")
+    .events<{ "order:fetched": { id: string } }>()
     .state((params) => ({ fetched: 0, source: params.source }))
     .nodes(({ task }) => [
         task({
@@ -110,8 +128,8 @@ const syncFlow = sync
             run: async (context) => {
                 const rows = await context.db.query<{ id: string }>(`SELECT * FROM ${context.params.source}`);
                 context.state.set("fetched", rows.length);
-                // context.emit publishes a flow-domain event declared in SyncShape.events
-                await context.emit("order:fetched", { id: "row-1" }, { correlationId: "trace-001" });
+                // context.emit publishes the flow-domain event declared via .events()
+                context.emit("order:fetched", { id: "row-1" }, { correlationId: "trace-001" });
             },
         }),
         task({
@@ -123,20 +141,26 @@ const syncFlow = sync
         }),
     ]);
 
-// ── Engine: bufferSize for history(), onError for bus failures ──────
+// ── Engine: historyLimit for history(), onError for bus failures ──────
 
 const engine = createEngine({
     events: {
-        bufferSize: 50,
+        historyLimit: 50,
         onError: (error, context) => {
             log(`  [bus error] phase=${context.phase}: ${error.message}`);
         },
     },
 })
+    // Order matters: metrics requires<{ db }>(), so database must come first.
+    // Swapping these two lines is a compile-time error (MissingExtensionDependency).
     .use(databaseExtension({ connectionString: "postgresql://localhost/mydb" }))
     .use(metricsExtension());
 
-// ── Standalone subscriber — reusable, externalizable ────────────────
+// The shared subscriber prints the run/flow/task lifecycle; the custom
+// subscribers below add the bus-specific (extension/domain event) detail.
+subscriber(engine.events);
+
+// ── Standalone subscriber - reusable, externalizable ────────────────
 
 function dbActivitySubscriber(events: EventSubscriber<EngineEvents<typeof engine>>) {
     const subscriptions: Subscription[] = [];
@@ -149,7 +173,7 @@ function dbActivitySubscriber(events: EventSubscriber<EngineEvents<typeof engine
 
     // Wildcard subscription: matches database:connected, database:query, etc.
     subscriptions.push(
-        events.on("database:*", (envelope: FlowEvent) => {
+        events.on("database:*", (envelope: EventEnvelope) => {
             log(`  [db-subscriber] event: ${envelope.topic}`);
         })
     );
@@ -179,22 +203,29 @@ engine.events.on("node:task:ended", (envelope) => log(`  [filtered] task failed:
     name: "failure-monitor",
 });
 
+// flow-domain event declared via .events(): subscribers listen for the bare topic.
+// It isn't in the engine's typed event map, so the payload is cast at the use site.
+engine.events.on("order:fetched", (envelope: EventEnvelope) => {
+    const payload = envelope.payload as { id: string };
+    log(`  [domain] order:fetched id=${payload.id} correlationId=${envelope.correlationId ?? "-"}`);
+});
+
 // once: auto-unsubscribes after first delivery
 engine.events.on("flow:started", (envelope) => log(`  [once] first flow started: ${envelope.flowName}`), {
     once: true,
 });
 
-const temporarySubscription = engine.events.on("flow:*", (envelope: FlowEvent) => {
+const temporarySubscription = engine.events.on("flow:*", (envelope: EventEnvelope) => {
     log(`  [temp] ${envelope.topic} (will unsubscribe after first flow)`);
 });
 
-// Globstar (**): matches any depth — `node:**` captures node:task:started, node:each:ended, etc.
+// Globstar (**): matches any depth - `node:**` captures node:task:started, node:each:ended, etc.
 let nodeEventCount = 0;
 const nodeGlobstar = engine.events.on("node:**", () => {
     nodeEventCount++;
 });
 
-// Intentionally throwing handler — proves EventBusConfig.onError catches handler errors
+// Intentionally throwing handler - proves EventBusConfig.onError catches handler errors
 engine.events.on(
     "flow:started",
     () => {

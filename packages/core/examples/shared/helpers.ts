@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline";
+import type { FlowResult } from "@flowrun/core";
 
 // ── Terminal Input ──────────────────────────────────────────────────
 
@@ -64,6 +65,37 @@ export function log(message: string, ...args: unknown[]): void {
 
 export function title(heading: string): void {
     console.log(`\n=== ${heading} ===\n`);
+}
+
+const RESULT_STATUS_COLORS: Record<string, Color> = {
+    cancelled: "yellow",
+    failed: "red",
+    success: "green",
+};
+
+/**
+ * Prints the generic FlowResult envelope: status, duration, and a one-line
+ * summary per TaskResult. Domain-specific state stays the example's job.
+ */
+export function logResult<TState extends object>(result: FlowResult<TState>): void {
+    const color = RESULT_STATUS_COLORS[result.status] ?? "white";
+    log(`result: ${colorize(color, result.status)} (${result.durationMs}ms, ${result.tasks.length} tasks)`);
+    for (const task of result.tasks) {
+        const tags = [
+            task.ignored ? "ignored" : "",
+            task.reason ? `reason="${task.reason}"` : "",
+            task.iteration ? `item=${JSON.stringify(task.iteration.item)}` : "",
+        ]
+            .filter(Boolean)
+            .join(" ");
+        log(`  ${task.path} -> ${task.status} (attempts=${task.attempts})${tags ? ` ${tags}` : ""}`);
+    }
+    if (result.status === "failed") {
+        log(`  error: ${result.error.message}`);
+    }
+    if (result.status === "cancelled" && result.reason) {
+        log(`  reason: ${result.reason}`);
+    }
 }
 
 // ── Simulated Browser ───────────────────────────────────────────────

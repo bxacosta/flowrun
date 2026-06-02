@@ -6,7 +6,7 @@
  *  - Bottom-up composition: nodes built standalone with shape.task/parallel/each
  *    and assembled into a flow later
  *  - Reusable shape contract shared across every node and the final flow
- *  - merge: "append" across forks — each branch contributes its slice of state
+ *  - merge: "append" across forks - each branch contributes its slice of state
  *
  * Tree structure:
  *   prepare (task)                      <- task at flow level
@@ -24,6 +24,7 @@
 
 import { createEngine, shape } from "@flowrun/core";
 import { delay, log, title } from "./shared/helpers.ts";
+import { subscriber } from "./shared/subscriber.ts";
 
 // ── Shared shape & state ─────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ const initialState = (): PipelineState => ({
     smokeTests: [],
 });
 
-// ── Leaf and container nodes — built bottom-up, each typed by `pipeline` ──
+// ── Leaf and container nodes - built bottom-up, each typed by `pipeline` ──
 
 const prepare = pipeline.task({
     name: "prepare",
@@ -60,7 +61,7 @@ const prepare = pipeline.task({
     },
 });
 
-// each inside parallel — fans out per item
+// each inside parallel - fans out per item
 const compileAll = pipeline.each({
     name: "compileAll",
     items: (context) => context.state.get("modules"),
@@ -77,7 +78,7 @@ const compileAll = pipeline.each({
     ],
 });
 
-// parallel inside parallel — sibling tasks running concurrently
+// parallel inside parallel - sibling tasks running concurrently
 const runLinters = pipeline.parallel({
     name: "runLinters",
     merge: "append",
@@ -140,6 +141,7 @@ const compositionFlow = pipeline.flow("composition").state(initialState).nodes([
 // ── Engine ──────────────────────────────────────────────────────────
 
 const engine = createEngine();
+subscriber(engine.events);
 
 // ── Run ─────────────────────────────────────────────────────────────
 
