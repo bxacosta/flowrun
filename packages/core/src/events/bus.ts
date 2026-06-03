@@ -6,23 +6,29 @@
  */
 
 import { FlowEngineError, normalizeError } from "../core/errors.ts";
+import type { IterationContext } from "../core/types.ts";
 import { assertValidPattern } from "../core/validation.ts";
 import type {
+    AnyEventToken,
     EventEnvelope,
-    EventMap,
     EventSource,
     EventSubscriber,
     OnOptions,
+    PayloadOf,
     Subscription,
     WaitForOptions,
 } from "./types.ts";
+
+export function resolvePattern(tokenOrPattern: AnyEventToken | string): string {
+    return typeof tokenOrPattern === "string" ? tokenOrPattern : tokenOrPattern.topic;
+}
 
 // ── Emit metadata ───────────────────────────────────────────────────
 
 export interface EmitMeta {
     correlationId?: string;
     flowName: string;
-    iteration?: { index: number; item: unknown };
+    iteration?: IterationContext;
     nodeName?: string;
     path?: readonly string[];
     runId: string;
@@ -31,7 +37,7 @@ export interface EmitMeta {
 
 export interface EmitMetaLocation {
     correlationId?: string;
-    iteration?: { index: number; item: unknown };
+    iteration?: IterationContext;
     nodeName?: string;
     path?: readonly string[];
 }
@@ -57,7 +63,7 @@ export function createEmitMeta(
 export type EventBusErrorContext =
     | { event: EventEnvelope; name: string; pattern: string; phase: "filter" }
     | { event: EventEnvelope; name: string; pattern: string; phase: "handler" }
-    | { phase: "waitFor"; timeout: number; topic: string }
+    | { pattern: string; phase: "waitFor"; timeout: number }
     | { definitionName: string; phase: "requestSubscriber"; requestId: string };
 
 export type EventBusErrorHandler = (error: Error, context: EventBusErrorContext) => void;
@@ -69,14 +75,11 @@ export interface EventBusConfig {
 
 // ── Bus interface ───────────────────────────────────────────────────
 
-export interface EventBus<TEvents extends EventMap> extends EventSubscriber<TEvents> {
-    asReadable<TView extends EventMap = TEvents>(): EventSubscriber<TView>;
+export interface EventBus extends EventSubscriber {
+    asReadable(): EventSubscriber;
     clear(): void;
-    emit<K extends keyof TEvents & string>(topic: K, payload: TEvents[K], meta: EmitMeta): void;
+    emit<T extends AnyEventToken>(token: T, payload: PayloadOf<T>, meta: EmitMeta): void;
 }
-
-// biome-ignore lint/suspicious/noExplicitAny: type-erased emitter for runtime use
-export type AnyEventBus = EventBus<any>;
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased handler stored at runtime
 type AnyHandler = (event: EventEnvelope<any>) => void | Promise<void>;
@@ -104,7 +107,7 @@ function patternToRegex(pattern: string): RegExp {
 
 // ── Factory ─────────────────────────────────────────────────────────
 
-export function createEventBus<TEvents extends EventMap>(config: EventBusConfig = {}): EventBus<TEvents> {
+export function createEventBus(config: EventBusConfig = {}): EventBus {
     const handlers: RegisteredHandler[] = [];
     const buffer: EventEnvelope[] = [];
     const maxHistory = config.historyLimit ?? 0;
@@ -208,17 +211,17 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
         return event;
     }
 
-    const bus: EventBus<TEvents> = {
-        asReadable<TView extends EventMap = TEvents>() {
-            return bus as unknown as EventSubscriber<TView>;
+    const bus: EventBus = {
+        asReadable() {
+            return bus;
         },
 
         clear() {
             handlers.length = 0;
         },
 
-        emit(topic, payload, meta) {
-            const event = buildEvent(topic, payload, meta);
+        emit(token, payload, meta) {
+            const event = buildEvent(token.topic, payload, meta);
             if (maxHistory > 0) {
                 buffer.push(event);
                 if (buffer.length > maxHistory) {
@@ -239,19 +242,21 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
             return buffer.filter((event) => regex.test(event.topic));
         },
 
-        on: ((pattern: string, handler: AnyHandler, options?: OnOptions<unknown>): Subscription =>
-            addHandler(pattern, handler, options as OnOptions | undefined)) as EventBus<TEvents>["on"],
+        on: ((
+            tokenOrPattern: AnyEventToken | string,
+            handler: AnyHandler,
+            options?: OnOptions<unknown>
+        ): Subscription =>
+            addHandler(resolvePattern(tokenOrPattern), handler, options as OnOptions | undefined)) as EventBus["on"],
 
-        waitFor<K extends keyof TEvents & string>(
-            topic: K,
-            options: WaitForOptions<TEvents[K]> = {}
-        ): Promise<EventEnvelope<TEvents[K]>> {
+        waitFor: ((tokenOrPattern: AnyEventToken | string, options: WaitForOptions = {}): Promise<EventEnvelope> => {
+            const pattern = resolvePattern(tokenOrPattern);
             const { filter, signal, timeout } = options;
             if (timeout !== undefined && timeout <= 0) {
-                throw new FlowEngineError(`waitFor("${topic}"): timeout must be > 0 (omit it to wait indefinitely)`);
+                throw new FlowEngineError(`waitFor("${pattern}"): timeout must be > 0 (omit it to wait indefinitely)`);
             }
 
-            return new Promise<EventEnvelope<TEvents[K]>>((resolve, reject) => {
+            return new Promise<EventEnvelope>((resolve, reject) => {
                 let settled = false;
                 const subscriberName = `wait_${++nameCounter}`;
 
@@ -271,7 +276,7 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
                     }
                     settled = true;
                     cleanup();
-                    reject(signal?.reason ?? new Error(`waitFor("${topic}") aborted`));
+                    reject(signal?.reason ?? new Error(`waitFor("${pattern}") aborted`));
                 };
 
                 const timer =
@@ -283,8 +288,8 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
                               }
                               settled = true;
                               cleanup();
-                              const error = new Error(`waitFor("${topic}") timed out after ${timeout}ms`);
-                              reportError(error, { phase: "waitFor", timeout, topic });
+                              const error = new Error(`waitFor("${pattern}") timed out after ${timeout}ms`);
+                              reportError(error, { pattern, phase: "waitFor", timeout });
                               reject(error);
                           }, timeout);
 
@@ -294,21 +299,21 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
                         if (timer) {
                             clearTimeout(timer);
                         }
-                        reject(signal.reason ?? new Error(`waitFor("${topic}") aborted`));
+                        reject(signal.reason ?? new Error(`waitFor("${pattern}") aborted`));
                         return;
                     }
                     signal.addEventListener("abort", onAbort, { once: true });
                 }
 
                 const subscription = addHandler(
-                    topic,
+                    pattern,
                     (event) => {
                         if (settled) {
                             return;
                         }
                         settled = true;
                         cleanup();
-                        resolve(event as EventEnvelope<TEvents[K]>);
+                        resolve(event);
                     },
                     {
                         filter: filter as ((event: EventEnvelope) => boolean) | undefined,
@@ -317,7 +322,7 @@ export function createEventBus<TEvents extends EventMap>(config: EventBusConfig 
                     }
                 );
             });
-        },
+        }) as EventBus["waitFor"],
     };
 
     return bus;

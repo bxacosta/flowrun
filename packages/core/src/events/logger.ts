@@ -5,8 +5,9 @@
  * carrying the current flow/run/node scope.
  */
 
-import type { AnyEventBus } from "./bus.ts";
-import type { EventSource, LogLevel } from "./types.ts";
+import type { IterationContext } from "../core/types.ts";
+import type { EventBus } from "./bus.ts";
+import { type EventSource, type LogLevel, systemEvents } from "./types.ts";
 
 export interface Logger {
     debug(message: string, data?: unknown): void;
@@ -16,9 +17,9 @@ export interface Logger {
 }
 
 export interface LoggerScope {
-    bus: AnyEventBus;
+    bus: EventBus;
     flowName: string;
-    iteration?: { index: number; item: unknown };
+    iteration?: IterationContext;
     nodeName?: string;
     path?: readonly string[];
     runId: string;
@@ -28,7 +29,7 @@ export interface LoggerScope {
 export function createLogger(scope: LoggerScope): Logger {
     const write = (level: LogLevel, message: string, data?: unknown): void => {
         const payload = data === undefined ? { level, message } : { data, level, message };
-        scope.bus.emit("log", payload, {
+        scope.bus.emit(systemEvents.log, payload, {
             flowName: scope.flowName,
             iteration: scope.iteration,
             nodeName: scope.nodeName,

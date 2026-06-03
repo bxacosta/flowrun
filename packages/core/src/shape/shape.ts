@@ -5,16 +5,11 @@
  * provided context, iteration) and the combinators that extend it.
  */
 
-import type { EmptyObject, MergeObjects } from "../core/types.ts";
-import type { EventMap } from "../events/types.ts";
-
-export interface IterationContext<TItem> {
-    index: number;
-    item: TItem;
-}
+import type { EmptyObject, IterationContext, MergeObjects } from "../core/types.ts";
+import type { AnyEventToken } from "../events/types.ts";
 
 export interface Shape {
-    events?: EventMap;
+    events?: AnyEventToken;
     iteration?: unknown;
     params?: object;
     provided?: object;
@@ -32,7 +27,7 @@ export type ProvidedOf<TShape extends Shape> = TShape extends { provided: infer 
 
 export type IterationOf<TShape extends Shape> = TShape extends { iteration: infer I } ? I : never;
 
-export type EventsOf<TShape extends Shape> = TShape extends { events: infer E extends EventMap } ? E : EmptyObject;
+export type EventsOf<TShape extends Shape> = TShape extends { events: infer E extends AnyEventToken } ? E : never;
 
 type Equals<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
@@ -42,8 +37,8 @@ export type WithParams<TShape extends Shape, TParams extends object> =
 export type WithState<TShape extends Shape, TState extends object> =
     Equals<TState, StateOf<TShape>> extends true ? TShape : Omit<TShape, "state"> & { state: TState };
 
-export type WithEvents<TShape extends Shape, TEvents extends EventMap> = Omit<TShape, "events"> & {
-    events: MergeObjects<EventsOf<TShape>, TEvents>;
+export type WithEvents<TShape extends Shape, TToken extends AnyEventToken> = Omit<TShape, "events"> & {
+    events: EventsOf<TShape> | TToken;
 };
 
 export type WithProvided<TShape extends Shape, TLocal extends object> = Omit<TShape, "provided"> & {

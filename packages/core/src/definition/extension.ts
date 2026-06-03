@@ -1,31 +1,20 @@
 /**
  * definition/extension.ts — Extension definition & markers
  *
- * Layer: L3 (definition). The `extension()` factory plus the `event()` and
- * `requires()` type markers used to declare an extension's public events and
- * its required (provided-by-others) context.
+ * Layer: L3 (definition). The `extension()` factory plus the `requires()` type
+ * marker. An extension declares the event tokens it may emit and the context it
+ * requires from extensions installed before it.
  */
 
 import type { Outcome } from "../core/status.ts";
 import type { EmptyObject, MaybePromise } from "../core/types.ts";
-import { assertValidName, assertValidTopicKey } from "../core/validation.ts";
+import { assertValidName } from "../core/validation.ts";
 import type { Logger } from "../events/logger.ts";
-import type { EmitFn, EventMap, EventSubscriber, RuntimeEvents } from "../events/types.ts";
+import type { AnyEventToken, EmitFn, EventSubscriber } from "../events/types.ts";
 
-declare const eventPayloadBrand: unique symbol;
 declare const requiredBrand: unique symbol;
 
 // ── Markers ─────────────────────────────────────────────────────────
-
-export interface EventMarker<TPayload = unknown> {
-    readonly [eventPayloadBrand]: TPayload;
-}
-
-export function event<TPayload = undefined>(): EventMarker<TPayload> {
-    return undefined as unknown as EventMarker<TPayload>;
-}
-
-export type EventDefinitions = Record<string, EventMarker>;
 
 export interface RequiresMarker<TRequired extends object> {
     readonly [requiredBrand]: TRequired;
@@ -35,17 +24,7 @@ export function requires<TRequired extends object>(): RequiresMarker<TRequired> 
     return undefined as unknown as RequiresMarker<TRequired>;
 }
 
-// ── Type derivation ─────────────────────────────────────────────────
-
 export type UnwrapRequires<TMarker> = TMarker extends RequiresMarker<infer TRequired> ? TRequired : EmptyObject;
-
-export type UnwrapEvents<TDefinitions extends EventDefinitions> = {
-    [K in keyof TDefinitions & string]: TDefinitions[K] extends EventMarker<infer P> ? P : never;
-};
-
-export type Prefixed<TName extends string, TEvents extends EventMap> = {
-    [K in keyof TEvents & string as `${TName}:${K}`]: TEvents[K];
-};
 
 // ── Setup contract ──────────────────────────────────────────────────
 
@@ -56,47 +35,34 @@ export interface ExtensionSetupResult<TContext extends object> {
     provided?: TContext;
 }
 
-export interface ExtensionSetupContext<
-    TRequired extends object,
-    TOwnShortEvents extends EventMap,
-    TAllEvents extends EventMap,
-> {
-    emit: EmitFn<TOwnShortEvents>;
+export interface ExtensionSetupContext<TRequired extends object, TEmit extends AnyEventToken> {
+    emit: EmitFn<TEmit>;
     flowName: string;
-    history: EventSubscriber<TAllEvents>["history"];
+    history: EventSubscriber["history"];
     log: Logger;
-    on: EventSubscriber<TAllEvents>["on"];
+    on: EventSubscriber["on"];
     provided: TRequired;
     runId: string;
     signal: AbortSignal;
-    waitFor: EventSubscriber<TAllEvents>["waitFor"];
+    waitFor: EventSubscriber["waitFor"];
 }
 
 export interface ExtensionConfig<
     TName extends string,
     TRequires extends RequiresMarker<object> | undefined,
-    TEvents extends EventDefinitions,
+    TEvents extends readonly AnyEventToken[],
     TContext extends object,
 > {
     events?: TEvents;
     name: TName;
     requires?: TRequires;
     setup: (
-        context: ExtensionSetupContext<
-            UnwrapRequires<TRequires>,
-            UnwrapEvents<TEvents>,
-            RuntimeEvents & Prefixed<TName, UnwrapEvents<TEvents>>
-        >
+        context: ExtensionSetupContext<UnwrapRequires<TRequires>, TEvents[number]>
     ) => MaybePromise<ExtensionSetupResult<TContext>>;
 }
 
-export interface ExtensionDefinition<
-    TRequired extends object = EmptyObject,
-    TContext extends object = EmptyObject,
-    TEvents extends EventMap = EmptyObject,
-> {
+export interface ExtensionDefinition<TRequired extends object = EmptyObject, TContext extends object = EmptyObject> {
     readonly _context?: TContext;
-    readonly _events?: TEvents;
     readonly _required?: TRequired;
     readonly name: string;
     readonly setup: AnyExtensionSetup;
@@ -104,36 +70,28 @@ export interface ExtensionDefinition<
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased extension for runtime registries
-export type AnyExtensionDefinition = ExtensionDefinition<any, any, any>;
+export type AnyExtensionDefinition = ExtensionDefinition<any, any>;
 
 // biome-ignore lint/suspicious/noExplicitAny: typed at the extension factory boundary
 export type AnyExtensionSetup = (context: any) => MaybePromise<ExtensionSetupResult<object>>;
 
 export type ExtensionRequired<TDefinition> =
-    TDefinition extends ExtensionDefinition<infer TRequired, object, EventMap> ? TRequired : EmptyObject;
+    TDefinition extends ExtensionDefinition<infer TRequired, object> ? TRequired : EmptyObject;
 
 export type ExtensionProvided<TDefinition> =
-    TDefinition extends ExtensionDefinition<object, infer TContext, EventMap> ? TContext : EmptyObject;
-
-export type ExtensionEvents<TDefinition> =
-    TDefinition extends ExtensionDefinition<object, object, infer TEvents> ? TEvents : EmptyObject;
+    TDefinition extends ExtensionDefinition<object, infer TContext> ? TContext : EmptyObject;
 
 // ── Factory ─────────────────────────────────────────────────────────
 
 export function extension<
     const TName extends string,
     TRequires extends RequiresMarker<object> | undefined,
-    TEvents extends EventDefinitions,
-    TContext extends object,
+    TEvents extends readonly AnyEventToken[] = readonly [],
+    TContext extends object = EmptyObject,
 >(
     config: ExtensionConfig<TName, TRequires, TEvents, TContext>
-): ExtensionDefinition<UnwrapRequires<TRequires>, TContext, Prefixed<TName, UnwrapEvents<TEvents>>> {
+): ExtensionDefinition<UnwrapRequires<TRequires>, TContext> {
     assertValidName("extension", config.name);
-    if (config.events) {
-        for (const key of Object.keys(config.events)) {
-            assertValidTopicKey(key);
-        }
-    }
     return {
         type: "extension",
         name: config.name,

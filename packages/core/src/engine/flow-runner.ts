@@ -12,18 +12,21 @@ import type { FlowStatus, Outcome, TerminalFlowStatus } from "../core/status.ts"
 import { assertPlainObject } from "../core/validation.ts";
 import type { AnyExtensionDefinition, ExtensionDispose } from "../definition/extension.ts";
 import type { AnyFlowDefinition, FlowDefinition } from "../definition/flow.ts";
-import { type AnyEventBus, createEmitMeta, type EmitMeta } from "../events/bus.ts";
+import { createEmitMeta, type EmitMeta, type EventBus, resolvePattern } from "../events/bus.ts";
 import { createLogger, type Logger } from "../events/logger.ts";
-import type {
-    EmitFn,
-    EmitOptions,
-    EventEnvelope,
-    EventMap,
-    EventSource,
-    EventSubscriber,
-    OnOptions,
-    Subscription,
-    WaitForOptions,
+import {
+    type AnyEventToken,
+    type EmitFn,
+    type EmitOptions,
+    type EventEnvelope,
+    type EventSource,
+    type EventSubscriber,
+    type EventToken,
+    type OnOptions,
+    type PayloadOf,
+    type Subscription,
+    systemEvents,
+    type WaitForOptions,
 } from "../events/types.ts";
 import type { ParamsOf, Shape } from "../shape/shape.ts";
 import { createStateStore } from "../state/store.ts";
@@ -64,7 +67,7 @@ export interface Flow<TParams extends object, TState extends object> {
 export type AnyFlow = Flow<any, any>;
 
 export interface FlowRunArgs<TShape extends Shape = Shape> {
-    bus: AnyEventBus;
+    bus: EventBus;
     extensions: readonly AnyExtensionDefinition[];
     flow: FlowDefinition<TShape>;
     params: Readonly<ParamsOf<TShape>>;
@@ -91,7 +94,7 @@ function isTerminalFlowStatus(status: FlowStatus): boolean {
 // ── Extension setup/teardown ────────────────────────────────────────
 
 function buildExtensionSetupContext(args: {
-    bus: AnyEventBus;
+    bus: EventBus;
     definition: AnyExtensionDefinition;
     flowName: string;
     provided: Record<string, unknown>;
@@ -103,24 +106,25 @@ function buildExtensionSetupContext(args: {
     const buildMeta = (correlationId?: string): EmitMeta =>
         createEmitMeta(source, { flowName: args.flowName, runId: args.runId }, { correlationId });
 
-    const emit: EmitFn<EventMap> = ((topic: string, payload?: unknown, options?: EmitOptions): void => {
-        args.bus.emit(`${args.definition.name}:${topic}`, payload, buildMeta(options?.correlationId));
-    }) as EmitFn<EventMap>;
+    const emit = ((token: AnyEventToken, payload?: unknown, options?: EmitOptions): void => {
+        args.bus.emit(token, payload as never, buildMeta(options?.correlationId));
+    }) as EmitFn<AnyEventToken>;
 
-    const on: EventSubscriber<EventMap>["on"] = ((
-        pattern: string,
-        handler: (event: EventEnvelope<unknown>) => void | Promise<void>,
-        options?: OnOptions<unknown>
+    const on: EventSubscriber["on"] = ((
+        tokenOrPattern: AnyEventToken | string,
+        handler: (event: EventEnvelope) => void | Promise<void>,
+        options?: OnOptions
     ): Subscription => {
-        const sub = args.bus.on(pattern, handler, options);
+        const sub = args.bus.on(tokenOrPattern as AnyEventToken, handler, options);
         args.tracked.push(sub);
         return sub;
-    }) as EventSubscriber<EventMap>["on"];
+    }) as EventSubscriber["on"];
 
-    const waitFor: EventSubscriber<EventMap>["waitFor"] = <K extends string>(
-        topic: K,
-        options?: WaitForOptions<unknown>
-    ): Promise<EventEnvelope<unknown>> => {
+    const waitFor: EventSubscriber["waitFor"] = ((
+        tokenOrPattern: AnyEventToken | string,
+        options?: WaitForOptions
+    ): Promise<EventEnvelope> => {
+        const topic = resolvePattern(tokenOrPattern);
         const signals: AbortSignal[] = [args.signal];
         if (options?.signal) {
             signals.push(options.signal);
@@ -131,7 +135,7 @@ function buildExtensionSetupContext(args: {
         const disposeController = new AbortController();
         signals.push(disposeController.signal);
 
-        const promise = args.bus.waitFor(topic, {
+        const promise = args.bus.waitFor(tokenOrPattern as AnyEventToken, {
             filter: options?.filter,
             signal: AbortSignal.any(signals),
             timeout: options?.timeout,
@@ -142,7 +146,7 @@ function buildExtensionSetupContext(args: {
             unsubscribe: () => disposeController.abort(new Error(`waitFor("${topic}") disposed at run end`)),
         });
         return promise;
-    };
+    }) as EventSubscriber["waitFor"];
 
     return {
         emit,
@@ -163,7 +167,7 @@ function buildExtensionSetupContext(args: {
 }
 
 async function setupExtensions(args: {
-    bus: AnyEventBus;
+    bus: EventBus;
     extensions: readonly AnyExtensionDefinition[];
     flowName: string;
     logger: Logger;
@@ -235,7 +239,7 @@ async function teardownExtensions(
 // ── Pipeline ────────────────────────────────────────────────────────
 
 interface PipelineArgs {
-    bus: AnyEventBus;
+    bus: EventBus;
     cancellation: CancellationState;
     controller: AbortController;
     executionContext: ExecutionContext;
@@ -251,15 +255,15 @@ interface PipelineOutcome {
     result: AnyFlowResult;
 }
 
-async function withScope(
-    bus: AnyEventBus,
-    scope: string,
+async function withScope<TPayload>(
+    bus: EventBus,
+    tokens: { ended: EventToken<TPayload>; started: EventToken<undefined> },
     meta: EmitMeta,
     body: () => Promise<void>,
-    toEnded: (durationMs: number, error: unknown) => Record<string, unknown>
+    toEnded: (durationMs: number, error: unknown) => NoInfer<TPayload>
 ): Promise<void> {
     const start = Date.now();
-    bus.emit(`${scope}:started`, undefined, meta);
+    bus.emit(tokens.started, undefined, meta);
     let failure: unknown;
     let failed = false;
     try {
@@ -268,7 +272,7 @@ async function withScope(
         failure = error;
         failed = true;
     }
-    bus.emit(`${scope}:ended`, toEnded(Date.now() - start, failed ? failure : undefined), meta);
+    bus.emit(tokens.ended, toEnded(Date.now() - start, failed ? failure : undefined), meta);
     if (failed) {
         throw failure;
     }
@@ -293,13 +297,13 @@ async function runPipeline(args: PipelineArgs): Promise<PipelineOutcome> {
         await compose(flow.middleware, flowContext, () =>
             withScope(
                 bus,
-                "flow",
+                { ended: systemEvents.flow.ended, started: systemEvents.flow.started },
                 meta(),
                 async () => {
                     onPipelineStart();
                     await executeNodes(flow.nodes, executionContext, state, controller.signal);
                 },
-                (durationMs, error) => {
+                (durationMs, error): PayloadOf<typeof systemEvents.flow.ended> => {
                     if (!error) {
                         return { durationMs, status: "success" };
                     }
@@ -331,19 +335,23 @@ async function runPipeline(args: PipelineArgs): Promise<PipelineOutcome> {
 }
 
 function emitRunEnded(
-    bus: AnyEventBus,
+    bus: EventBus,
     meta: EmitMeta,
     runDurationMs: number,
     status: TerminalFlowStatus,
     detail: { error?: Error; reason?: string }
 ): void {
     if (status === "success") {
-        bus.emit("run:ended", { durationMs: runDurationMs, status: "success" }, meta);
+        bus.emit(systemEvents.run.ended, { durationMs: runDurationMs, status: "success" }, meta);
     } else if (status === "cancelled") {
-        bus.emit("run:ended", { durationMs: runDurationMs, reason: detail.reason, status: "cancelled" }, meta);
+        bus.emit(
+            systemEvents.run.ended,
+            { durationMs: runDurationMs, reason: detail.reason, status: "cancelled" },
+            meta
+        );
     } else {
         bus.emit(
-            "run:ended",
+            systemEvents.run.ended,
             { durationMs: runDurationMs, error: detail.error ?? new Error("unknown failure"), status: "failed" },
             meta
         );
@@ -376,7 +384,7 @@ export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>)
     const pauseGate = new PauseGate();
     const runMeta: EmitMeta = { flowName, runId, source: "runtime" };
 
-    bus.emit("run:started", undefined, runMeta);
+    bus.emit(systemEvents.run.started, undefined, runMeta);
 
     let instances: ExtensionInstance[];
     let provided: Record<string, unknown>;
@@ -426,7 +434,7 @@ export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>)
     const applyPause = () => {
         currentStatus = "paused";
         pauseGate.pause();
-        bus.emit("flow:paused", undefined, runMeta);
+        bus.emit(systemEvents.flow.paused, undefined, runMeta);
     };
 
     const pipelinePromise = runPipeline({
@@ -503,7 +511,7 @@ export async function startFlow<TShape extends Shape>(args: FlowRunArgs<TShape>)
             }
             currentStatus = "running";
             pauseGate.resume();
-            bus.emit("flow:resumed", undefined, runMeta);
+            bus.emit(systemEvents.flow.resumed, undefined, runMeta);
         },
         runId,
         status() {

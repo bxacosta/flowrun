@@ -6,6 +6,7 @@
  */
 
 import { FlowEngineError, normalizeError } from "../core/errors.ts";
+import type { IterationContext } from "../core/types.ts";
 import { assertPlainObject } from "../core/validation.ts";
 import {
     type AnyPendingRequest,
@@ -27,13 +28,14 @@ import {
     type RequestSubscription,
     type TerminalRequestStatus,
 } from "../definition/request.ts";
-import type { AnyEventBus, EmitMeta, EventBusErrorHandler } from "../events/bus.ts";
+import type { EmitMeta, EventBus, EventBusErrorHandler } from "../events/bus.ts";
+import { systemEvents } from "../events/types.ts";
 
 export interface OpenRequestArgs<TPayload, TResponse> {
     attempt?: number;
     definition: RequestDefinition<TPayload, TResponse>;
     flowName: string;
-    iteration?: { index: number; item: unknown };
+    iteration?: IterationContext;
     nodeName?: string;
     options?: RequestOptions;
     path: readonly string[];
@@ -132,7 +134,7 @@ function basePayload(record: AnyRequestRecord): {
 
 // ── Factory ─────────────────────────────────────────────────────────
 
-export function createRequestManager(bus: AnyEventBus, onError?: EventBusErrorHandler): RequestManager {
+export function createRequestManager(bus: EventBus, onError?: EventBusErrorHandler): RequestManager {
     const records = new Map<string, AnyRequestRecord>();
     const pending = new Map<string, PendingEntry>();
     const idempotency = new Map<string, string>();
@@ -235,7 +237,7 @@ export function createRequestManager(bus: AnyEventBus, onError?: EventBusErrorHa
             return Promise.resolve();
         }
         const safe = safelyRedact(transitioned.record, transitioned.entry.definition);
-        bus.emit("request:cancelled", { ...basePayload(safe), reason: safe.reason }, recordToMeta(safe));
+        bus.emit(systemEvents.request.cancelled, { ...basePayload(safe), reason: safe.reason }, recordToMeta(safe));
         transitioned.entry.reject(new RequestCancelledError(transitioned.record.name, id, reason));
         return Promise.resolve();
     }
@@ -252,7 +254,7 @@ export function createRequestManager(bus: AnyEventBus, onError?: EventBusErrorHa
         }
         const safe = safelyRedact(transitioned.record, transitioned.entry.definition);
         bus.emit(
-            "request:expired",
+            systemEvents.request.expired,
             { ...basePayload(safe), expiresAt: safe.expiresAt ?? Date.now() },
             recordToMeta(safe)
         );
@@ -296,7 +298,7 @@ export function createRequestManager(bus: AnyEventBus, onError?: EventBusErrorHa
         }
         const safe = safelyRedact(transitioned.record, definition);
         bus.emit(
-            "request:resolved",
+            systemEvents.request.resolved,
             { ...basePayload(safe), response: safe.response, responseMetadata: safe.responseMetadata },
             recordToMeta(safe)
         );
@@ -439,7 +441,7 @@ export function createRequestManager(bus: AnyEventBus, onError?: EventBusErrorHa
 
         const safe = safelyRedact(record, args.definition);
         bus.emit(
-            "request:created",
+            systemEvents.request.created,
             { ...basePayload(safe), expiresAt: safe.expiresAt, metadata: safe.metadata, payload: safe.payload },
             recordToMeta(safe)
         );

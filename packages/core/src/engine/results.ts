@@ -5,12 +5,14 @@
  * the per-task {@link TaskResult} entries collected along the way.
  */
 
+import type { IterationContext } from "../core/types.ts";
+
 export interface TaskResult {
     attempts: number;
     durationMs: number;
     error?: Error;
     ignored: boolean;
-    iteration?: { index: number; item: unknown };
+    iteration?: IterationContext;
     nodeName: string;
     path: string;
     reason?: string;

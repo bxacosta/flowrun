@@ -7,7 +7,7 @@
  */
 
 import { FlowEngineError } from "../core/errors.ts";
-import type { MaybePromise } from "../core/types.ts";
+import type { IterationContext, MaybePromise } from "../core/types.ts";
 import { assertValidName } from "../core/validation.ts";
 
 // ── Status ──────────────────────────────────────────────────────────
@@ -30,7 +30,7 @@ export interface RequestRecord<TPayload = unknown, TResponse = unknown> {
     readonly flowName: string;
     readonly id: string;
     readonly idempotencyKey?: string;
-    readonly iteration?: { index: number; item: unknown };
+    readonly iteration?: IterationContext;
     readonly metadata?: Record<string, unknown>;
     readonly name: string;
     readonly nodeName?: string;
@@ -80,7 +80,7 @@ export interface PendingRequest<TPayload, TResponse> {
     readonly flowName: string;
     readonly id: string;
     readonly idempotencyKey?: string;
-    readonly iteration?: { index: number; item: unknown };
+    readonly iteration?: IterationContext;
     readonly metadata?: Record<string, unknown>;
     readonly name: string;
     readonly nodeName?: string;

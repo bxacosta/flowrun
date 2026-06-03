@@ -14,6 +14,7 @@ import {
 import { FlowEngineError, normalizeError } from "../core/errors.ts";
 import { SkipSignal } from "../core/signals.ts";
 import type { Outcome } from "../core/status.ts";
+import type { IterationContext } from "../core/types.ts";
 import { assertPlainObject } from "../core/validation.ts";
 import type {
     AnyDispose,
@@ -28,6 +29,7 @@ import type {
     TaskNodeDefinition,
 } from "../definition/node.ts";
 import { createEmitMeta, type EmitMeta } from "../events/bus.ts";
+import { systemEvents } from "../events/types.ts";
 import { type ForkEntry, mergeForkedStores } from "../state/store.ts";
 import type { AnyFlowStateStore, MergeStrategy } from "../state/types.ts";
 import { compose } from "./compose.ts";
@@ -55,7 +57,7 @@ export class InvalidItemsError extends FlowEngineError {
 function runtimeMeta(
     runtime: FlowRuntime,
     location: {
-        iteration?: { index: number; item: unknown };
+        iteration?: IterationContext;
         nodeName?: string;
         path?: readonly string[];
     }
@@ -85,7 +87,7 @@ function recordTaskResult(
     ignored: boolean,
     error: Error | null,
     reason: string | undefined,
-    iteration?: { index: number; item: unknown }
+    iteration?: IterationContext
 ): void {
     const result: TaskResult = {
         attempts,
@@ -116,7 +118,7 @@ async function runSingleAttempt(
     signal: AbortSignal,
     pathSegments: readonly string[],
     attempt: number,
-    iteration?: { index: number; item: unknown }
+    iteration?: IterationContext
 ): Promise<AttemptOutcome> {
     signal.throwIfAborted();
 
@@ -125,13 +127,13 @@ async function runSingleAttempt(
     const meta = runtimeMeta(runtime, { iteration, nodeName: node.name, path: pathSegments });
     const attemptStart = Date.now();
 
-    bus.emit("node:task:attempt:started", { attempt }, meta);
+    bus.emit(systemEvents.node.task.attempt.started, { attempt }, meta);
 
     try {
         const context = buildTaskContext(runtime, state, signal, pathSegments, node.name, attempt, iteration);
         await compose(node.middleware, context, () => node.run(context));
         bus.emit(
-            "node:task:attempt:ended",
+            systemEvents.node.task.attempt.ended,
             { attempt, durationMs: Date.now() - attemptStart, status: "success" },
             meta
         );
@@ -139,7 +141,7 @@ async function runSingleAttempt(
     } catch (error) {
         if (error instanceof SkipSignal) {
             bus.emit(
-                "node:task:attempt:ended",
+                systemEvents.node.task.attempt.ended,
                 { attempt, durationMs: Date.now() - attemptStart, reason: error.reason, status: "skipped" },
                 meta
             );
@@ -147,7 +149,7 @@ async function runSingleAttempt(
         }
         const normalized = normalizeError(error);
         bus.emit(
-            "node:task:attempt:ended",
+            systemEvents.node.task.attempt.ended,
             { attempt, durationMs: Date.now() - attemptStart, error: normalized, status: "failed" },
             meta
         );
@@ -162,7 +164,7 @@ async function runAttemptLoop(
     signal: AbortSignal,
     pathSegments: readonly string[],
     maxAttempts: number,
-    iteration?: { index: number; item: unknown }
+    iteration?: IterationContext
 ): Promise<{ attempts: number; outcome: AttemptOutcome }> {
     const { bus } = executionContext.runtime;
     const meta = runtimeMeta(executionContext.runtime, { iteration, nodeName: node.name, path: pathSegments });
@@ -188,7 +190,7 @@ async function runAttemptLoop(
             }
 
             const nextDelayMs = computeRetryDelay(node.retry, attempt);
-            bus.emit("node:task:retried", { attempt, error: outcome.error, nextDelayMs }, meta);
+            bus.emit(systemEvents.node.task.retried, { attempt, error: outcome.error, nextDelayMs }, meta);
             await sleepWithSignal(nextDelayMs, signal);
             await executionContext.pauseGate.waitIfPaused();
         }
@@ -204,7 +206,7 @@ async function executeTask(
     executionContext: ExecutionContext,
     state: AnyFlowStateStore,
     signal: AbortSignal,
-    iteration?: { index: number; item: unknown }
+    iteration?: IterationContext
 ): Promise<void> {
     const { runtime } = executionContext;
     const { bus } = runtime;
@@ -214,7 +216,7 @@ async function executeTask(
     const maxAttempts = node.retry?.maxAttempts ?? 1;
     const taskStart = Date.now();
 
-    bus.emit("node:task:started", { maxAttempts }, meta);
+    bus.emit(systemEvents.node.task.started, { maxAttempts }, meta);
 
     const { attempts, outcome } = await runAttemptLoop(
         node,
@@ -228,7 +230,7 @@ async function executeTask(
     const durationMs = Date.now() - taskStart;
 
     if (outcome.status === "success") {
-        bus.emit("node:task:ended", { attempts, durationMs, ignored: false, status: "success" }, meta);
+        bus.emit(systemEvents.node.task.ended, { attempts, durationMs, ignored: false, status: "success" }, meta);
         recordTaskResult(
             executionContext.progress,
             node,
@@ -246,7 +248,7 @@ async function executeTask(
 
     if (outcome.status === "skipped") {
         bus.emit(
-            "node:task:ended",
+            systemEvents.node.task.ended,
             { attempts, durationMs, ignored: false, reason: outcome.reason, status: "skipped" },
             meta
         );
@@ -267,7 +269,7 @@ async function executeTask(
 
     if (!signal.aborted && node.onError === "ignore") {
         bus.emit(
-            "node:task:ended",
+            systemEvents.node.task.ended,
             { attempts, durationMs, error: outcome.error, ignored: true, status: "failed" },
             meta
         );
@@ -286,7 +288,11 @@ async function executeTask(
         return;
     }
 
-    bus.emit("node:task:ended", { attempts, durationMs, error: outcome.error, ignored: false, status: "failed" }, meta);
+    bus.emit(
+        systemEvents.node.task.ended,
+        { attempts, durationMs, error: outcome.error, ignored: false, status: "failed" },
+        meta
+    );
     recordTaskResult(
         executionContext.progress,
         node,
@@ -318,7 +324,7 @@ async function withLocalProvided(
     provide: AnyProvide | undefined,
     dispose: AnyDispose | undefined,
     meta: unknown,
-    iteration: { index: number; item: unknown } | undefined,
+    iteration: IterationContext | undefined,
     execute: (runtime: FlowRuntime) => Promise<void>
 ): Promise<void> {
     let branchRuntime = executionContext.runtime;
@@ -406,7 +412,7 @@ async function executeParallel(
     executionContext: ExecutionContext,
     state: AnyFlowStateStore,
     signal: AbortSignal,
-    iteration?: { index: number; item: unknown }
+    iteration?: IterationContext
 ): Promise<void> {
     const { runtime } = executionContext;
     const { bus } = runtime;
@@ -414,7 +420,7 @@ async function executeParallel(
     const meta = runtimeMeta(runtime, { iteration, nodeName: node.name, path: containerPathSegments });
     const parallelStart = Date.now();
 
-    bus.emit("node:parallel:started", undefined, meta);
+    bus.emit(systemEvents.node.parallel.started, undefined, meta);
 
     const { cleanup, controller } = createChildController(signal);
 
@@ -473,11 +479,11 @@ async function executeParallel(
         const durationMs = Date.now() - parallelStart;
 
         if (outcome.errors.length === 0) {
-            bus.emit("node:parallel:ended", { durationMs, status: "success" }, meta);
+            bus.emit(systemEvents.node.parallel.ended, { durationMs, status: "success" }, meta);
         } else if (node.onError === "ignore") {
-            bus.emit("node:parallel:ended", { durationMs, errors: outcome.errors, status: "success" }, meta);
+            bus.emit(systemEvents.node.parallel.ended, { durationMs, errors: outcome.errors, status: "success" }, meta);
         } else {
-            bus.emit("node:parallel:ended", { durationMs, errors: outcome.errors, status: "failed" }, meta);
+            bus.emit(systemEvents.node.parallel.ended, { durationMs, errors: outcome.errors, status: "failed" }, meta);
             throw outcome.errors[0];
         }
     } finally {
@@ -490,7 +496,7 @@ async function executeEach(
     executionContext: ExecutionContext,
     state: AnyFlowStateStore,
     signal: AbortSignal,
-    iteration?: { index: number; item: unknown }
+    iteration?: IterationContext
 ): Promise<void> {
     const { runtime } = executionContext;
     const { bus } = runtime;
@@ -505,7 +511,7 @@ async function executeEach(
     }
 
     const eachStart = Date.now();
-    bus.emit("node:each:started", { totalItems: items.length }, meta);
+    bus.emit(systemEvents.node.each.started, { totalItems: items.length }, meta);
 
     const { cleanup, controller } = createChildController(signal);
 
@@ -567,10 +573,10 @@ async function executeEach(
         const durationMs = Date.now() - eachStart;
 
         if (outcome.errors.length === 0) {
-            bus.emit("node:each:ended", { durationMs, status: "success", totalItems: items.length }, meta);
+            bus.emit(systemEvents.node.each.ended, { durationMs, status: "success", totalItems: items.length }, meta);
         } else if (node.onError === "ignore") {
             bus.emit(
-                "node:each:ended",
+                systemEvents.node.each.ended,
                 {
                     durationMs,
                     errors: outcome.errors,
@@ -582,7 +588,7 @@ async function executeEach(
             );
         } else {
             bus.emit(
-                "node:each:ended",
+                systemEvents.node.each.ended,
                 { durationMs, errors: outcome.errors, status: "failed", totalItems: items.length },
                 meta
             );
@@ -600,7 +606,7 @@ async function executeNode(
     executionContext: ExecutionContext,
     state: AnyFlowStateStore,
     signal: AbortSignal,
-    iteration?: { index: number; item: unknown }
+    iteration?: IterationContext
 ): Promise<void> {
     signal.throwIfAborted();
 
@@ -624,7 +630,7 @@ export async function executeNodes(
     executionContext: ExecutionContext,
     state: AnyFlowStateStore,
     signal: AbortSignal,
-    iteration?: { index: number; item: unknown }
+    iteration?: IterationContext
 ): Promise<void> {
     for (const node of nodes) {
         await executionContext.pauseGate.waitIfPaused();

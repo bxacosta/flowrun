@@ -6,7 +6,7 @@
  */
 
 import { assertUniqueNodeNames, assertValidName } from "../core/validation.ts";
-import type { EventMap } from "../events/types.ts";
+import type { AnyEventToken } from "../events/types.ts";
 import type { ParamsOf, Shape, WithEvents, WithParams, WithState } from "../shape/shape.ts";
 import type { FlowContext } from "./context-types.ts";
 import type { AnyMiddleware, Middleware } from "./middleware.ts";
@@ -30,7 +30,9 @@ export type AnyFlowDefinition = FlowDefinition<any>;
 // ── Builder ─────────────────────────────────────────────────────────
 
 export interface FlowBuilder<TShape extends Shape> {
-    emits<TEvents extends EventMap>(): FlowBuilder<WithEvents<TShape, TEvents>>;
+    events<const TTokens extends readonly AnyEventToken[]>(
+        tokens: TTokens
+    ): FlowBuilder<WithEvents<TShape, TTokens[number]>>;
     middleware(list: NoInfer<Middleware<FlowContext<TShape>>>[]): FlowBuilder<TShape>;
     nodes(spec: NodesSpec<TShape>): FlowDefinition<TShape>;
     params<TParams extends object>(): FlowBuilder<WithParams<TShape, TParams>>;
@@ -47,8 +49,8 @@ interface BuilderState {
 
 function instantiate<TShape extends Shape>(state: BuilderState): FlowBuilder<TShape> {
     return {
-        emits<TEvents extends EventMap>() {
-            return instantiate<WithEvents<TShape, TEvents>>(state);
+        events<const TTokens extends readonly AnyEventToken[]>(_tokens: TTokens) {
+            return instantiate<WithEvents<TShape, TTokens[number]>>(state);
         },
 
         middleware(list) {

@@ -10,7 +10,7 @@
 export { FlowEngineError, normalizeError } from "./core/errors.ts";
 export { FlowCancellationSignal, SkipSignal } from "./core/signals.ts";
 export type { FlowStatus, Outcome, TerminalFlowStatus } from "./core/status.ts";
-export type { EmptyObject, MaybePromise } from "./core/types.ts";
+export type { EmptyObject, IterationContext, MaybePromise } from "./core/types.ts";
 export {
     DuplicateNodeNameError,
     InvalidNameError,
@@ -26,22 +26,17 @@ export type {
     TaskContext,
 } from "./definition/context-types.ts";
 export type {
-    EventDefinitions,
-    EventMarker,
     ExtensionConfig,
     ExtensionDefinition,
     ExtensionDispose,
-    ExtensionEvents,
     ExtensionProvided,
     ExtensionRequired,
     ExtensionSetupContext,
     ExtensionSetupResult,
-    Prefixed,
     RequiresMarker,
-    UnwrapEvents,
     UnwrapRequires,
 } from "./definition/extension.ts";
-export { event, extension, requires } from "./definition/extension.ts";
+export { extension, requires } from "./definition/extension.ts";
 export type { FlowBuilder, FlowDefinition } from "./definition/flow.ts";
 export { flow } from "./definition/flow.ts";
 export type {
@@ -100,7 +95,7 @@ export {
 } from "./definition/request.ts";
 export type { ShapeFactory } from "./definition/shape-factory.ts";
 export { shape } from "./definition/shape-factory.ts";
-export type { Engine, EngineConfig, EngineEvents, InferEngine, MissingExtensionDependency } from "./engine/engine.ts";
+export type { Engine, EngineConfig, InferEngine, MissingExtensionDependency } from "./engine/engine.ts";
 // ── engine ──────────────────────────────────────────────────────────
 export { createEngine, DuplicateExtensionError, DuplicateFlowError, FlowNotRegisteredError } from "./engine/engine.ts";
 export { InvalidItemsError } from "./engine/execute.ts";
@@ -123,23 +118,24 @@ export type {
 export { createEventBus } from "./events/bus.ts";
 export type { Logger } from "./events/logger.ts";
 export type {
+    AnyEventToken,
     EmitFn,
     EmitOptions,
     EventEnvelope,
-    EventMap,
     EventSource,
     EventSubscriber,
+    EventToken,
     LogLevel,
     OnOptions,
-    RuntimeEvents,
+    PayloadOf,
     Subscription,
     WaitForOptions,
 } from "./events/types.ts";
+export { event, systemEvents } from "./events/types.ts";
 // ── shape ───────────────────────────────────────────────────────────
 export type {
     AnyShape,
     EventsOf,
-    IterationContext,
     IterationOf,
     ParamsOf,
     ProvidedOf,

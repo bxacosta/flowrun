@@ -7,10 +7,11 @@
 
 import type { PauseGate } from "../core/async.ts";
 import { SkipSignal } from "../core/signals.ts";
+import type { IterationContext } from "../core/types.ts";
 import type { ContextRequest, RequestDefinition, RequestOptions } from "../definition/request.ts";
-import { type AnyEventBus, createEmitMeta, type EmitMeta } from "../events/bus.ts";
+import { createEmitMeta, type EmitMeta, type EventBus } from "../events/bus.ts";
 import { createLogger, type Logger } from "../events/logger.ts";
-import type { EmitFn, EmitOptions, EventSource } from "../events/types.ts";
+import type { AnyEventToken, EmitFn, EmitOptions, EventSource } from "../events/types.ts";
 import type { AnyFlowStateStore } from "../state/types.ts";
 import type { RequestManager } from "./request-manager.ts";
 import type { TaskResult } from "./results.ts";
@@ -18,7 +19,7 @@ import type { TaskResult } from "./results.ts";
 // ── Runtime types ───────────────────────────────────────────────────
 
 export interface FlowRuntime {
-    bus: AnyEventBus;
+    bus: EventBus;
     flowName: string;
     log: Logger;
     params: Readonly<Record<string, unknown>>;
@@ -33,7 +34,7 @@ export interface FlowProgress {
 
 export interface RequestRuntimeMeta {
     attempt?: number;
-    iteration?: { index: number; item: unknown };
+    iteration?: IterationContext;
     nodeName?: string;
     path: readonly string[];
 }
@@ -46,7 +47,7 @@ export interface ExecutionContext {
 }
 
 interface ScopeLocation {
-    iteration?: { index: number; item: unknown };
+    iteration?: IterationContext;
     nodeName?: string;
     path?: readonly string[];
 }
@@ -61,11 +62,11 @@ function buildEmitMeta(runtime: FlowRuntime, location: ScopeLocation, correlatio
     return createEmitMeta(flowSource(runtime.flowName), runtime, { ...location, correlationId });
 }
 
-function buildScopeEmitter(runtime: FlowRuntime, location: ScopeLocation): EmitFn<Record<string, unknown>> {
-    const emit = (topic: string, payload?: unknown, options?: EmitOptions): void => {
-        runtime.bus.emit(topic, payload, buildEmitMeta(runtime, location, options?.correlationId));
+function buildScopeEmitter(runtime: FlowRuntime, location: ScopeLocation): EmitFn<AnyEventToken> {
+    const emit = (token: AnyEventToken, payload?: unknown, options?: EmitOptions): void => {
+        runtime.bus.emit(token, payload as never, buildEmitMeta(runtime, location, options?.correlationId));
     };
-    return emit as unknown as EmitFn<Record<string, unknown>>;
+    return emit as unknown as EmitFn<AnyEventToken>;
 }
 
 function buildScopeLogger(runtime: FlowRuntime, location: ScopeLocation): Logger {
@@ -130,10 +131,7 @@ export function buildFlowContext(
     return buildBaseContext(runtime, state, signal, {}, { path: [] });
 }
 
-function withFrozenIteration(
-    context: Record<string, unknown>,
-    iteration?: { index: number; item: unknown }
-): Record<string, unknown> {
+function withFrozenIteration(context: Record<string, unknown>, iteration?: IterationContext): Record<string, unknown> {
     if (!iteration) {
         return context;
     }
@@ -148,7 +146,7 @@ export function buildContainerContext(
     state: AnyFlowStateStore,
     signal: AbortSignal,
     pathSegments: readonly string[],
-    iteration?: { index: number; item: unknown }
+    iteration?: IterationContext
 ): Record<string, unknown> {
     const context = buildBaseContext(
         runtime,
@@ -167,7 +165,7 @@ export function buildTaskContext(
     pathSegments: readonly string[],
     nodeName: string,
     attempt: number,
-    iteration?: { index: number; item: unknown }
+    iteration?: IterationContext
 ): Record<string, unknown> {
     const location: ScopeLocation = { iteration, nodeName, path: pathSegments };
     const requestMeta: RequestRuntimeMeta = { attempt, iteration, nodeName, path: pathSegments };

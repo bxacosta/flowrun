@@ -11,14 +11,13 @@ import type { EmptyObject, MergeObjects } from "../core/types.ts";
 import type {
     AnyExtensionDefinition,
     ExtensionDefinition,
-    ExtensionEvents,
     ExtensionProvided,
     ExtensionRequired,
 } from "../definition/extension.ts";
 import type { AnyFlowDefinition, FlowDefinition } from "../definition/flow.ts";
 import type { EngineRequests } from "../definition/request.ts";
 import { createEventBus, type EventBusConfig } from "../events/bus.ts";
-import type { EventMap, EventSubscriber, RuntimeEvents } from "../events/types.ts";
+import type { EventSubscriber } from "../events/types.ts";
 import type { ParamsOf, ProvidedOf, Shape, StateOf } from "../shape/shape.ts";
 import {
     type AnyFlow,
@@ -87,8 +86,8 @@ export interface EngineConfig {
     events?: EventBusConfig;
 }
 
-export interface Engine<TProvided extends object, TEvents extends EventMap> {
-    readonly events: EventSubscriber<TEvents>;
+export interface Engine<TProvided extends object> {
+    readonly events: EventSubscriber;
 
     flows(): readonly string[];
 
@@ -108,20 +107,20 @@ export interface Engine<TProvided extends object, TEvents extends EventMap> {
         ...args: RunArgs<ParamsOf<TShape>>
     ): Promise<FlowHandle<StateOf<TShape>>>;
 
-    use<TExtension extends ExtensionDefinition<object, object, EventMap>>(
+    use<TExtension extends ExtensionDefinition<object, object>>(
         extension: CompatibleExtension<TExtension, TProvided>
-    ): Engine<MergeObjects<TProvided, ExtensionProvided<TExtension>>, TEvents & ExtensionEvents<TExtension>>;
+    ): Engine<MergeObjects<TProvided, ExtensionProvided<TExtension>>>;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: type-erased engine implementation with typed public facade
-type AnyEngine = Engine<any, any>;
+type AnyEngine = Engine<any>;
 
 // ── Factory ─────────────────────────────────────────────────────────
 
 function createRunnable(
     flow: AnyFlowDefinition,
     extensions: readonly AnyExtensionDefinition[],
-    bus: ReturnType<typeof createEventBus<EventMap>>,
+    bus: ReturnType<typeof createEventBus>,
     requests: ReturnType<typeof createRequestManager>
 ): AnyFlow {
     const buildArgs = (args: AnyRunArgs) => ({
@@ -139,8 +138,8 @@ function createRunnable(
     };
 }
 
-export function createEngine(config?: EngineConfig): Engine<EmptyObject, RuntimeEvents> {
-    const bus = createEventBus<EventMap>(config?.events);
+export function createEngine(config?: EngineConfig): Engine<EmptyObject> {
+    const bus = createEventBus(config?.events);
     const requests = createRequestManager(bus, config?.events?.onError);
     const extensions: AnyExtensionDefinition[] = [];
     const flows = new Map<string, AnyFlowDefinition>();
@@ -198,7 +197,4 @@ export function createEngine(config?: EngineConfig): Engine<EmptyObject, Runtime
     return engine;
 }
 
-export type InferEngine<T extends AnyEngine> =
-    T extends Engine<infer TProvided, infer TEvents> ? { Events: TEvents; Provided: TProvided } : never;
-
-export type EngineEvents<TEngine extends AnyEngine> = InferEngine<TEngine>["Events"];
+export type InferEngine<T extends AnyEngine> = T extends Engine<infer TProvided> ? { Provided: TProvided } : never;

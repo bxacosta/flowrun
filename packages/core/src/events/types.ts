@@ -1,22 +1,129 @@
 /**
- * events/types.ts — Event system types
+ * events/types.ts — Event system core
  *
- * Layer: L0. Event envelopes, the emit signature, subscriber surface, and the
- * built-in runtime event map. No internal dependencies.
+ * Layer: L0. The event token (the typed, portable handle every event is keyed
+ * by), the `event()` factory, the built-in `systemEvents` catalog, event
+ * envelopes, the scoped emit signature, and the subscriber surface.
  */
 
-// biome-ignore lint/suspicious/noExplicitAny: event maps need to accept arbitrary payload shapes
-export type EventMap = Record<string, any>;
+import type { IterationContext } from "../core/types.ts";
+import { assertValidTopicKey } from "../core/validation.ts";
 
 export type EventSource = "runtime" | `extension:${string}` | `flow:${string}`;
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
+// ── Token ───────────────────────────────────────────────────────────
+
+export interface EventToken<TPayload = undefined, TTopic extends string = string> {
+    readonly _payload?: TPayload;
+    readonly topic: TTopic;
+    readonly type: "event";
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: type-erased token for runtime normalization
+export type AnyEventToken = EventToken<any, string>;
+
+export type PayloadOf<TToken> = TToken extends EventToken<infer TPayload, string> ? TPayload : never;
+
+export function event<TPayload = undefined, const TTopic extends string = string>(
+    topic: TTopic
+): EventToken<TPayload, TTopic> {
+    assertValidTopicKey(topic);
+    const token: EventToken<TPayload, TTopic> = { topic, type: "event" };
+    return Object.freeze(token);
+}
+
+// ── Built-in system events ──────────────────────────────────────────
+
+export const systemEvents = {
+    run: {
+        started: event("run:started"),
+        ended: event<{
+            durationMs: number;
+            error?: Error;
+            reason?: string;
+            status: "cancelled" | "failed" | "success";
+        }>("run:ended"),
+    },
+    flow: {
+        started: event("flow:started"),
+        ended: event<{
+            durationMs: number;
+            error?: Error;
+            reason?: string;
+            status: "cancelled" | "failed" | "success";
+        }>("flow:ended"),
+        paused: event("flow:paused"),
+        resumed: event("flow:resumed"),
+    },
+    node: {
+        task: {
+            started: event<{ maxAttempts: number }>("node:task:started"),
+            ended: event<{
+                attempts: number;
+                durationMs: number;
+                error?: Error;
+                ignored: boolean;
+                reason?: string;
+                status: "failed" | "skipped" | "success";
+            }>("node:task:ended"),
+            retried: event<{ attempt: number; error: Error; nextDelayMs: number }>("node:task:retried"),
+            attempt: {
+                started: event<{ attempt: number }>("node:task:attempt:started"),
+                ended: event<{
+                    attempt: number;
+                    durationMs: number;
+                    error?: Error;
+                    reason?: string;
+                    status: "failed" | "skipped" | "success";
+                }>("node:task:attempt:ended"),
+            },
+        },
+        parallel: {
+            started: event("node:parallel:started"),
+            ended: event<{ durationMs: number; errors?: Error[]; status: "failed" | "success" }>("node:parallel:ended"),
+        },
+        each: {
+            started: event<{ totalItems: number }>("node:each:started"),
+            ended: event<{
+                durationMs: number;
+                errors?: Error[];
+                failedIndexes?: number[];
+                status: "failed" | "success";
+                totalItems: number;
+            }>("node:each:ended"),
+        },
+    },
+    request: {
+        created: event<{
+            expiresAt?: number;
+            id: string;
+            idempotencyKey?: string;
+            metadata?: Record<string, unknown>;
+            name: string;
+            payload: unknown;
+        }>("request:created"),
+        resolved: event<{
+            id: string;
+            idempotencyKey?: string;
+            name: string;
+            response: unknown;
+            responseMetadata?: Record<string, unknown>;
+        }>("request:resolved"),
+        cancelled: event<{ id: string; idempotencyKey?: string; name: string; reason?: string }>("request:cancelled"),
+        expired: event<{ expiresAt: number; id: string; idempotencyKey?: string; name: string }>("request:expired"),
+    },
+    log: event<{ data?: unknown; level: LogLevel; message: string }>("log"),
+};
+
+// ── Envelope ────────────────────────────────────────────────────────
+
 export interface EventEnvelope<TPayload = unknown> {
     readonly correlationId?: string;
     readonly flowName: string;
     readonly id: string;
-    readonly iteration?: { readonly index: number; readonly item: unknown };
+    readonly iteration?: IterationContext;
     readonly nodeName?: string;
     readonly path?: readonly string[];
 
@@ -33,17 +140,19 @@ export interface EmitOptions {
 }
 
 /**
- * Emits an event. Fire-and-forget: returns `void` and schedules delivery on a
- * later microtask, so handlers have not run when this returns — do not `await`
- * it expecting ordering or completion guarantees. (`history()` is updated
- * synchronously; handlers are not.)
+ * Emits an event for one of the tokens in scope. Fire-and-forget: returns `void`
+ * and schedules delivery on a later microtask, so handlers have not run when this
+ * returns — do not `await` it expecting ordering or completion guarantees.
+ * (`history()` is updated synchronously; handlers are not.)
  */
-export type EmitFn<TEvents extends EventMap> = <K extends keyof TEvents & string>(
-    topic: K,
-    ...args: [TEvents[K]] extends [undefined]
+export type EmitFn<TToken extends AnyEventToken> = <T extends TToken>(
+    token: T,
+    ...args: [PayloadOf<T>] extends [undefined]
         ? [payload?: undefined, options?: EmitOptions]
-        : [payload: TEvents[K], options?: EmitOptions]
+        : [payload: PayloadOf<T>, options?: EmitOptions]
 ) => void;
+
+// ── Subscriber surface ──────────────────────────────────────────────
 
 export interface Subscription {
     readonly name: string;
@@ -64,113 +173,21 @@ export interface WaitForOptions<TPayload = unknown> {
     timeout?: number;
 }
 
-export interface EventSubscriber<TEvents extends EventMap> {
+/**
+ * Subscribe by token for a fully typed payload, or by string pattern (`*`, `**`)
+ * for cross-cutting matches whose payload is `unknown`.
+ */
+export interface EventSubscriber {
     history(pattern?: string): readonly EventEnvelope[];
-    on<K extends keyof TEvents & string>(
-        topic: K,
-        handler: (event: EventEnvelope<TEvents[K]>) => void | Promise<void>,
-        options?: OnOptions<TEvents[K]>
+    on<T extends AnyEventToken>(
+        token: T,
+        handler: (event: EventEnvelope<PayloadOf<T>>) => void | Promise<void>,
+        options?: OnOptions<PayloadOf<T>>
     ): Subscription;
-    on(
-        pattern: string,
-        handler: (event: EventEnvelope<unknown>) => void | Promise<void>,
-        options?: OnOptions<unknown>
-    ): Subscription;
-    waitFor<K extends keyof TEvents & string>(
-        topic: K,
-        options?: WaitForOptions<TEvents[K]>
-    ): Promise<EventEnvelope<TEvents[K]>>;
-}
-
-export interface RuntimeEvents {
-    "flow:ended": {
-        durationMs: number;
-        error?: Error;
-        reason?: string;
-        status: "cancelled" | "failed" | "success";
-    };
-    "flow:paused": undefined;
-    "flow:resumed": undefined;
-    "flow:started": undefined;
-
-    log: {
-        data?: unknown;
-        level: LogLevel;
-        message: string;
-    };
-
-    "node:each:ended": {
-        durationMs: number;
-        errors?: Error[];
-        failedIndexes?: number[];
-        status: "failed" | "success";
-        totalItems: number;
-    };
-    "node:each:started": { totalItems: number };
-
-    "node:parallel:ended": {
-        durationMs: number;
-        errors?: Error[];
-        status: "failed" | "success";
-    };
-    "node:parallel:started": undefined;
-
-    "node:task:attempt:ended": {
-        attempt: number;
-        durationMs: number;
-        error?: Error;
-        reason?: string;
-        status: "failed" | "skipped" | "success";
-    };
-    "node:task:attempt:started": { attempt: number };
-    "node:task:ended": {
-        attempts: number;
-        durationMs: number;
-        error?: Error;
-        ignored: boolean;
-        reason?: string;
-        status: "failed" | "skipped" | "success";
-    };
-    "node:task:retried": {
-        attempt: number;
-        error: Error;
-        nextDelayMs: number;
-    };
-    "node:task:started": { maxAttempts: number };
-
-    "request:cancelled": {
-        id: string;
-        idempotencyKey?: string;
-        name: string;
-        reason?: string;
-    };
-    "request:created": {
-        expiresAt?: number;
-        id: string;
-        idempotencyKey?: string;
-        metadata?: Record<string, unknown>;
-        name: string;
-        payload: unknown;
-    };
-    "request:expired": {
-        expiresAt: number;
-        id: string;
-        idempotencyKey?: string;
-        name: string;
-    };
-    "request:resolved": {
-        id: string;
-        idempotencyKey?: string;
-        name: string;
-        response: unknown;
-        responseMetadata?: Record<string, unknown>;
-    };
-
-    "run:ended": {
-        durationMs: number;
-        error?: Error;
-        reason?: string;
-        status: "cancelled" | "failed" | "success";
-    };
-    "run:started": undefined;
+    on(pattern: string, handler: (event: EventEnvelope) => void | Promise<void>, options?: OnOptions): Subscription;
+    waitFor<T extends AnyEventToken>(
+        token: T,
+        options?: WaitForOptions<PayloadOf<T>>
+    ): Promise<EventEnvelope<PayloadOf<T>>>;
+    waitFor(pattern: string, options?: WaitForOptions): Promise<EventEnvelope>;
 }
