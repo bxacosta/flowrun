@@ -2,21 +2,37 @@
  * 05-extensions.ts — Extensions, Modules & Event Bus
  *
  * Covers:
- *  - extension() with a single event<T>() marker (auto-prefixed by extension name)
+ *  - event<T>(topic) creates a portable, typed event token (full topic, no prefix)
+ *  - extension() declares the tokens it may emit via events: [token, ...]
  *  - setup(context) returns { provided, dispose } - replaces provide/provided/cleanup
  *  - requires<T>() declares a typed dependency on another extension's provided context;
  *    engine.use() enforces the order at compile time (MissingExtensionDependency)
  *  - engine.use() chains extensions; historyLimit via engine config
- *  - engine.events.on() (typed key or wildcard pattern), waitFor(), history()
- *  - Subscription options: priority, filter, name, once
- *  - subscription.unsubscribe()
- *  - context.emit() (flow domain events declared via .events<T>())
+ *  - engine.events.on(token) is fully typed; on(pattern) ("*", "**") is unknown
+ *  - waitFor(token), history(pattern), subscription options (priority, filter, name, once)
+ *  - context.emit(token) - emits one of the tokens in scope (extension or flow)
  */
 
-import type { EngineEvents, EventEnvelope, EventSubscriber, Subscription } from "@flowrun/core";
-import { createEngine, event, extension, requires, shape } from "@flowrun/core";
+import {
+    createEngine,
+    type EventEnvelope,
+    type EventSubscriber,
+    event,
+    extension,
+    requires,
+    type Subscription,
+    shape,
+    systemEvents,
+} from "@flowrun/core";
 import { log, title } from "./shared/helpers.ts";
 import { subscriber } from "./shared/subscriber.ts";
+
+// ── Event tokens: defined once, shared by emitters and subscribers ──
+
+const dbConnected = event<{ poolSize: number }>("database:connected");
+const dbQuery = event<{ durationMs: number; sql: string }>("database:query");
+const metricsFlushed = event<{ count: number }>("metrics:flushed");
+const orderFetched = event<{ id: string }>("order:fetched");
 
 // Shared shape of the context the database extension provides.
 interface DbApi {
@@ -28,15 +44,12 @@ interface DbApi {
 const databaseExtension = (config: { connectionString: string }) =>
     extension({
         name: "database",
-        events: {
-            connected: event<{ poolSize: number }>(),
-            query: event<{ durationMs: number; sql: string }>(),
-        },
+        events: [dbConnected, dbQuery],
         setup: (context) => {
             context.log.info(`Connecting to ${config.connectionString}`);
             // emit is fire-and-forget: it returns void and delivers on a later
             // microtask, so there is nothing to await.
-            context.emit("connected", { poolSize: 10 });
+            context.emit(dbConnected, { poolSize: 10 });
 
             return {
                 provided: {
@@ -44,7 +57,7 @@ const databaseExtension = (config: { connectionString: string }) =>
                         query: <TRow>(sql: string): Promise<TRow[]> => {
                             const start = Date.now();
                             const result: TRow[] = [];
-                            context.emit("query", { durationMs: Date.now() - start, sql });
+                            context.emit(dbQuery, { durationMs: Date.now() - start, sql });
                             return Promise.resolve(result);
                         },
                     },
@@ -62,20 +75,17 @@ const metricsExtension = () =>
         // provided. context.provided is then typed as { db }, and engine.use()
         // refuses to compile if database wasn't .use()'d first.
         requires: requires<{ db: DbApi }>(),
-        events: {
-            flushed: event<{ count: number }>(),
-        },
+        events: [metricsFlushed],
         setup(context) {
             const counters = new Map<string, number>();
             // Guaranteed present (and typed) thanks to requires<{ db }>().
             const { db } = context.provided;
 
-            // Listen to another extension's events (its payload is outside this
-            // extension's typed set, so cast it). Auto-unsubscribed at run end.
-            context.on("database:query", (envelope) => {
-                const payload = envelope.payload as { durationMs: number; sql: string };
+            // Subscribe to another extension's event by its token: the payload is
+            // fully typed, no cast. Auto-unsubscribed at run end.
+            context.on(dbQuery, (envelope) => {
                 counters.set("db.queries", (counters.get("db.queries") ?? 0) + 1);
-                context.log.info(`metric recorded for query: ${payload.sql}`);
+                context.log.info(`metric recorded for query: ${envelope.payload.sql}`);
             });
 
             return {
@@ -89,7 +99,7 @@ const metricsExtension = () =>
                             // Uses the required db dependency to persist the snapshot.
                             await db.query(`INSERT INTO metric_snapshots (count) VALUES (${count})`);
                             context.log.info(`Flushed ${count} metrics`);
-                            context.emit("flushed", { count });
+                            context.emit(metricsFlushed, { count });
                         },
                     },
                 },
@@ -116,11 +126,11 @@ interface SyncShape {
 
 const sync = shape<SyncShape>();
 
-// .events<T>() declares the flow's own domain events on the builder. They type
-// context.emit inside the flow; subscribers listen for the bare topic on the bus.
+// .events([token]) declares the flow's own domain event tokens on the builder.
+// They scope context.emit inside the flow; subscribers listen by the same token.
 const syncFlow = sync
     .flow("sync-data")
-    .events<{ "order:fetched": { id: string } }>()
+    .events([orderFetched])
     .state((params) => ({ fetched: 0, source: params.source }))
     .nodes(({ task }) => [
         task({
@@ -129,7 +139,7 @@ const syncFlow = sync
                 const rows = await context.db.query<{ id: string }>(`SELECT * FROM ${context.params.source}`);
                 context.state.set("fetched", rows.length);
                 // context.emit publishes the flow-domain event declared via .events()
-                context.emit("order:fetched", { id: "row-1" }, { correlationId: "trace-001" });
+                context.emit(orderFetched, { id: "row-1" }, { correlationId: "trace-001" });
             },
         }),
         task({
@@ -162,18 +172,19 @@ subscriber(engine.events);
 
 // ── Standalone subscriber - reusable, externalizable ────────────────
 
-function dbActivitySubscriber(events: EventSubscriber<EngineEvents<typeof engine>>) {
+function dbActivitySubscriber(events: EventSubscriber) {
     const subscriptions: Subscription[] = [];
 
+    // By token: payload typed as { durationMs, sql }.
     subscriptions.push(
-        events.on("database:query", (envelope) => {
+        events.on(dbQuery, (envelope) => {
             log(`  [db-subscriber] query: ${envelope.payload.sql} (${envelope.payload.durationMs}ms)`);
         })
     );
 
-    // Wildcard subscription: matches database:connected, database:query, etc.
+    // By pattern: matches database:connected, database:query, etc. (payload unknown).
     subscriptions.push(
-        events.on("database:*", (envelope: EventEnvelope) => {
+        events.on("database:*", (envelope) => {
             log(`  [db-subscriber] event: ${envelope.topic}`);
         })
     );
@@ -192,26 +203,24 @@ function dbActivitySubscriber(events: EventSubscriber<EngineEvents<typeof engine
 const dbSubscriber = dbActivitySubscriber(engine.events);
 
 // priority: lower runs first
-engine.events.on("metrics:flushed", () => log("  [priority -10] pre-flush hook"), { priority: -10 });
-engine.events.on("metrics:flushed", (envelope) => log(`  [priority  10] ${envelope.payload.count} metrics sent`), {
+engine.events.on(metricsFlushed, () => log("  [priority -10] pre-flush hook"), { priority: -10 });
+engine.events.on(metricsFlushed, (envelope) => log(`  [priority  10] ${envelope.payload.count} metrics sent`), {
     priority: 10,
 });
 
 // filter: only react when payload matches
-engine.events.on("node:task:ended", (envelope) => log(`  [filtered] task failed: ${envelope.nodeName}`), {
+engine.events.on(systemEvents.node.task.ended, (envelope) => log(`  [filtered] task failed: ${envelope.nodeName}`), {
     filter: (envelope) => envelope.payload.status === "failed",
     name: "failure-monitor",
 });
 
-// flow-domain event declared via .events(): subscribers listen for the bare topic.
-// It isn't in the engine's typed event map, so the payload is cast at the use site.
-engine.events.on("order:fetched", (envelope: EventEnvelope) => {
-    const payload = envelope.payload as { id: string };
-    log(`  [domain] order:fetched id=${payload.id} correlationId=${envelope.correlationId ?? "-"}`);
+// flow-domain event by token: fully typed payload, no cast.
+engine.events.on(orderFetched, (envelope) => {
+    log(`  [domain] order:fetched id=${envelope.payload.id} correlationId=${envelope.correlationId ?? "-"}`);
 });
 
 // once: auto-unsubscribes after first delivery
-engine.events.on("flow:started", (envelope) => log(`  [once] first flow started: ${envelope.flowName}`), {
+engine.events.on(systemEvents.flow.started, (envelope) => log(`  [once] first flow started: ${envelope.flowName}`), {
     once: true,
 });
 
@@ -227,7 +236,7 @@ const nodeGlobstar = engine.events.on("node:**", () => {
 
 // Intentionally throwing handler - proves EventBusConfig.onError catches handler errors
 engine.events.on(
-    "flow:started",
+    systemEvents.flow.started,
     () => {
         throw new Error("intentional handler error to demo bus.onError");
     },
@@ -238,7 +247,7 @@ engine.events.on(
 
 title("Extensions + modules + event bus");
 
-const flushPromise = engine.events.waitFor("metrics:flushed", { timeout: 5000 });
+const flushPromise = engine.events.waitFor(metricsFlushed, { timeout: 5000 });
 const result = await engine.run(syncFlow, { source: "users" });
 const flushEnvelope = await flushPromise;
 

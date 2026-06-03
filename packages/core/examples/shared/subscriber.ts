@@ -1,4 +1,11 @@
-import type { EventEnvelope, EventSubscriber, RuntimeEvents, Subscription } from "@flowrun/core";
+import {
+    type AnyEventToken,
+    type EventEnvelope,
+    type EventSubscriber,
+    type PayloadOf,
+    type Subscription,
+    systemEvents,
+} from "@flowrun/core";
 import { type Color, colorize } from "./helpers.ts";
 
 const FLOW_STATUS_COLORS: Record<string, Color> = {
@@ -82,7 +89,7 @@ function joinMeta(...parts: (string | undefined | false)[]): string {
     return parts.filter(Boolean).join(colorize("dim", " · "));
 }
 
-export function subscriber<TEvents extends RuntimeEvents>(events: EventSubscriber<TEvents>) {
+export function subscriber(events: EventSubscriber) {
     const subscriptions: Subscription[] = [];
     // task:started carries maxAttempts; task:ended/retried only carry the count
     // so far. Remember the ceiling per node path to render a truthful "n/max".
@@ -91,22 +98,19 @@ export function subscriber<TEvents extends RuntimeEvents>(events: EventSubscribe
     const attemptKey = (event: EventEnvelope): string =>
         `${event.runId}:${event.path?.join("/") ?? event.nodeName ?? ""}`;
 
-    const track = <K extends keyof RuntimeEvents & string>(
-        topic: K,
-        handler: (event: EventEnvelope<RuntimeEvents[K]>) => void
-    ): void => {
-        subscriptions.push((events as EventSubscriber<RuntimeEvents>).on(topic, handler));
+    const track = <T extends AnyEventToken>(token: T, handler: (event: EventEnvelope<PayloadOf<T>>) => void): void => {
+        subscriptions.push(events.on(token, handler));
     };
 
     // Two nested envelopes wrap every execution:
     //   run:*   spans the WHOLE run, including extension setup and teardown.
     //   flow:*  spans only the node + middleware pipeline (inside the run).
     // A run can therefore fail during extension setup before any flow:* fires.
-    track("run:started", (event) => {
+    track(systemEvents.run.started, (event) => {
         console.log(row(event, "RUN", "start", "cyan", colorize("cyan", event.flowName)));
     });
 
-    track("run:ended", (event) => {
+    track(systemEvents.run.ended, (event) => {
         const { status } = event.payload;
         const detail = event.payload.reason ?? event.payload.error?.message;
         const meta = joinMeta(formatDuration(event.payload.durationMs), detail);
@@ -115,11 +119,11 @@ export function subscriber<TEvents extends RuntimeEvents>(events: EventSubscribe
         );
     });
 
-    track("flow:started", (event) => {
+    track(systemEvents.flow.started, (event) => {
         console.log(row(event, "FLOW", "start", "cyan", colorize("cyan", event.flowName)));
     });
 
-    track("flow:ended", (event) => {
+    track(systemEvents.flow.ended, (event) => {
         const { status } = event.payload;
         const detail = event.payload.reason ?? event.payload.error?.message;
         const meta = joinMeta(formatDuration(event.payload.durationMs), detail);
@@ -128,22 +132,22 @@ export function subscriber<TEvents extends RuntimeEvents>(events: EventSubscribe
         );
     });
 
-    track("flow:paused", (event) => {
+    track(systemEvents.flow.paused, (event) => {
         console.log(row(event, "FLOW", "pause", "yellow", colorize("cyan", event.flowName)));
     });
 
-    track("flow:resumed", (event) => {
+    track(systemEvents.flow.resumed, (event) => {
         console.log(row(event, "FLOW", "resume", "green", colorize("cyan", event.flowName)));
     });
 
-    track("node:task:started", (event) => {
+    track(systemEvents.node.task.started, (event) => {
         maxAttempts.set(attemptKey(event), event.payload.maxAttempts);
         const node = `${event.nodeName}${formatNodeIndex(event.iteration?.index)}`;
         const meta = event.payload.maxAttempts > 1 ? colorize("dim", `attempt 1/${event.payload.maxAttempts}`) : "";
         console.log(row(event, "TASK", "start", "blue", node, meta));
     });
 
-    track("node:task:retried", (event) => {
+    track(systemEvents.node.task.retried, (event) => {
         const node = `${event.nodeName}${formatNodeIndex(event.iteration?.index)}`;
         const max = maxAttempts.get(attemptKey(event));
         const meta = joinMeta(
@@ -154,7 +158,7 @@ export function subscriber<TEvents extends RuntimeEvents>(events: EventSubscribe
         console.log(row(event, "TASK", "retry", "yellow", node, meta));
     });
 
-    track("node:task:ended", (event) => {
+    track(systemEvents.node.task.ended, (event) => {
         const key = attemptKey(event);
         const max = maxAttempts.get(key) ?? event.payload.attempts;
         maxAttempts.delete(key);
@@ -172,22 +176,22 @@ export function subscriber<TEvents extends RuntimeEvents>(events: EventSubscribe
         console.log(row(event, "TASK", state, TASK_STATUS_COLORS[status] ?? "red", node, meta));
     });
 
-    track("node:parallel:started", (event) => {
+    track(systemEvents.node.parallel.started, (event) => {
         console.log(row(event, "PAR", "start", "magenta", event.nodeName ?? ""));
     });
 
-    track("node:parallel:ended", (event) => {
+    track(systemEvents.node.parallel.ended, (event) => {
         const { status } = event.payload;
         const meta = formatDuration(event.payload.durationMs);
         console.log(row(event, "PAR", status, FLOW_STATUS_COLORS[status] ?? "red", event.nodeName ?? "", meta));
     });
 
-    track("node:each:started", (event) => {
+    track(systemEvents.node.each.started, (event) => {
         const meta = colorize("dim", `${event.payload.totalItems} items`);
         console.log(row(event, "EACH", "start", "magenta", event.nodeName ?? "", meta));
     });
 
-    track("node:each:ended", (event) => {
+    track(systemEvents.node.each.ended, (event) => {
         const { status } = event.payload;
         const failed =
             event.payload.failedIndexes && event.payload.failedIndexes.length > 0
@@ -197,25 +201,25 @@ export function subscriber<TEvents extends RuntimeEvents>(events: EventSubscribe
         console.log(row(event, "EACH", status, FLOW_STATUS_COLORS[status] ?? "red", event.nodeName ?? "", meta));
     });
 
-    track("request:created", (event) => {
+    track(systemEvents.request.created, (event) => {
         const meta = colorize("dim", `id=${event.payload.id.slice(0, 8)}`);
         console.log(row(event, "REQ", "open", "cyan", event.payload.name, meta));
     });
 
-    track("request:resolved", (event) => {
+    track(systemEvents.request.resolved, (event) => {
         const meta = colorize("dim", `id=${event.payload.id.slice(0, 8)}`);
         console.log(row(event, "REQ", "answer", "green", event.payload.name, meta));
     });
 
-    track("request:cancelled", (event) => {
+    track(systemEvents.request.cancelled, (event) => {
         console.log(row(event, "REQ", "cancel", "yellow", event.payload.name, event.payload.reason ?? ""));
     });
 
-    track("request:expired", (event) => {
+    track(systemEvents.request.expired, (event) => {
         console.log(row(event, "REQ", "expired", "red", event.payload.name));
     });
 
-    track("log", (event) => {
+    track(systemEvents.log, (event) => {
         const level = event.payload.level;
         const data = event.payload.data === undefined ? "" : colorize("dim", JSON.stringify(event.payload.data));
         console.log(row(event, "LOG", level, LOG_LEVEL_COLORS[level] ?? "white", event.payload.message, data));

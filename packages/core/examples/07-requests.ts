@@ -20,7 +20,7 @@
  * contexts they fall back to an auto-answer so the example still completes.
  */
 
-import { createEngine, flow, RequestCancelledError, RequestExpiredError, request } from "@flowrun/core";
+import { createEngine, flow, RequestCancelledError, RequestExpiredError, request, systemEvents } from "@flowrun/core";
 import { delay, isInteractive, log, prompt, title } from "./shared/helpers.ts";
 import { subscriber } from "./shared/subscriber.ts";
 
@@ -195,7 +195,7 @@ const authFlow = flow("auth")
 
 title("Demo 3 - redact: secrets hidden in events, real value in code");
 let observedResponse: unknown;
-const responseSubscription = engine.events.on("request:resolved", (envelope) => {
+const responseSubscription = engine.events.on(systemEvents.request.resolved, (envelope) => {
     if (envelope.payload.name === "credentials") {
         observedResponse = envelope.payload.response;
     }
@@ -260,7 +260,7 @@ const flakyDecisionFlow = flow("flaky-decision")
 
 title("Demo 5 - idempotent key: one prompt across 3 retries");
 let promptCount = 0;
-const promptSubscription = engine.events.on("request:created", (envelope) => {
+const promptSubscription = engine.events.on(systemEvents.request.created, (envelope) => {
     if (envelope.payload.name === "routing") {
         promptCount++;
     }
@@ -319,7 +319,7 @@ const manualFlow = flow("manual")
 title("Demo 7 - inspect & answer by id (+ request/response metadata)");
 // responseMetadata is only visible on the request:resolved event, not the record.
 let observedResponseMetadata: unknown;
-const metadataSubscription = engine.events.on("request:resolved", (envelope) => {
+const metadataSubscription = engine.events.on(systemEvents.request.resolved, (envelope) => {
     if (envelope.payload.name === "manual-approval") {
         observedResponseMetadata = envelope.payload.responseMetadata;
     }
