@@ -12,12 +12,10 @@ import type { FlowStatus, Outcome, TerminalFlowStatus } from "../core/status.ts"
 import { assertPlainObject } from "../core/validation.ts";
 import type { AnyExtensionDefinition, ExtensionDispose } from "../definition/extension.ts";
 import type { AnyFlowDefinition, FlowDefinition } from "../definition/flow.ts";
-import { createEmitMeta, type EmitMeta, type EventBus, resolvePattern } from "../events/bus.ts";
+import { createEmitMeta, createScopedEmit, type EmitMeta, type EventBus, resolvePattern } from "../events/bus.ts";
 import { createLogger, type Logger } from "../events/logger.ts";
 import {
     type AnyEventToken,
-    type EmitFn,
-    type EmitOptions,
     type EventEnvelope,
     type EventSource,
     type EventSubscriber,
@@ -106,9 +104,7 @@ function buildExtensionSetupContext(args: {
     const buildMeta = (correlationId?: string): EmitMeta =>
         createEmitMeta(source, { flowName: args.flowName, runId: args.runId }, { correlationId });
 
-    const emit = ((token: AnyEventToken, payload?: unknown, options?: EmitOptions): void => {
-        args.bus.emit(token, payload as never, buildMeta(options?.correlationId));
-    }) as EmitFn<AnyEventToken>;
+    const emit = createScopedEmit(args.bus, buildMeta);
 
     const on: EventSubscriber["on"] = ((
         tokenOrPattern: AnyEventToken | string,
@@ -151,7 +147,7 @@ function buildExtensionSetupContext(args: {
     return {
         emit,
         flowName: args.flowName,
-        history: (pattern?: string) => args.bus.history(pattern),
+        history: (tokenOrPattern?: AnyEventToken | string) => args.bus.history(tokenOrPattern as string),
         log: createLogger({
             bus: args.bus,
             flowName: args.flowName,

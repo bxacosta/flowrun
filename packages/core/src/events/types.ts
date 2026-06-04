@@ -178,6 +178,7 @@ export interface WaitForOptions<TPayload = unknown> {
  * for cross-cutting matches whose payload is `unknown`.
  */
 export interface EventSubscriber {
+    history<T extends AnyEventToken>(token: T): readonly EventEnvelope<PayloadOf<T>>[];
     history(pattern?: string): readonly EventEnvelope[];
     on<T extends AnyEventToken>(
         token: T,

@@ -9,9 +9,9 @@ import type { PauseGate } from "../core/async.ts";
 import { SkipSignal } from "../core/signals.ts";
 import type { IterationContext } from "../core/types.ts";
 import type { ContextRequest, RequestDefinition, RequestOptions } from "../definition/request.ts";
-import { createEmitMeta, type EmitMeta, type EventBus } from "../events/bus.ts";
+import { createEmitMeta, createScopedEmit, type EmitMeta, type EventBus } from "../events/bus.ts";
 import { createLogger, type Logger } from "../events/logger.ts";
-import type { AnyEventToken, EmitFn, EmitOptions, EventSource } from "../events/types.ts";
+import type { EventSource } from "../events/types.ts";
 import type { AnyFlowStateStore } from "../state/types.ts";
 import type { RequestManager } from "./request-manager.ts";
 import type { TaskResult } from "./results.ts";
@@ -62,13 +62,6 @@ function buildEmitMeta(runtime: FlowRuntime, location: ScopeLocation, correlatio
     return createEmitMeta(flowSource(runtime.flowName), runtime, { ...location, correlationId });
 }
 
-function buildScopeEmitter(runtime: FlowRuntime, location: ScopeLocation): EmitFn<AnyEventToken> {
-    const emit = (token: AnyEventToken, payload?: unknown, options?: EmitOptions): void => {
-        runtime.bus.emit(token, payload as never, buildEmitMeta(runtime, location, options?.correlationId));
-    };
-    return emit as unknown as EmitFn<AnyEventToken>;
-}
-
 function buildScopeLogger(runtime: FlowRuntime, location: ScopeLocation): Logger {
     return createLogger({
         bus: runtime.bus,
@@ -112,7 +105,7 @@ function buildBaseContext(
 ): Record<string, unknown> {
     return {
         ...runtime.provided,
-        emit: buildScopeEmitter(runtime, location),
+        emit: createScopedEmit(runtime.bus, (correlationId) => buildEmitMeta(runtime, location, correlationId)),
         flowName: runtime.flowName,
         log: buildScopeLogger(runtime, location),
         params: runtime.params,

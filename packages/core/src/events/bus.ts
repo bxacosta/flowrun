@@ -10,6 +10,8 @@ import type { IterationContext } from "../core/types.ts";
 import { assertValidPattern } from "../core/validation.ts";
 import type {
     AnyEventToken,
+    EmitFn,
+    EmitOptions,
     EventEnvelope,
     EventSource,
     EventSubscriber,
@@ -58,6 +60,17 @@ export function createEmitMeta(
     };
 }
 
+// ── Scoped emit ─────────────────────────────────────────────────────
+
+export function createScopedEmit(
+    bus: EventBus,
+    buildMeta: (correlationId?: string) => EmitMeta
+): EmitFn<AnyEventToken> {
+    return ((token: AnyEventToken, payload?: unknown, options?: EmitOptions): void => {
+        bus.emit(token, payload, buildMeta(options?.correlationId));
+    }) as EmitFn<AnyEventToken>;
+}
+
 // ── Config & errors ─────────────────────────────────────────────────
 
 export type EventBusErrorContext =
@@ -76,7 +89,6 @@ export interface EventBusConfig {
 // ── Bus interface ───────────────────────────────────────────────────
 
 export interface EventBus extends EventSubscriber {
-    asReadable(): EventSubscriber;
     clear(): void;
     emit<T extends AnyEventToken>(token: T, payload: PayloadOf<T>, meta: EmitMeta): void;
 }
@@ -212,10 +224,6 @@ export function createEventBus(config: EventBusConfig = {}): EventBus {
     }
 
     const bus: EventBus = {
-        asReadable() {
-            return bus;
-        },
-
         clear() {
             handlers.length = 0;
         },
@@ -233,14 +241,15 @@ export function createEventBus(config: EventBusConfig = {}): EventBus {
             });
         },
 
-        history(pattern) {
-            if (pattern === undefined) {
+        history: ((tokenOrPattern?: AnyEventToken | string): readonly EventEnvelope[] => {
+            if (tokenOrPattern === undefined) {
                 return [...buffer];
             }
+            const pattern = resolvePattern(tokenOrPattern);
             assertValidPattern(pattern);
             const regex = patternToRegex(pattern);
             return buffer.filter((event) => regex.test(event.topic));
-        },
+        }) as EventBus["history"],
 
         on: ((
             tokenOrPattern: AnyEventToken | string,

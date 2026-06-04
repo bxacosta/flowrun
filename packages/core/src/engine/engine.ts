@@ -159,7 +159,7 @@ export function createEngine(config?: EngineConfig): Engine<EmptyObject> {
     };
 
     const engine: AnyEngine = {
-        events: bus.asReadable(),
+        events: bus,
 
         flows() {
             return [...flows.keys()];
