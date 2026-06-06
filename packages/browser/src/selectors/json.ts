@@ -4,7 +4,7 @@ import type { Locator } from "playwright-core";
 import type { LocatorScope, SelectorDefinition, SelectorRegistry } from "../contracts/selectors.ts";
 import { SelectorNotFoundError } from "../errors.ts";
 
-export class JsonSelectorRegistry implements SelectorRegistry {
+export class JsonSelectorRegistry<TName extends string = string> implements SelectorRegistry<TName> {
     private definitions: Map<string, SelectorDefinition>;
     private readonly source: string | null;
 
@@ -13,15 +13,19 @@ export class JsonSelectorRegistry implements SelectorRegistry {
         this.source = source;
     }
 
+    // load() reads JSON at runtime, so its keys are not known statically — the
+    // registry stays string-typed. Use fromObject() for compile-time key checking.
     static async load(filePath: string): Promise<JsonSelectorRegistry> {
         return new JsonSelectorRegistry(await JsonSelectorRegistry.loadMap(filePath), filePath);
     }
 
-    static fromObject(definitions: Record<string, SelectorDefinition>): JsonSelectorRegistry {
-        return new JsonSelectorRegistry(JsonSelectorRegistry.buildMap(definitions), null);
+    static fromObject<const TDefinitions extends Record<string, SelectorDefinition>>(
+        definitions: TDefinitions
+    ): JsonSelectorRegistry<keyof TDefinitions & string> {
+        return new JsonSelectorRegistry<keyof TDefinitions & string>(JsonSelectorRegistry.buildMap(definitions), null);
     }
 
-    get(name: string): SelectorDefinition {
+    get(name: TName): SelectorDefinition {
         const definition = this.definitions.get(name);
         if (!definition) {
             throw new SelectorNotFoundError(name);
@@ -29,7 +33,7 @@ export class JsonSelectorRegistry implements SelectorRegistry {
         return definition;
     }
 
-    resolve(name: string, scope: LocatorScope): Locator {
+    resolve(name: TName, scope: LocatorScope): Locator {
         return scope.locator(this.get(name).selector);
     }
 

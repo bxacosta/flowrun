@@ -9,7 +9,7 @@ export interface SelectorDefinition {
     timeout?: number;
 }
 
-export interface SelectorRegistry {
-    get(name: string): MaybePromise<SelectorDefinition>;
-    resolve(name: string, scope: LocatorScope): MaybePromise<Locator>;
+export interface SelectorRegistry<TName extends string = string> {
+    get(name: TName): MaybePromise<SelectorDefinition>;
+    resolve(name: TName, scope: LocatorScope): MaybePromise<Locator>;
 }

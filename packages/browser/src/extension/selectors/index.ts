@@ -4,9 +4,14 @@ import type { SelectorsExtensionConfig, SelectorsProvidedContext } from "./types
 
 export const SELECTORS_EXTENSION_NAME = "selectors";
 
-export type SelectorsExtensionDefinition = ExtensionDefinition<object, SelectorsProvidedContext>;
+export type SelectorsExtensionDefinition<TName extends string = string> = ExtensionDefinition<
+    object,
+    SelectorsProvidedContext<TName>
+>;
 
-export function createSelectorsExtension(config: SelectorsExtensionConfig): SelectorsExtensionDefinition {
+export function createSelectorsExtension<TName extends string = string>(
+    config: SelectorsExtensionConfig<TName>
+): SelectorsExtensionDefinition<TName> {
     return extension({
         name: SELECTORS_EXTENSION_NAME,
         setup: () => ({
