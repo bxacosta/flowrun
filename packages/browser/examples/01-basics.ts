@@ -109,7 +109,7 @@ const inspect = flow<AppShape>("inspect")
 
 title("1 - simplest flow (just navigate)");
 const r1 = await engine.run(home);
-log(`status: ${r1.status}, duration: ${r1.duration}ms`);
+log(`status: ${r1.status}, duration: ${r1.durationMs}ms`);
 
 title("2 - typed params + every provided context key");
 const r2 = await engine.run(inspect, { path: "/" });

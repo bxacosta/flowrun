@@ -2,7 +2,7 @@
  * 05-events.ts — Bus events across browser/selectors/storage extensions
  *
  * Covers:
- *  - engine.bus subscriptions for every browser:* topic:
+ *  - engine.events subscriptions (by token) for every browser:* topic:
  *      browser:opened         (session opened at run start)
  *      browser:closed         (session closed at cleanup)
  *      browser:navigated      (every successful navigate())
@@ -14,14 +14,22 @@
  *      browser:console-error  (console.error from the page)
  *  - And cross-extension topics:
  *      storage:saved          (StorageProvider.save/saveStream completed)
- *  - Wildcard subscription (browser:**) and filter / once options
+ *  - Wildcard subscription (browser:**) by string pattern and once option
  *  - Extension flags that gate emission:
  *      browser({ emitPageErrors, emitConsoleErrors, emitNavigateEvent })
  *      storage({ emitEvent })
  */
 
-import { type BrowserShape, createBrowserEngine, resource, storage, type WithStorage } from "@flowrun/browser";
-import { type Envelope, flow } from "@flowrun/core";
+import {
+    type BrowserShape,
+    browserEvents,
+    createBrowserEngine,
+    resource,
+    storage,
+    storageEvents,
+    type WithStorage,
+} from "@flowrun/browser";
+import { flow } from "@flowrun/core";
 import { BASE_URL, localBrowser, storageProvider } from "./shared/env.ts";
 import { log, title } from "./shared/helpers.ts";
 
@@ -38,43 +46,44 @@ type AppShape = WithStorage<BrowserShape>;
 // ── Wildcard subscription: every browser:* topic ────────────────────
 
 const seen: string[] = [];
-const wildcardSub = engine.bus.match("browser:**", (envelope: Envelope) => {
+// By string pattern: payload is unknown, matches any depth under browser:.
+const wildcardSub = engine.events.on("browser:**", (envelope) => {
     seen.push(envelope.topic);
 });
 
-// ── Typed per-topic subscriptions ───────────────────────────────────
+// ── Typed per-token subscriptions: payload inferred from the token ──
 
-engine.bus.subscribe("browser:opened", (envelope) => {
+engine.events.on(browserEvents.opened, (envelope) => {
     log(`  [opened]   correlationId=${envelope.correlationId ?? "-"}`);
 });
 
-engine.bus.subscribe("browser:navigated", (envelope) => {
+engine.events.on(browserEvents.navigated, (envelope) => {
     log(`  [navigated] ${envelope.payload.url} (${envelope.payload.durationMs}ms)`);
 });
 
-engine.bus.subscribe("browser:page-error", (envelope) => {
+engine.events.on(browserEvents.pageError, (envelope) => {
     log(`  [page-error]    ${envelope.payload.message}`);
 });
 
-engine.bus.subscribe("browser:console-error", (envelope) => {
+engine.events.on(browserEvents.consoleError, (envelope) => {
     const loc = envelope.payload.location
         ? ` @ ${envelope.payload.location.url}:${envelope.payload.location.lineNumber}`
         : "";
     log(`  [console-error] ${envelope.payload.text}${loc}`);
 });
 
-engine.bus.subscribe("storage:saved", (envelope) => {
+engine.events.on(storageEvents.saved, (envelope) => {
     log(`  [storage-saved] ${envelope.payload.key} (${envelope.payload.size}B)`);
 });
 
-engine.bus.subscribe("browser:page-opened", (envelope) => {
+engine.events.on(browserEvents.pageOpened, (envelope) => {
     const where = envelope.payload.branch
         ? `branch=${envelope.payload.branch}`
         : `iteration=${envelope.payload.iteration}`;
     log(`  [page-opened]  ${where}`);
 });
 
-engine.bus.subscribe("browser:page-closed", (envelope) => {
+engine.events.on(browserEvents.pageClosed, (envelope) => {
     const where = envelope.payload.branch
         ? `branch=${envelope.payload.branch}`
         : `iteration=${envelope.payload.iteration}`;
@@ -82,7 +91,7 @@ engine.bus.subscribe("browser:page-closed", (envelope) => {
 });
 
 // once: auto-unsubscribe after the first match
-engine.bus.subscribe("browser:closed", () => log("  [closed]   (run finished)"), { once: true });
+engine.events.on(browserEvents.closed, () => log("  [closed]   (run finished)"), { once: true });
 
 // ── Flow 1: trigger navigated, page-error, console-error, storage-saved ─
 
@@ -117,7 +126,7 @@ const observability = flow<AppShape>("observability").nodes(({ task }) => [
         name: "trigger-storage-event",
         run: async (context) => {
             // Any save / saveStream through context.storage emits
-            // browser:storage-saved (gated by emitStorageEvent).
+            // storage:saved (gated by the storage extension's emitEvent).
             await context.storage.save("05-events/probe.txt", new TextEncoder().encode("hello"));
         },
     }),

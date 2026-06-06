@@ -23,6 +23,7 @@ import {
     storage,
     type TracingExtensionConfig,
     tracing,
+    tracingEvents,
 } from "@flowrun/browser";
 import { flow } from "@flowrun/core";
 import { BASE_URL, localBrowser, STORAGE_ROOT, storageProvider } from "./shared/env.ts";
@@ -33,7 +34,7 @@ function makeEngine(trace: TracingExtensionConfig) {
     const engine = createBrowserEngine({ provider: localBrowser })
         .use(storage({ provider: storageProvider }))
         .use(tracing(trace));
-    engine.bus.subscribe("tracing:saved", (envelope) => {
+    engine.events.on(tracingEvents.saved, (envelope) => {
         log(
             `  [tracing-saved] key=${envelope.payload.key}  size=${envelope.payload.size}B  reason=${envelope.payload.reason}`
         );

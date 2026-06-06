@@ -8,7 +8,7 @@
  *    Independent cookies / storageState — useful for multi-account work.
  *  - Both resources expose { page, navigate, session } on the child context
  *    and close automatically on cleanup.
- *  - Usage with `every` (per-iteration) and `parallel` (per-branch).
+ *  - Usage with `each` (per-iteration) and `parallel` (per-branch).
  *  - cancelStrategy: "close-context" closes the resource on AbortSignal.
  */
 
@@ -24,14 +24,14 @@ type AppShape = WithSelectors<BrowserShape>;
 const DASHBOARD_URL_PATTERN = /\/dashboard/;
 const LOGIN_CODE_URL_PATTERN = /\/login\/code/;
 
-// ── Flow 1: every() + resource.newPage() — one tab per iteration ─────
+// ── Flow 1: each() + resource.newPage() — one tab per iteration ──────
 
 const months = ["2024-01", "2024-02", "2024-03", "2024-04"];
 
 const scrapeMonths = flow<AppShape>("scrape-months")
     .state({ results: [] as { month: string; url: string }[] })
-    .nodes(({ every }) => [
-        every({
+    .nodes(({ each }) => [
+        each({
             name: "by-month",
             items: () => months,
             concurrency: 2,
@@ -54,7 +54,7 @@ const scrapeMonths = flow<AppShape>("scrape-months")
         }),
     ]);
 
-title("1 - every() + resource.newPage() (per-iteration tabs)");
+title("1 - each() + resource.newPage() (per-iteration tabs)");
 const r1 = await engine.run(scrapeMonths);
 log(`status: ${r1.status}`);
 for (const entry of r1.state.results) {
