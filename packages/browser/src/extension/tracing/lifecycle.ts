@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { BrowserContext } from "playwright-core";
 
 import type { StorageProvider } from "../../contracts/storage.ts";
-import { TRACING_EVENT_SOURCE, type TraceReason, type TracingBus, type TracingExtensionConfig } from "./types.ts";
+import { type TraceReason, type TracingEmit, type TracingExtensionConfig, tracingEvents } from "./types.ts";
 
 export type FlowOutcome = "cancelled" | "failed" | "success";
 
@@ -30,7 +30,7 @@ const NOOP_LIFECYCLE: TracingLifecycle = {
 
 export function createTracingLifecycle(
     context: BrowserContext,
-    bus: TracingBus,
+    emit: TracingEmit,
     storage: StorageProvider,
     config: TracingExtensionConfig,
     meta: TracingMeta
@@ -75,11 +75,7 @@ export function createTracingLifecycle(
                 await context.tracing.stop({ path: state.tempZipPath });
                 const buffer = await readFile(state.tempZipPath);
                 const result = await storage.save(storageKey, buffer);
-                await bus.publish(
-                    "tracing:saved",
-                    { key: result.key, size: result.size, reason },
-                    { source: TRACING_EVENT_SOURCE }
-                );
+                emit(tracingEvents.saved, { key: result.key, reason, size: result.size });
             } finally {
                 await rm(state.tempZipPath, { force: true }).catch(() => undefined);
             }

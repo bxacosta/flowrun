@@ -1,46 +1,37 @@
-import { type ExtensionDefinition, eventPublic, extension, FlowCancellationSignal } from "@flowrun/core";
+import { type ExtensionDefinition, extension, FlowCancellationSignal } from "@flowrun/core";
 
 import type { BrowserSession } from "../../contracts/provider.ts";
 import { BrowserSessionError } from "../../errors.ts";
 import { createNavigate } from "./navigate.ts";
 import { attachPageObservers } from "./page-observers.ts";
 import {
-    type BrowserBus,
-    type BrowserEventPayloads,
     type BrowserExtensionConfig,
     type BrowserProvidedContext,
-    EVENT_SOURCE,
+    browserEvents,
     resolveBrowserConfig,
 } from "./types.ts";
 
 export const BROWSER_EXTENSION_NAME = "browser";
 
-export type BrowserExtensionDefinition = ExtensionDefinition<
-    object,
-    BrowserProvidedContext,
-    object,
-    BrowserEventPayloads
->;
+export type BrowserExtensionDefinition = ExtensionDefinition<object, BrowserProvidedContext>;
 
 export function createBrowserExtension(config: BrowserExtensionConfig): BrowserExtensionDefinition {
     const resolved = resolveBrowserConfig(config);
 
     return extension({
         name: BROWSER_EXTENSION_NAME,
-        events: {
-            "browser:opened": eventPublic<BrowserEventPayloads["browser:opened"]>(),
-            "browser:closed": eventPublic<BrowserEventPayloads["browser:closed"]>(),
-            "browser:navigated": eventPublic<BrowserEventPayloads["browser:navigated"]>(),
-            "browser:page-error": eventPublic<BrowserEventPayloads["browser:page-error"]>(),
-            "browser:console-error": eventPublic<BrowserEventPayloads["browser:console-error"]>(),
-            "browser:page-opened": eventPublic<BrowserEventPayloads["browser:page-opened"]>(),
-            "browser:page-closed": eventPublic<BrowserEventPayloads["browser:page-closed"]>(),
-            "browser:session-opened": eventPublic<BrowserEventPayloads["browser:session-opened"]>(),
-            "browser:session-closed": eventPublic<BrowserEventPayloads["browser:session-closed"]>(),
-        },
-        provide: async (context) => {
-            const bus: BrowserBus = context.bus;
-
+        events: [
+            browserEvents.opened,
+            browserEvents.closed,
+            browserEvents.navigated,
+            browserEvents.pageError,
+            browserEvents.consoleError,
+            browserEvents.pageOpened,
+            browserEvents.pageClosed,
+            browserEvents.sessionOpened,
+            browserEvents.sessionClosed,
+        ],
+        setup: async (context) => {
             let session: BrowserSession;
             try {
                 session = await resolved.provider.open(resolved.openOptions);
@@ -71,25 +62,25 @@ export function createBrowserExtension(config: BrowserExtensionConfig): BrowserE
                 session.page.setDefaultNavigationTimeout(resolved.defaultNavigationTimeout);
             }
 
-            const observers = attachPageObservers(session.page, bus, {
-                pageErrors: resolved.observePageErrors,
-                consoleErrors: resolved.observeConsoleErrors,
+            const observers = attachPageObservers(session.page, context.emit, {
+                consoleErrors: resolved.emitConsoleErrors,
+                pageErrors: resolved.emitPageErrors,
             });
 
-            const navigate = createNavigate(session.page, bus, { emitEvent: resolved.emitNavigateEvent });
+            const navigate = createNavigate(session.page, context.emit, { emitEvent: resolved.emitNavigateEvent });
 
-            await bus.publish("browser:opened", {}, { source: EVENT_SOURCE });
+            context.emit(browserEvents.opened);
 
             const provided: BrowserProvidedContext = {
-                session,
+                navigate,
                 page: session.page,
                 provider: resolved.provider,
-                navigate,
+                session,
             };
 
             return {
                 provided,
-                cleanup: async () => {
+                dispose: async () => {
                     observers.detach();
 
                     let closeError: Error | undefined;
@@ -100,7 +91,7 @@ export function createBrowserExtension(config: BrowserExtensionConfig): BrowserE
                             error instanceof BrowserSessionError ? error : new BrowserSessionError("close", error);
                     }
 
-                    await bus.publish("browser:closed", {}, { source: EVENT_SOURCE });
+                    context.emit(browserEvents.closed);
 
                     if (closeError) {
                         throw closeError;

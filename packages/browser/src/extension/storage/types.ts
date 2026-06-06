@@ -1,8 +1,6 @@
-import type { EventMap, PublishableBus, Shape, WithEvents, WithProvided } from "@flowrun/core";
+import { type EmitFn, event, type Shape, type WithEvents, type WithProvided } from "@flowrun/core";
 
 import type { StorageProvider } from "../../contracts/storage.ts";
-
-export const STORAGE_EVENT_SOURCE = "storage";
 
 export interface StorageExtensionConfig {
     emitEvent?: boolean;
@@ -13,18 +11,20 @@ export interface StorageProvidedContext {
     storage: StorageProvider;
 }
 
-export interface StorageEventPayloads {
-    "storage:saved": { key: string; size: number };
-}
+export const storageEvents = {
+    saved: event<{ key: string; size: number }>("storage:saved"),
+} as const;
 
-export type StorageBus = PublishableBus<StorageEventPayloads, EventMap>;
+export type StorageEvent = (typeof storageEvents)[keyof typeof storageEvents];
+
+export type StorageEmit = EmitFn<StorageEvent>;
 
 export interface StorageShape extends Shape {
-    events: StorageEventPayloads;
+    events: StorageEvent;
     provided: StorageProvidedContext;
 }
 
 export type WithStorage<TShape extends Shape = Shape> = WithProvided<
-    WithEvents<TShape, StorageEventPayloads>,
+    WithEvents<TShape, StorageEvent>,
     StorageProvidedContext
 >;

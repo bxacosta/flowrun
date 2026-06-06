@@ -1,9 +1,7 @@
-import type { EventMap, PublishableBus, Shape, WithEvents } from "@flowrun/core";
+import { type EmitFn, event, type Shape, type WithEvents } from "@flowrun/core";
 
 import type { BrowserSession } from "../../contracts/provider.ts";
 import type { StorageProvider } from "../../contracts/storage.ts";
-
-export const TRACING_EVENT_SOURCE = "tracing";
 
 export type TraceMode = "off" | "on" | "on-failure" | "retain-on-failure";
 
@@ -14,7 +12,7 @@ export interface TracingExtensionConfig {
     screenshots?: boolean;
     snapshots?: boolean;
     sources?: boolean;
-    storageKey?: (context: { runId: string; flowName: string }) => string;
+    storageKey?: (context: { flowName: string; runId: string }) => string;
 }
 
 export interface TracingRequiredContext {
@@ -22,14 +20,16 @@ export interface TracingRequiredContext {
     storage: StorageProvider;
 }
 
-export interface TracingEventPayloads {
-    "tracing:saved": { key: string; size: number; reason: TraceReason };
-}
+export const tracingEvents = {
+    saved: event<{ key: string; reason: TraceReason; size: number }>("tracing:saved"),
+} as const;
 
-export type TracingBus = PublishableBus<TracingEventPayloads, EventMap>;
+export type TracingEvent = (typeof tracingEvents)[keyof typeof tracingEvents];
+
+export type TracingEmit = EmitFn<TracingEvent>;
 
 export interface TracingShape extends Shape {
-    events: TracingEventPayloads;
+    events: TracingEvent;
 }
 
-export type WithTracing<TShape extends Shape = Shape> = WithEvents<TShape, TracingEventPayloads>;
+export type WithTracing<TShape extends Shape = Shape> = WithEvents<TShape, TracingEvent>;

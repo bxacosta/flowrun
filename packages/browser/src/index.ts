@@ -1,7 +1,16 @@
 /** biome-ignore-all lint/performance/noBarrelFile: public library entry point */
 
 // Re-exported core types users typically need
-export type { FlowEngineError, FlowHandle, FlowResult, FlowStatus, Logger } from "@flowrun/core";
+export type {
+    EventEnvelope,
+    EventSubscriber,
+    FlowEngineError,
+    FlowHandle,
+    FlowResult,
+    FlowStatus,
+    Logger,
+    PayloadOf,
+} from "@flowrun/core";
 // Re-exported Playwright types users will see in handler signatures
 export type {
     Browser,
@@ -41,7 +50,9 @@ export {
 // Extension factories + types
 export type { BrowserExtensionDefinition } from "./extension/browser/index.ts";
 export type {
-    BrowserEventPayloads,
+    BranchMeta,
+    BrowserEmit,
+    BrowserEvent,
     BrowserExtensionConfig,
     BrowserProvidedContext,
     CancelStrategy,
@@ -50,6 +61,8 @@ export type {
     NavigateOptions,
     NavigateWaitUntil,
 } from "./extension/browser/types.ts";
+// Event tokens (subscribe via engine.events.on(token, ...))
+export { browserEvents } from "./extension/browser/types.ts";
 export type { SelectorsExtensionDefinition } from "./extension/selectors/index.ts";
 export { createSelectorsExtension as selectors } from "./extension/selectors/index.ts";
 export type {
@@ -61,23 +74,27 @@ export type {
 export type { StorageExtensionDefinition } from "./extension/storage/index.ts";
 export { createStorageExtension as storage } from "./extension/storage/index.ts";
 export type {
-    StorageEventPayloads,
+    StorageEmit,
+    StorageEvent,
     StorageExtensionConfig,
     StorageProvidedContext,
     StorageShape,
     WithStorage,
 } from "./extension/storage/types.ts";
+export { storageEvents } from "./extension/storage/types.ts";
 export type { TracingExtensionDefinition } from "./extension/tracing/index.ts";
 export { createTracingExtension as tracing } from "./extension/tracing/index.ts";
 export type {
     TraceMode,
     TraceReason,
-    TracingEventPayloads,
+    TracingEmit,
+    TracingEvent,
     TracingExtensionConfig,
     TracingRequiredContext,
     TracingShape,
     WithTracing,
 } from "./extension/tracing/types.ts";
+export { tracingEvents } from "./extension/tracing/types.ts";
 export type { LocalLaunchOptions } from "./providers/local.ts";
 // Reference implementations
 export { LocalBrowserProvider } from "./providers/local.ts";

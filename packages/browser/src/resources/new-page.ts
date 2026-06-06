@@ -1,8 +1,14 @@
-import type { ContainerMeta, ResourceFactory } from "@flowrun/core";
+import type { ResourceFactory } from "@flowrun/core";
 
 import type { BrowserSession } from "../contracts/provider.ts";
 import { createNavigate } from "../extension/browser/navigate.ts";
-import { type BrowserBus, EVENT_SOURCE, type NavigateFn } from "../extension/browser/types.ts";
+import {
+    type BrowserEmit,
+    browserEvents,
+    type CancelStrategy,
+    type NavigateFn,
+    toBranchMeta,
+} from "../extension/browser/types.ts";
 
 export interface NewPageLocal {
     navigate: NavigateFn;
@@ -11,14 +17,14 @@ export interface NewPageLocal {
 }
 
 export interface NewPageOptions {
-    cancelStrategy?: "close-context" | "none";
+    cancelStrategy?: CancelStrategy;
     defaultNavigationTimeout?: number;
     defaultTimeout?: number;
     emitNavigateEvent?: boolean;
 }
 
 interface NewPageContext {
-    bus: BrowserBus;
+    emit: BrowserEmit;
     session: BrowserSession;
     signal: AbortSignal;
 }
@@ -50,28 +56,21 @@ export function newPage(options: NewPageOptions = {}): ResourceFactory<NewPageCo
                 );
             }
 
-            const navigate = createNavigate(page, context.bus, { emitEvent: emitNavigate });
+            const navigate = createNavigate(page, context.emit, { emitEvent: emitNavigate });
             const session: BrowserSession = { context: context.session.context, page };
 
-            await context.bus.publish("browser:page-opened", branchInfo(meta), { source: EVENT_SOURCE });
+            context.emit(browserEvents.pageOpened, toBranchMeta(meta));
 
-            return { session, page, navigate };
+            return { navigate, page, session };
         },
 
-        cleanup: async (context, meta) => {
+        dispose: async (context, meta) => {
             try {
                 await context.page.close();
             } catch {
                 /* idempotent */
             }
-            await context.bus.publish("browser:page-closed", branchInfo(meta), { source: EVENT_SOURCE });
+            context.emit(browserEvents.pageClosed, toBranchMeta(meta));
         },
     };
-}
-
-function branchInfo(meta: ContainerMeta): { branch?: string; iteration?: number } {
-    if ("branchName" in meta) {
-        return { branch: meta.branchName };
-    }
-    return { iteration: meta.index };
 }

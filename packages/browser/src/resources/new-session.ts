@@ -1,9 +1,15 @@
-import type { ContainerMeta, ResourceFactory } from "@flowrun/core";
+import type { ResourceFactory } from "@flowrun/core";
 
 import type { BrowserProvider, BrowserSession, OpenOptions } from "../contracts/provider.ts";
 import { BrowserSessionError } from "../errors.ts";
 import { createNavigate } from "../extension/browser/navigate.ts";
-import { type BrowserBus, EVENT_SOURCE, type NavigateFn } from "../extension/browser/types.ts";
+import {
+    type BrowserEmit,
+    browserEvents,
+    type CancelStrategy,
+    type NavigateFn,
+    toBranchMeta,
+} from "../extension/browser/types.ts";
 
 export interface NewSessionLocal {
     navigate: NavigateFn;
@@ -12,14 +18,14 @@ export interface NewSessionLocal {
 }
 
 export interface NewSessionOptions extends OpenOptions {
-    cancelStrategy?: "close-context" | "none";
+    cancelStrategy?: CancelStrategy;
     defaultNavigationTimeout?: number;
     defaultTimeout?: number;
     emitNavigateEvent?: boolean;
 }
 
 interface NewSessionContext {
-    bus: BrowserBus;
+    emit: BrowserEmit;
     provider: BrowserProvider;
     signal: AbortSignal;
 }
@@ -59,27 +65,20 @@ export function newSession(options: NewSessionOptions = {}): ResourceFactory<New
                 );
             }
 
-            const navigate = createNavigate(session.page, context.bus, { emitEvent: emitNavigate });
+            const navigate = createNavigate(session.page, context.emit, { emitEvent: emitNavigate });
 
-            await context.bus.publish("browser:session-opened", branchInfo(meta), { source: EVENT_SOURCE });
+            context.emit(browserEvents.sessionOpened, toBranchMeta(meta));
 
-            return { session, page: session.page, navigate };
+            return { navigate, page: session.page, session };
         },
 
-        cleanup: async (context, meta) => {
+        dispose: async (context, meta) => {
             try {
                 await context.provider.close(context.session);
             } catch {
                 /* idempotent */
             }
-            await context.bus.publish("browser:session-closed", branchInfo(meta), { source: EVENT_SOURCE });
+            context.emit(browserEvents.sessionClosed, toBranchMeta(meta));
         },
     };
-}
-
-function branchInfo(meta: ContainerMeta): { branch?: string; iteration?: number } {
-    if ("branchName" in meta) {
-        return { branch: meta.branchName };
-    }
-    return { iteration: meta.index };
 }

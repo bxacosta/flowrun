@@ -9,7 +9,7 @@ export type SelectorsExtensionDefinition = ExtensionDefinition<object, Selectors
 export function createSelectorsExtension(config: SelectorsExtensionConfig): SelectorsExtensionDefinition {
     return extension({
         name: SELECTORS_EXTENSION_NAME,
-        provide: () => ({
+        setup: () => ({
             provided: { selectors: config.registry },
         }),
     });

@@ -1,6 +1,6 @@
 import type { ConsoleMessage, Page } from "playwright-core";
 
-import { type BrowserBus, EVENT_SOURCE } from "./types.ts";
+import { type BrowserEmit, browserEvents } from "./types.ts";
 
 export interface ObserverOptions {
     consoleErrors: boolean;
@@ -11,16 +11,12 @@ export interface PageObservers {
     detach(): void;
 }
 
-export function attachPageObservers(page: Page, bus: BrowserBus, options: ObserverOptions): PageObservers {
+export function attachPageObservers(page: Page, emit: BrowserEmit, options: ObserverOptions): PageObservers {
     const detachers: Array<() => void> = [];
 
     if (options.pageErrors) {
         const handler = (error: Error): void => {
-            bus.publish(
-                "browser:page-error",
-                { message: error.message, stack: error.stack },
-                { source: EVENT_SOURCE }
-            ).catch(() => undefined);
+            emit(browserEvents.pageError, { message: error.message, stack: error.stack });
         };
         page.on("pageerror", handler);
         detachers.push(() => page.off("pageerror", handler));
@@ -32,20 +28,16 @@ export function attachPageObservers(page: Page, bus: BrowserBus, options: Observ
                 return;
             }
             const location = message.location();
-            bus.publish(
-                "browser:console-error",
-                {
-                    text: message.text(),
-                    location: location.url
-                        ? {
-                              url: location.url,
-                              lineNumber: location.lineNumber,
-                              columnNumber: location.columnNumber,
-                          }
-                        : undefined,
-                },
-                { source: EVENT_SOURCE }
-            ).catch(() => undefined);
+            emit(browserEvents.consoleError, {
+                location: location.url
+                    ? {
+                          columnNumber: location.columnNumber,
+                          lineNumber: location.lineNumber,
+                          url: location.url,
+                      }
+                    : undefined,
+                text: message.text(),
+            });
         };
         page.on("console", handler);
         detachers.push(() => page.off("console", handler));

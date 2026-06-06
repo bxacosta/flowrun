@@ -1,28 +1,28 @@
 import type { StorageProvider, StorageResult } from "../../contracts/storage.ts";
-import { STORAGE_EVENT_SOURCE, type StorageBus } from "./types.ts";
+import { type StorageEmit, storageEvents } from "./types.ts";
 
 export interface WrapStorageOptions {
     emitEvent: boolean;
 }
 
-export function wrapStorage(inner: StorageProvider, bus: StorageBus, options: WrapStorageOptions): StorageProvider {
+export function wrapStorage(inner: StorageProvider, emit: StorageEmit, options: WrapStorageOptions): StorageProvider {
     if (!options.emitEvent) {
         return inner;
     }
 
-    const emit = async (result: StorageResult): Promise<void> => {
-        await bus.publish("storage:saved", { key: result.key, size: result.size }, { source: STORAGE_EVENT_SOURCE });
+    const emitSaved = (result: StorageResult): void => {
+        emit(storageEvents.saved, { key: result.key, size: result.size });
     };
 
     return {
         async save(key, data, metadata) {
             const result = await inner.save(key, data, metadata);
-            await emit(result);
+            emitSaved(result);
             return result;
         },
         async saveStream(key, data, metadata) {
             const result = await inner.saveStream(key, data, metadata);
-            await emit(result);
+            emitSaved(result);
             return result;
         },
         read: (key) => inner.read(key),
