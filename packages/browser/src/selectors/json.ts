@@ -13,8 +13,7 @@ export class JsonSelectorRegistry<TName extends string = string> implements Sele
         this.source = source;
     }
 
-    // load() reads JSON at runtime, so its keys are not known statically — the
-    // registry stays string-typed. Use fromObject() for compile-time key checking.
+    // Keys come from a runtime file, so they stay string-typed (unlike fromObject()).
     static async load(filePath: string): Promise<JsonSelectorRegistry> {
         return new JsonSelectorRegistry(await JsonSelectorRegistry.loadMap(filePath), filePath);
     }

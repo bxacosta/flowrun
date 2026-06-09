@@ -91,8 +91,6 @@ export type {
     TracingEvent,
     TracingExtensionConfig,
     TracingRequiredContext,
-    TracingShape,
-    WithTracing,
 } from "./extension/tracing/types.ts";
 export { tracingEvents } from "./extension/tracing/types.ts";
 export type { LocalLaunchOptions } from "./providers/local.ts";

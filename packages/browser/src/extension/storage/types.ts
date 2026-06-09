@@ -1,4 +1,4 @@
-import { type EmitFn, event, type Shape, type WithEvents, type WithProvided } from "@flowrun/core";
+import { type EmitFn, event, type Shape, type WithProvided } from "@flowrun/core";
 
 import type { StorageProvider } from "../../contracts/storage.ts";
 
@@ -20,11 +20,7 @@ export type StorageEvent = (typeof storageEvents)[keyof typeof storageEvents];
 export type StorageEmit = EmitFn<StorageEvent>;
 
 export interface StorageShape extends Shape {
-    events: StorageEvent;
     provided: StorageProvidedContext;
 }
 
-export type WithStorage<TShape extends Shape = Shape> = WithProvided<
-    WithEvents<TShape, StorageEvent>,
-    StorageProvidedContext
->;
+export type WithStorage<TShape extends Shape = Shape> = WithProvided<TShape, StorageProvidedContext>;

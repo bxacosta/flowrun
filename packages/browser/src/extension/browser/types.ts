@@ -44,8 +44,7 @@ export interface BranchMeta {
     iteration?: number;
 }
 
-// Projects a container's runtime meta onto the event payload: parallel branches
-// carry their node `name`, each iterations carry their `index`.
+// parallel branch → name, each iteration → index
 export function toBranchMeta(meta: ContainerMeta): BranchMeta {
     return "item" in meta ? { iteration: meta.index } : { branch: meta.name };
 }

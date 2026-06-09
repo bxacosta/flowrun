@@ -1,4 +1,4 @@
-import { type EmitFn, event, type Shape, type WithEvents } from "@flowrun/core";
+import { type EmitFn, event } from "@flowrun/core";
 
 import type { BrowserSession } from "../../contracts/provider.ts";
 import type { StorageProvider } from "../../contracts/storage.ts";
@@ -28,8 +28,4 @@ export type TracingEvent = (typeof tracingEvents)[keyof typeof tracingEvents];
 
 export type TracingEmit = EmitFn<TracingEvent>;
 
-export interface TracingShape extends Shape {
-    events: TracingEvent;
-}
-
-export type WithTracing<TShape extends Shape = Shape> = WithEvents<TShape, TracingEvent>;
+// No WithTracing transformer: tracing adds no provided context and emits only from its own setup.
