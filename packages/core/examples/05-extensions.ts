@@ -7,6 +7,8 @@
  *  - setup(context) returns { provided, dispose } - replaces provide/provided/cleanup
  *  - requires<T>() declares a typed dependency on another extension's provided context;
  *    engine.use() enforces the order at compile time (MissingExtensionDependency)
+ *  - Compose<[Shape, ...capabilities]> folds capability shapes (provided/params/state
+ *    merge, events union) into the shape a flow is typed against
  *  - engine.use() chains extensions; historyLimit via engine config
  *  - engine.events.on(token) is fully typed; on(pattern) ("*", "**") is unknown
  *  - waitFor(token), history(pattern), subscription options (priority, filter, name, once)
@@ -14,6 +16,7 @@
  */
 
 import {
+    type Compose,
     createEngine,
     type EventEnvelope,
     type EventSubscriber,
@@ -112,24 +115,30 @@ const metricsExtension = () =>
 
 // ── Flow: uses extension-provided context ───────────────────────────
 
-interface SyncShape {
-    params: { source: string };
+// Each extension's provided context as a reusable capability shape. Compose<[...]>
+// folds them into one provided contract; params/state live on the builder below.
+interface DatabaseShape {
+    provided: { db: DbApi };
+}
+
+interface MetricsShape {
     provided: {
-        db: DbApi;
         metrics: {
             counter(name: string, value?: number): void;
             flush(): Promise<void>;
         };
     };
-    state: { fetched: number; source: string };
 }
+
+type SyncShape = Compose<[DatabaseShape, MetricsShape]>;
 
 const sync = shape<SyncShape>();
 
-// .events([token]) declares the flow's own domain event tokens on the builder.
-// They scope context.emit inside the flow; subscribers listen by the same token.
+// .params()/.state() set the flow's own data; .events([token]) declares its domain
+// event tokens. context.emit is scoped to those tokens; subscribers listen by token.
 const syncFlow = sync
     .flow("sync-data")
+    .params<{ source: string }>()
     .events([orderFetched])
     .state((params) => ({ fetched: 0, source: params.source }))
     .nodes(({ task }) => [

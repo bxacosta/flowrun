@@ -48,3 +48,29 @@ export type WithProvided<TShape extends Shape, TLocal extends object> = Omit<TSh
 export type WithIteration<TShape extends Shape, TItem> = Omit<TShape, "iteration"> & {
     iteration: IterationContext<TItem>;
 };
+
+// ── Composition ─────────────────────────────────────────────────────
+
+type UnionEvents<TFirst, TSecond> = [TFirst] extends [never]
+    ? TSecond
+    : [TSecond] extends [never]
+      ? TFirst
+      : TFirst | TSecond;
+
+interface ComposePair<TBase extends Shape, TNext extends Shape> {
+    events: UnionEvents<EventsOf<TBase>, EventsOf<TNext>>;
+    iteration: [IterationOf<TNext>] extends [never] ? IterationOf<TBase> : IterationOf<TNext>;
+    params: MergeObjects<ParamsOf<TBase>, ParamsOf<TNext>>;
+    provided: MergeObjects<ProvidedOf<TBase>, ProvidedOf<TNext>>;
+    state: MergeObjects<StateOf<TBase>, StateOf<TNext>>;
+}
+
+type ComposeFold<TShapes extends readonly Shape[], TAccumulated extends Shape> = TShapes extends readonly [
+    infer THead extends Shape,
+    ...infer TRest extends Shape[],
+]
+    ? ComposeFold<TRest, ComposePair<TAccumulated, THead>>
+    : TAccumulated;
+
+// Folds shapes into one: provided/params/state merge (last wins), events union.
+export type Compose<TShapes extends readonly Shape[]> = ComposeFold<TShapes, EmptyObject>;

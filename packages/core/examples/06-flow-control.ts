@@ -145,13 +145,7 @@ log("steps:", result3.state.steps);
 
 const months = ["2024-01", "2024-02", "2024-03", "2024-04"];
 
-const scrapeFlow = shape<
-    BrowserShape & {
-        state: {
-            scraped: { month: string; pageId: number }[];
-        };
-    }
->()
+const scrapeFlow = shape<BrowserShape>()
     .flow("scrape-invoices")
     .state({ scraped: [] as { month: string; pageId: number }[] })
     .nodes(({ each }) => [
@@ -206,14 +200,7 @@ for (const entry of scrapeResult.state.scraped) {
 
 // ── Flow: parallel + resource (per-branch browser pages) ────────────
 
-const parallelScrape = shape<
-    BrowserShape & {
-        state: {
-            invoicePage: number;
-            reportPage: number;
-        };
-    }
->()
+const parallelScrape = shape<BrowserShape>()
     .flow("parallel-scrape")
     .state({ invoicePage: 0, reportPage: 0 })
     .nodes(({ parallel }) => [

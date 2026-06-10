@@ -135,17 +135,13 @@ export { event, systemEvents } from "./events/types.ts";
 // ── shape ───────────────────────────────────────────────────────────
 export type {
     AnyShape,
+    Compose,
     EventsOf,
     IterationOf,
     ParamsOf,
     ProvidedOf,
     Shape,
     StateOf,
-    WithEvents,
-    WithIteration,
-    WithParams,
-    WithProvided,
-    WithState,
 } from "./shape/shape.ts";
 // ── state ───────────────────────────────────────────────────────────
 export { InvalidMergeValueError, MergeConflictError } from "./state/errors.ts";
