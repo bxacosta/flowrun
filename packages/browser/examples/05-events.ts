@@ -23,11 +23,12 @@
 import {
     type BrowserShape,
     browserEvents,
+    type Compose,
     createBrowserEngine,
     resource,
+    type StorageShape,
     storage,
     storageEvents,
-    type WithStorage,
 } from "@flowrun/browser";
 import { flow } from "@flowrun/core";
 import { BASE_URL, localBrowser, storageProvider } from "./shared/env.ts";
@@ -41,7 +42,7 @@ const engine = createBrowserEngine({
     emitNavigateEvent: true,
 }).use(storage({ provider: storageProvider, emitEvent: true }));
 
-type AppShape = WithStorage<BrowserShape>;
+type AppShape = Compose<[BrowserShape, StorageShape]>;
 
 // ── Wildcard subscription: every browser:* topic ────────────────────
 

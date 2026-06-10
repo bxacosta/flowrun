@@ -21,11 +21,12 @@
 
 import {
     type BrowserShape,
+    type Compose,
     createBrowserEngine,
+    type SelectorsShape,
+    type StorageShape,
     selectors,
     storage,
-    type WithSelectors,
-    type WithStorage,
 } from "@flowrun/browser";
 import { flow } from "@flowrun/core";
 import { BASE_URL, localBrowser, selectorsRegistry, storageProvider } from "./shared/env.ts";
@@ -39,7 +40,7 @@ const engine = createBrowserEngine({ provider: localBrowser })
 
 // ── Composed shape for flows that need all three ────────────────────
 
-type AppShape = WithStorage<WithSelectors<BrowserShape>>;
+type AppShape = Compose<[BrowserShape, SelectorsShape, StorageShape]>;
 
 // ── Flow 1: simplest possible browser flow ──────────────────────────
 

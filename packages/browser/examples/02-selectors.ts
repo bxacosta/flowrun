@@ -15,11 +15,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
     type BrowserShape,
+    type Compose,
     createBrowserEngine,
     JsonSelectorRegistry,
     SelectorNotFoundError,
+    type SelectorRegistry,
+    type SelectorsShape,
     selectors,
-    type WithSelectors,
 } from "@flowrun/browser";
 import { flow } from "@flowrun/core";
 import { BASE_URL, localBrowser } from "./shared/env.ts";
@@ -43,7 +45,7 @@ const inlineRegistry = JsonSelectorRegistry.fromObject({
 
 const engine = createBrowserEngine({ provider: localBrowser }).use(selectors({ registry: inlineRegistry }));
 
-type AppShape = WithSelectors<BrowserShape>;
+type AppShape = Compose<[BrowserShape, SelectorsShape]>;
 
 // ── Demo 1: registry.get(name) — read a SelectorDefinition ──────────
 
@@ -123,11 +125,17 @@ title("3 - resolve(name, frame) for selectors inside an iframe");
 const r3 = await engine.run(iframeFlow);
 log(`status: ${r3.status}`);
 
-// ── Demo 4: SelectorNotFoundError on missing keys ───────────────────
+// ── Demo 4: typed keys at compile time + runtime guard for dynamic names ─
 
-title("4 - SelectorNotFoundError on a missing key");
+title("4 - typed keys reject typos; runtime guard covers dynamic names");
+
+// fromObject() infers the key union: inlineRegistry.get("doesNotExist") is a
+// compile error. Widening to SelectorRegistry models a name only known at runtime,
+// where the registry still guards via SelectorNotFoundError.
+const dynamicRegistry: SelectorRegistry = inlineRegistry;
+const requestedName = "doesNotExist";
 try {
-    inlineRegistry.get("doesNotExist");
+    dynamicRegistry.get(requestedName);
 } catch (error) {
     if (error instanceof SelectorNotFoundError) {
         log(`caught: ${error.message}`);

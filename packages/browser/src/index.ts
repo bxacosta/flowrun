@@ -2,6 +2,7 @@
 
 // Re-exported core types users typically need
 export type {
+    Compose,
     EventEnvelope,
     EventSubscriber,
     FlowEngineError,
@@ -69,7 +70,6 @@ export type {
     SelectorsExtensionConfig,
     SelectorsProvidedContext,
     SelectorsShape,
-    WithSelectors,
 } from "./extension/selectors/types.ts";
 export type { StorageExtensionDefinition } from "./extension/storage/index.ts";
 export { createStorageExtension as storage } from "./extension/storage/index.ts";
@@ -79,7 +79,6 @@ export type {
     StorageExtensionConfig,
     StorageProvidedContext,
     StorageShape,
-    WithStorage,
 } from "./extension/storage/types.ts";
 export { storageEvents } from "./extension/storage/types.ts";
 export type { TracingExtensionDefinition } from "./extension/tracing/index.ts";

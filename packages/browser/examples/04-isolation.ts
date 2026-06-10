@@ -12,14 +12,21 @@
  *  - cancelStrategy: "close-context" closes the resource on AbortSignal.
  */
 
-import { type BrowserShape, createBrowserEngine, resource, selectors, type WithSelectors } from "@flowrun/browser";
+import {
+    type BrowserShape,
+    type Compose,
+    createBrowserEngine,
+    resource,
+    type SelectorsShape,
+    selectors,
+} from "@flowrun/browser";
 import { flow } from "@flowrun/core";
 import { BASE_URL, localBrowser, selectorsRegistry } from "./shared/env.ts";
 import { log, title } from "./shared/helpers.ts";
 
 const engine = createBrowserEngine({ provider: localBrowser }).use(selectors({ registry: selectorsRegistry }));
 
-type AppShape = WithSelectors<BrowserShape>;
+type AppShape = Compose<[BrowserShape, SelectorsShape]>;
 
 const DASHBOARD_URL_PATTERN = /\/dashboard/;
 const LOGIN_CODE_URL_PATTERN = /\/login\/code/;

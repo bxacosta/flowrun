@@ -16,11 +16,12 @@
 import { Readable } from "node:stream";
 import {
     type BrowserShape,
+    type Compose,
     createBrowserEngine,
+    type SelectorsShape,
+    type StorageShape,
     selectors,
     storage,
-    type WithSelectors,
-    type WithStorage,
 } from "@flowrun/browser";
 import { flow } from "@flowrun/core";
 import { BASE_URL, localBrowser, STORAGE_ROOT, selectorsRegistry, storageProvider } from "./shared/env.ts";
@@ -30,7 +31,7 @@ const engine = createBrowserEngine({ provider: localBrowser })
     .use(selectors({ registry: selectorsRegistry }))
     .use(storage({ provider: storageProvider }));
 
-type AppShape = WithStorage<WithSelectors<BrowserShape>>;
+type AppShape = Compose<[BrowserShape, SelectorsShape, StorageShape]>;
 
 const PREFIX = "03-storage/";
 const DASHBOARD_URL_PATTERN = /\/dashboard/;
